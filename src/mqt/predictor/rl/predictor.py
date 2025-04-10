@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
 from sb3_contrib.common.maskable.utils import get_action_masks
-from stable_baselines3.common.logger import configure
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
-
 
 from mqt.predictor import reward, rl
 
@@ -20,24 +16,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mqt-predictor")
 PATH_LENGTH = 260
-
-
-class OffsetCheckpointCallback(BaseCallback):
-    def __init__(self, save_freq, save_path, name_prefix, offset=0, verbose=0):
-        super().__init__(verbose)
-        self.save_freq = save_freq
-        self.save_path = save_path
-        self.name_prefix = name_prefix
-        self.offset = offset
-
-    def _on_step(self) -> bool:
-        total_steps = self.num_timesteps + self.offset
-        if total_steps % self.save_freq == 0:
-            path = f"{self.save_path}/{self.name_prefix}_{total_steps}_steps.zip"
-            self.model.save(path)
-            if self.verbose > 0:
-                print(f"✅ Saved checkpoint: {path}")
-        return True
 
 
 class Predictor:
@@ -88,70 +66,38 @@ class Predictor:
 
     def train_model(
         self,
-        timesteps: int = 100000,
+        timesteps: int = 1000,
         model_name: str = "model",
         verbose: int = 2,
         test: bool = False,
-        trained: int = 0,
     ) -> None:
-        """Train or resume model training with offset checkpointing.
+        """Trains all models for the given reward functions and device.
 
         Arguments:
-            timesteps: Total training timesteps desired.
-            model_name: Prefix for saved model and logs.
-            verbose: Verbosity level for PPO.
-            test: If True, uses tiny n_steps for quick test.
-            trained: Number of timesteps already trained (for resuming).
+            timesteps: The number of timesteps to train the model. Defaults to 1000.
+            model_name: The name of the model. Defaults to "model".
+            verbose: The verbosity level. Defaults to 2.
+            test: Whether to train the model for testing purposes. Defaults to False.
         """
-        n_steps = 10 if test else 2048
-        progress_bar = not test
-
-        log_dir = f"./{model_name}_{self.figure_of_merit}_{self.device_name}"
-        ckpt_path = f"./checkpoints/{model_name}_{trained}_steps.zip"
-
-        logger.debug(f"🔁 Checking for checkpoint: {ckpt_path}")
-
-        if os.path.exists(ckpt_path):
-            logger.info(f"📦 Loading checkpoint from {ckpt_path}")
-            model = MaskablePPO.load(
-                ckpt_path,
-                env=self.env,
-                tensorboard_log=log_dir,
-                verbose=verbose,
-                device="cuda",  # or "cpu" depending on your setup
-            )
+        if test:
+            n_steps = 10
+            progress_bar = False
         else:
-            logger.info(f"🆕 No checkpoint found, starting fresh training")
-            model = MaskablePPO(
-                MaskableMultiInputActorCriticPolicy,
-                self.env,
-                verbose=verbose,
-                tensorboard_log=log_dir,
-                gamma=0.98,
-                n_steps=n_steps,
-            )
+            n_steps = 500
+            progress_bar = True
 
-        remaining = timesteps - trained
-
-        callback = OffsetCheckpointCallback(
-            save_freq=1000,
-            save_path="./checkpoints",
-            name_prefix=model_name,
-            offset=trained,
-            verbose=1,
+        logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
+        model = MaskablePPO(
+            MaskableMultiInputActorCriticPolicy,
+            self.env,
+            verbose=verbose,
+            tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
+            gamma=0.98,
+            n_steps=n_steps,
         )
-
-        tb_log_name = "ppo"
-        new_logger = configure(folder=os.path.join(log_dir, tb_log_name), format_strings=["stdout", "tensorboard"])
-        model.set_logger(new_logger)
-        model.learn(
-            total_timesteps=remaining,
-            tb_log_name=tb_log_name,
-            callback=callback,
-            progress_bar=progress_bar,
-        )
-
+        # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
+        # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
+        model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
         model.save(
             rl.helper.get_path_trained_model() / (model_name + "_" + self.figure_of_merit + "_" + self.device_name)
         )
-        logger.info("✅ Final model saved.")

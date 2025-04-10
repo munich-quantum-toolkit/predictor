@@ -351,7 +351,7 @@ def get_state_sample(max_qubits: int | None = None) -> tuple[QuantumCircuit, str
     Returns:
         A tuple containing the random quantum circuit and the path to the file from which it was read.
     """
-    file_list = list(get_path_training_circuits().glob("*.qasm"))
+    """ file_list = list(get_path_training_circuits().glob("*.qasm"))
 
     path_zip = get_path_training_circuits() / "training_data_compilation.zip"
     if len(file_list) == 0 and path_zip.exists():
@@ -359,7 +359,10 @@ def get_state_sample(max_qubits: int | None = None) -> tuple[QuantumCircuit, str
             zip_ref.extractall(get_path_training_circuits())
 
         file_list = list(get_path_training_circuits().glob("*.qasm"))
-        assert len(file_list) > 0
+        assert len(file_list) > 0 """
+    #base_path = get_path_training_circuits() / "mqt_bench_training"
+    base_path = get_path_training_circuits() / "training_data_compilation"
+    file_list = list(base_path.rglob("*.qasm"))
 
     found_suitable_qc = False
     while not found_suitable_qc:
