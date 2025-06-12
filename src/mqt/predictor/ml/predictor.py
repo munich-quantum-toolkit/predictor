@@ -238,7 +238,7 @@ class Predictor:
                 ".qasm"
             ):
                 continue
-            dev_name = filename_str.split("-")[-1].split(".")[0]
+            dev_name = filename_str.rsplit("-", maxsplit=1)[-1].split(".", maxsplit=1)[0]
             if dev_name not in [dev.name for dev in self.devices]:
                 continue
             device = get_device_by_name(dev_name)
