@@ -175,22 +175,29 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
 def test_remove_files(source_path: Path, target_path: Path) -> None:
     """Remove files created during testing."""
-    for file in source_path.iterdir():
-        if file.suffix == ".qasm":
-            file.unlink()
-    for file in target_path.iterdir():
-        if file.suffix == ".qasm":
-            file.unlink()
-    source_path.rmdir()
-    target_path.rmdir()
+    if source_path.exists():
+        for file in source_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        source_path.rmdir()
 
-    for file in (ml.helper.get_path_training_data() / "training_data_aggregated").iterdir():
-        if file.suffix == ".npy":
-            file.unlink()
+    if target_path.exists():
+        for file in target_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        target_path.rmdir()
 
-    for file in (ml.helper.get_path_training_data() / "trained_model").iterdir():
-        if file.suffix == ".joblib":
-            file.unlink()
+    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    if data_path.exists():
+        for file in data_path.iterdir():
+            if file.suffix == ".npy":
+                file.unlink()
+
+    model_path = ml.helper.get_path_training_data() / "trained_model"
+    if model_path.exists():
+        for file in model_path.iterdir():
+            if file.suffix == ".joblib":
+                file.unlink()
 
 
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
