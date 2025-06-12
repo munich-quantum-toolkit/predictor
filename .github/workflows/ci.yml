@@ -14,19 +14,19 @@ concurrency:
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@v1.10
 
   python-linter:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.10
 
   python-tests:
     name: 🐍 Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.10
     with:
       enable-ubuntu2404: true
       enable-ubuntu2404-arm: false # not supported by BQSKit
@@ -41,13 +41,13 @@ jobs:
     name: 📝 CodeQL
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-code-ql)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql-python.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql-python.yml@v1.10
 
   cd:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.10
     with:
       pure-python: true
 
