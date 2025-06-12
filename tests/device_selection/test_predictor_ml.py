@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 """Tests for the machine learning device selection predictor module."""
 
 from __future__ import annotations
@@ -115,18 +123,23 @@ def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, sou
 
 def test_remove_files(source_path: Path, target_path: Path) -> None:
     """Remove files created during testing."""
-    for file in source_path.iterdir():
-        if file.suffix == ".qasm":
-            file.unlink()
-    for file in target_path.iterdir():
-        if file.suffix == ".qasm":
-            file.unlink()
-    source_path.rmdir()
-    target_path.rmdir()
+    if source_path.exists():
+        for file in source_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        source_path.rmdir()
 
-    for file in (ml.helper.get_path_training_data() / "training_data_aggregated").iterdir():
-        if file.suffix == ".npy":
-            file.unlink()
+    if target_path.exists():
+        for file in target_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        target_path.rmdir()
+
+    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    if data_path.exists():
+        for file in data_path.iterdir():
+            if file.suffix == ".npy":
+                file.unlink()
 
 
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:

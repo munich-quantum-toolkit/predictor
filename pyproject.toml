@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 [build-system]
 requires = [
     "setuptools>=66.1",
@@ -73,9 +81,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cda-tum/mqt-predictor"
-Issues = "https://github.com/cda-tum/mqt-predictor/issues"
-Discussions = "https://github.com/cda-tum/mqt-predictor/discussions"
+Homepage = "https://github.com/munich-quantum-toolkit/predictor"
+Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
+Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
 [tool.setuptools_scm]
