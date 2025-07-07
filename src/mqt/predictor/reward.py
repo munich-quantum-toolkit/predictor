@@ -184,59 +184,85 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 
 def esp_data_available(device: Target) -> bool:
     """Check if calibration data to calculate ESP is available for the device."""
-    # TODO: consider removal once the `Result` class is no longer used
+    single_qubit_gates = set()
+    two_qubit_gates = set()
+
+    for instruction in device.instructions:
+        if instruction[0].num_qubits == 1:
+            single_qubit_gates.add(instruction[0].name)
+        elif instruction[0].num_qubits == 2:
+            two_qubit_gates.add(instruction[0].name)
+    single_qubit_gates -= {"delay", "reset", "id", "barrier"}
 
     def message(calibration: str, operation: str, target: int | str) -> str:
         return f"{calibration} data for {operation} operation on qubit(s) {target} is required to calculate ESP for device {device.description}."
 
     for qubit in range(device.num_qubits):
         try:
-            assert device.qubit_properties[qubit].t1
+            if device.qubit_properties is None or not device.qubit_properties[qubit].t1 >= 0:
+                msg = "No T1 qubit properties available"
+                raise ValueError(msg)  # noqa: TRY301
         except ValueError:
             logger.exception(message("T1", "idle", qubit))
             return False
         try:
-            assert device.qubit_properties[qubit].t2
+            if device.qubit_properties is None or not device.qubit_properties[qubit].t2 >= 0:
+                msg = "No T2 qubit properties available"
+                raise ValueError(msg)  # noqa: TRY301
 
         except ValueError:
             logger.exception(message("T2", "idle", qubit))
             return False
         try:
-            assert device["measure"][qubit,].error
+            error = device["measure"][qubit,].error
+            if not (0 <= error <= 1):
+                msg = "Error rate must be between 0 and 1."
+                raise ValueError(msg)  # noqa: TRY301
         except ValueError:
             logger.exception(message("Error", "readout", qubit))
             return False
         try:
-            assert device["measure"][qubit,].duration
+            duration = device["measure"][qubit,].duration
+            if not (duration >= 0):
+                msg = "Duration must be >=0."
+                raise ValueError(msg)  # noqa: TRY301
         except ValueError:
             logger.exception(message("Duration", "readout", qubit))
             return False
 
-        for gate in device.operation_names():
-            if device[gate].num_qubits != 1:
-                continue  # skip multi-qubit gates
+        for gate in single_qubit_gates:
             try:
-                assert device[gate][qubit,].error
+                error = device[gate][qubit,].error
+                if not (0 <= error <= 1):
+                    msg = "Error rate must be between 0 and 1."
+                    raise ValueError(msg)  # noqa: TRY301
             except ValueError:
                 logger.exception(message("Error", gate, qubit))
                 return False
             try:
-                assert device[gate][qubit,].duration
+                duration = device[gate][qubit,].duration
+                if not (duration >= 0):
+                    msg = "Duration must be >=0."
+                    raise ValueError(msg)  # noqa: TRY301
             except ValueError:
                 logger.exception(message("Duration", gate, qubit))
                 return False
 
-    for gate in device.operation_names():
-        if device[gate].num_qubits != 2:  # Filter only two-qubit operations
-            continue
+    for gate in two_qubit_gates:
         for edge in device.build_coupling_map():
             try:
-                assert device[gate][edge[0], edge[1]].error
+                error = device[gate][edge[0], edge[1]].error
+                if not (0 <= error <= 1):
+                    msg = "Error rate must be between 0 and 1."
+                    raise ValueError(msg)  # noqa: TRY301
             except ValueError:
                 logger.exception(message("Error", gate, edge))
                 return False
             try:
-                assert device[gate][edge[0], edge[1]].duration
+                duration = device[gate][edge[0], edge[1]].duration
+                if not (duration >= 0):
+                    msg = "Duration must be >=0."
+                    raise ValueError(msg)  # noqa: TRY301
             except ValueError:
                 logger.exception(message("Duration", gate, edge))
                 return False
