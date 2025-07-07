@@ -31,7 +31,7 @@ dependencies = [
     "qiskit!=1.3.2", # that specific release causes a Qiskit error when using the CommutativeInverseCancellation pass, see https://github.com/Qiskit/qiskit/issues/13742
     # lowest version that supports the used pytket AutoRebase pass instead of auto_rebase
     "pytket>=1.29.0",
-    "pytket_qiskit>=0.64.0",
+    "pytket_qiskit>=0.67.0", #Qiskit v2 support
     "requests",
     "sb3_contrib>=2.0.0",
     "tqdm>=4.66.0",
@@ -114,8 +114,8 @@ filterwarnings = [
     'ignore::sklearn.exceptions.InconsistentVersionWarning:sklearn:',
     'ignore:.*invalid value encountered in cast.*:RuntimeWarning:numpy.*',
     'ignore:.*The abstract Provider and ProviderV1 classes are deprecated.*:DeprecationWarning:qiskit.*',
-    'ignore:.*Treating CircuitInstruction as an iterable is deprecated legacy behavior since Qiskit 1.2, and will be removed in Qiskit 2.0.*:DeprecationWarning:pytket.*',
-    'ignore:.*Treating CircuitInstruction as an iterable is deprecated legacy behavior since Qiskit 1.2, and will be removed in Qiskit 2.0.*:DeprecationWarning:',
+    'ignore:.*Treating CircuitInstruction as an iterable is deprecated legacy behavior since Qiskit 1.2, and will be removed in Qiskit 3.0.*:DeprecationWarning:pytket.*',
+    'ignore:.*Treating CircuitInstruction as an iterable is deprecated legacy behavior since Qiskit 1.2, and will be removed in Qiskit 3.0.*:DeprecationWarning:',
     'ignore:.*is deprecated as of qiskit 1.2., and will be removed in Qiskit 2.0.*:DeprecationWarning:pytket.*',
     'ignore:.*qiskit.providers.models.* is deprecated as of qiskit 1.2*:DeprecationWarning:qiskit.*',
     'ignore:.*qiskit.qobj.pulse_qobj.* is deprecated as of qiskit 1.2*:DeprecationWarning:',
