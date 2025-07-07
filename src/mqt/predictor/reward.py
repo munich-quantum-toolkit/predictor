@@ -61,7 +61,7 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
             first_qubit_idx = calc_qubit_index(qargs, qc.qregs, 0)
 
             if len(qargs) == 1:
-                specific_fidelity = 1 - device[gate_type][first_qubit_idx].error
+                specific_fidelity = 1 - device[gate_type][first_qubit_idx,].error
             else:
                 second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
                 specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
@@ -114,7 +114,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
         active_qubits.add(first_qubit_idx)
 
         if len(qargs) == 1:  # single-qubit gate
-            duration = 1 - device[gate_type][first_qubit_idx].duration
+            duration = 1 - device[gate_type][first_qubit_idx,].duration
             op_times.append((
                 gate_type,
                 [
