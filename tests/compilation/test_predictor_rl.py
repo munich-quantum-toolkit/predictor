@@ -32,8 +32,10 @@ def test_predictor_env_reset_from_string() -> None:
 
 def test_predictor_env_esp_error() -> None:
     """Test the predictor environment with ESP as figure of merit and missing calibration data."""
-    with pytest.raises(ValueError, match=re.escape("Missing calibration data for ESP calculation on ibm_falcon_27.")):
-        rl.Predictor(figure_of_merit="estimated_success_probability", device_name="ibm_falcon_27")
+    with pytest.raises(
+        ValueError, match=re.escape("Missing calibration data for ESP calculation on quantinuum_h2_56.")
+    ):
+        rl.Predictor(figure_of_merit="estimated_success_probability", device_name="quantinuum_h2_56")
 
 
 def test_predictor_env_hellinger_error() -> None:
