@@ -10,14 +10,14 @@
 
 from __future__ import annotations
 
-from mqt.bench import benchmark_generator
+from mqt.bench import BenchmarkLevel, get_benchmark
 
 from mqt.predictor import ml
 
 
 def test_create_feature_vector() -> None:
     """Test the creation of a feature dictionary."""
-    qc = benchmark_generator.get_benchmark("dj", 1, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     feature_vector = ml.helper.create_feature_vector(qc)
     assert feature_vector is not None
 

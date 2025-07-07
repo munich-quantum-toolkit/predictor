@@ -15,11 +15,10 @@ import sys
 import warnings
 from pathlib import Path
 
-import mqt.bench.devices
 import numpy as np
 import pytest
-from mqt.bench import get_benchmark
-from mqt.bench.devices import get_device_by_name
+from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 
@@ -41,7 +40,7 @@ def target_path() -> Path:
 
 def test_create_device_specific_feature_dict() -> None:
     """Test the creation of a device-specific feature vector."""
-    device = get_device_by_name("iqm_adonis")
+    device = get_device("iqm_crystal_5")
     qc = QuantumCircuit(device.num_qubits)
     for i in range(1, device.num_qubits):
         qc.cz(0, i)
@@ -74,7 +73,7 @@ def test_hellinger_distance_error() -> None:
 def test_train_random_forest_regressor_and_predict() -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
-    device = get_device_by_name("iqm_apollo")
+    device = get_device("iqm_crystal_20")
     n_circuits = 16
 
     qc = QuantumCircuit(device.num_qubits)
@@ -103,7 +102,7 @@ def test_train_random_forest_regressor_and_predict() -> None:
 def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
-    device_name = "iqm_apollo"
+    device_name = "iqm_crystal_20"
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -130,7 +129,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             target_path.mkdir()
 
         for i in range(2, 8):
-            qc = get_benchmark("ghz", 1, i)
+            qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
             path = source_path / f"qc{i}.qasm"
             with path.open("w", encoding="utf-8") as f:
                 dump(qc, f)
@@ -166,11 +165,11 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Train the ML model
         ml_predictor.train_random_forest_classifier(save_classifier=True)
-        qc = get_benchmark("ghz", 1, 3)
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
         predicted_dev = ml.predict_device_for_figure_of_merit(qc, figure_of_merit)
-        assert predicted_dev in mqt.bench.devices.get_available_devices()
+        assert predicted_dev in get_available_device_names()
 
 
 def test_remove_files(source_path: Path, target_path: Path) -> None:

@@ -10,28 +10,33 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
-from mqt.bench import get_benchmark
-from mqt.bench.devices import Device, get_device_by_name
+from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit, transpile
+
+if TYPE_CHECKING:
+    from qiskit.transpiler import Target
 
 from mqt.predictor import reward
 
 
 @pytest.fixture
-def device() -> Device:
-    """Return the IonQ Harmony device."""
-    return get_device_by_name("ionq_harmony")
+def device() -> Target:
+    """Return the ibm_falcon_27 device."""
+    return get_device("ibm_falcon_27")
 
 
 @pytest.fixture
-def compiled_qc(device: Device) -> QuantumCircuit:
+def compiled_qc(device: Target) -> QuantumCircuit:
     """Return a compiled quantum circuit."""
-    qc = get_benchmark("ghz", 1, 3)
-    return transpile(qc, basis_gates=device.basis_gates, coupling_map=device.coupling_map)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    return transpile(qc, target=device)
 
 
-def test_rewards_functions(compiled_qc: QuantumCircuit, device: Device) -> None:
+def test_rewards_functions(compiled_qc: QuantumCircuit, device: Target) -> None:
     """Test all reward function."""
     reward_expected_fidelity = reward.expected_fidelity(compiled_qc, device)
     assert 0 <= reward_expected_fidelity <= 1

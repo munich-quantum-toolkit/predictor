@@ -15,9 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import requests
 from bqskit import MachineModel
-from mqt.bench.utils import calc_supermarq_features
 from pytket.architecture import Architecture
 from pytket.circuit import Circuit, Node, Qubit
 from pytket.passes import (
@@ -60,14 +58,13 @@ from qiskit.transpiler.passes import (
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from sb3_contrib import MaskablePPO
-from tqdm import tqdm
 
 from mqt.predictor import reward, rl
+from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from mqt.bench.devices import Device
     from numpy.typing import NDArray
-    from qiskit.providers.models import BackendProperties
 
 
 import operator
@@ -80,7 +77,6 @@ from bqskit.ir import gates
 from qiskit import QuantumRegister
 from qiskit.passmanager import ConditionalController
 from qiskit.transpiler.preset_passmanagers import common
-from qiskit_ibm_runtime.fake_provider import FakeGuadalupeV2, FakeMontrealV2, FakeQuitoV2, FakeWashingtonV2
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -218,7 +214,7 @@ def get_actions_final_optimization() -> list[dict[str, Any]]:
         {
             "name": "VF2PostLayout",
             "transpile_pass": lambda device: VF2PostLayout(
-                target=get_ibm_backend_properties_by_device_name(device.name),
+                target=device,
             ),
             "origin": "qiskit",
         }
@@ -231,8 +227,8 @@ def get_actions_layout() -> list[dict[str, Any]]:
         {
             "name": "TrivialLayout",
             "transpile_pass": lambda device: [
-                TrivialLayout(coupling_map=CouplingMap(device.coupling_map)),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.coupling_map)),
+                TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
                 EnlargeWithAncilla(),
                 ApplyLayout(),
             ],
@@ -241,8 +237,8 @@ def get_actions_layout() -> list[dict[str, Any]]:
         {
             "name": "DenseLayout",
             "transpile_pass": lambda device: [
-                DenseLayout(coupling_map=CouplingMap(device.coupling_map)),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.coupling_map)),
+                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
                 EnlargeWithAncilla(),
                 ApplyLayout(),
             ],
@@ -252,12 +248,11 @@ def get_actions_layout() -> list[dict[str, Any]]:
             "name": "VF2Layout",
             "transpile_pass": lambda device: [
                 VF2Layout(
-                    coupling_map=CouplingMap(device.coupling_map),
-                    target=get_ibm_backend_properties_by_device_name(device.name),
+                    target=device,
                 ),
                 ConditionalController(
                     [
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.coupling_map)),
+                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
                         EnlargeWithAncilla(),
                         ApplyLayout(),
                     ],
@@ -275,14 +270,14 @@ def get_actions_routing() -> list[dict[str, Any]]:
     return [
         {
             "name": "BasicSwap",
-            "transpile_pass": lambda device: [BasicSwap(coupling_map=CouplingMap(device.coupling_map))],
+            "transpile_pass": lambda device: [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))],
             "origin": "qiskit",
         },
         {
             "name": "RoutingPass",
             "transpile_pass": lambda device: [
                 PreProcessTKETRoutingAfterQiskitLayout(),
-                RoutingPass(Architecture(device.coupling_map)),
+                RoutingPass(Architecture(list(device.build_coupling_map()))),
             ],
             "origin": "tket",
         },
@@ -295,7 +290,7 @@ def get_actions_mapping() -> list[dict[str, Any]]:
         {
             "name": "SabreMapping",
             "transpile_pass": lambda device: [
-                SabreLayout(coupling_map=CouplingMap(device.coupling_map), skip_routing=False),
+                SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False),
             ],
             "origin": "qiskit",
         },
@@ -306,7 +301,7 @@ def get_actions_mapping() -> list[dict[str, Any]]:
                 model=MachineModel(
                     num_qudits=device.num_qubits,
                     gate_set=get_bqskit_native_gates(device),
-                    coupling_graph=[(elem[0], elem[1]) for elem in device.coupling_map],
+                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
                 ),
                 with_mapping=True,
                 optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
@@ -325,7 +320,7 @@ def get_actions_synthesis() -> list[dict[str, Any]]:
         {
             "name": "BasisTranslator",
             "transpile_pass": lambda device: [
-                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.basis_gates)
+                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.instructions)
             ],
             "origin": "qiskit",
         },
@@ -443,35 +438,6 @@ def load_model(model_name: str) -> MaskablePPO:
     raise FileNotFoundError(error_msg)
 
 
-def handle_downloading_model(download_url: str, model_name: str) -> None:
-    """Downloads a trained model from the given URL and saves it to the trained model folder.
-
-    Arguments:
-        download_url: The URL from which the model is downloaded.
-        model_name: The name of the model to be downloaded.
-    """
-    logger.info("Start downloading model...")
-
-    r = requests.get(download_url)
-    total_length = int(r.headers.get("content-length"))  # type: ignore[arg-type]
-    fname = str(get_path_trained_model() / (model_name + ".zip"))
-
-    with (
-        Path(fname).open(mode="wb") as f,
-        tqdm(
-            desc=fname,
-            total=total_length,
-            unit="iB",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar,
-    ):
-        for data in r.iter_content(chunk_size=1024):
-            size = f.write(data)
-            bar.update(size)
-    logger.info(f"Download completed to {fname}. ")
-
-
 class PreProcessTKETRoutingAfterQiskitLayout:
     """Pre-processing step to route a circuit with TKET after a Qiskit Layout pass has been applied.
 
@@ -544,22 +510,19 @@ def get_bqskit_native_gates(device: Device) -> list[gates.Gate] | None:
     Returns:
         The native gates of the given provider.
     """
-    provider = device.name.split("_")[0]
-
     native_gatesets = {
-        "ibm": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.CNOTGate()],
-        "rigetti": [gates.RXGate(), gates.RZGate(), gates.CZGate()],
-        "ionq": [gates.RXXGate(), gates.RZGate(), gates.RYGate(), gates.RXGate()],
+        "ibm_heron": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.CZGate()],
+        "ibm_eagle": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.ECRGate()],
+        "ibm_falcon": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.CXGate()],
         "quantinuum": [gates.RZZGate(), gates.RZGate(), gates.RYGate(), gates.RXGate()],
         "iqm": [gates.U3Gate(), gates.CZGate()],
-        "oqc": [gates.RZGate(), gates.XGate(), gates.SXGate(), gates.ECRGate()],
     }
 
-    if provider not in native_gatesets:
-        logger.warning("No native gateset for provider " + provider + " found. No native gateset is used.")
-        return None
-
-    return native_gatesets[provider]
+    for key, value in native_gatesets.items():
+        if device.description.startswith(key):
+            return value
+    msg = f"No native gates found for device {device.description} in BQSKIT"
+    raise ValueError(msg)
 
 
 def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
@@ -622,28 +585,6 @@ def final_layout_bqskit_to_qiskit(
         _output_qubit_list=compiled_qc.qubits,
         _input_qubit_count=initial_qc.num_qubits,
     )
-
-
-def get_ibm_backend_properties_by_device_name(device_name: str) -> BackendProperties | None:
-    """Returns the IBM backend name for the given device name.
-
-    Arguments:
-        device_name: The name of the device for which the IBM backend name is returned.
-
-    Returns:
-        The IBM backend name for the given device name.
-    """
-    if "ibm" not in device_name:
-        return None
-    if device_name == "ibm_washington":
-        return FakeWashingtonV2().target
-    if device_name == "ibm_montreal":
-        return FakeMontrealV2().target
-    if device_name == "ibm_guadalupe":
-        return FakeGuadalupeV2().target
-    if device_name == "ibm_quito":
-        return FakeQuitoV2().target
-    return None
 
 
 def postprocess_vf2postlayout(

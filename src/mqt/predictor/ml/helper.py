@@ -15,9 +15,8 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mqt.bench.utils import calc_supermarq_features
-
 from mqt.predictor import ml, reward, rl
+from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     import numpy as np
@@ -39,7 +38,7 @@ def qcompile(
         Returns a tuple containing the compiled quantum circuit, the compilation information and the name of the device used for compilation. If compilation fails, False is returned.
     """
     predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
-    res = rl.qcompile(qc, figure_of_merit=figure_of_merit, device_name=predicted_device.name)
+    res = rl.qcompile(qc, figure_of_merit=figure_of_merit, device_name=predicted_device.description)
     return *res, predicted_device
 
 
