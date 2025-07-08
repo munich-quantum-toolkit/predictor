@@ -107,6 +107,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.num_qubits_uncompiled_circuit = 0
 
         self.has_parameterized_gates = False
+        self.rng = np.random.default_rng(10)
 
         spaces = {
             "num_qubits": Discrete(128),
@@ -194,7 +195,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
         else:
-            self.state, self.filename = rl.helper.get_state_sample(self.device.num_qubits)
+            self.state, self.filename = rl.helper.get_state_sample(self.device.num_qubits, self.rng)
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
@@ -252,7 +253,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         pm.append(
                             DoWhileController(
                                 action["transpile_pass"](
-                                    self.device.instructions,
+                                    self.device.operation_names,
                                     CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
                                 ),
                                 do_while=action["do_while"],

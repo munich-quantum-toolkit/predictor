@@ -64,6 +64,7 @@ from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from mqt.bench.devices import Device
+    from numpy.random import Generator
     from numpy.typing import NDArray
 
 
@@ -320,7 +321,7 @@ def get_actions_synthesis() -> list[dict[str, Any]]:
         {
             "name": "BasisTranslator",
             "transpile_pass": lambda device: [
-                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.instructions)
+                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
             ],
             "origin": "qiskit",
         },
@@ -344,11 +345,12 @@ def get_action_terminate() -> dict[str, Any]:
     return {"name": "terminate"}
 
 
-def get_state_sample(max_qubits: int | None = None) -> tuple[QuantumCircuit, str]:
+def get_state_sample(max_qubits: int, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
     Arguments:
         max_qubits: The maximum number of qubits the returned quantum circuit may have. If no limit is set, it defaults to None.
+        rng: A random number generator to select a random quantum circuit.
 
     Returns:
         A tuple containing the random quantum circuit and the path to the file from which it was read.
@@ -365,7 +367,6 @@ def get_state_sample(max_qubits: int | None = None) -> tuple[QuantumCircuit, str
 
     found_suitable_qc = False
     while not found_suitable_qc:
-        rng = np.random.default_rng(10)
         random_index = rng.integers(len(file_list))
         num_qubits = int(str(file_list[random_index]).split("_")[-1].split(".")[0])
         if max_qubits and num_qubits > max_qubits:
@@ -377,6 +378,7 @@ def get_state_sample(max_qubits: int | None = None) -> tuple[QuantumCircuit, str
     except Exception:
         raise RuntimeError("Could not read QuantumCircuit from: " + str(file_list[random_index])) from None
 
+    print("QC: ", str(file_list[random_index]))
     return qc, str(file_list[random_index])
 
 
