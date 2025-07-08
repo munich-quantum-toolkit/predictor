@@ -8,21 +8,22 @@
 
 [build-system]
 requires = [
-    "setuptools>=66.1",
-    "setuptools_scm>=8.1"
+  "hatchling>=1.27.0",
+  "hatch-vcs>=0.4.0"
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "hatchling.build"
 
 [project]
 name = "mqt.predictor"
-description = "MQT Predictor - A MQT tool for Determining Good Quantum Circuit Compilation Options"
+description = "MQT Predictor - A MQT Tool for Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing"
 readme = "README.md"
 authors = [
     { name = "Nils Quetschlich", email = "nils.quetschlich@tum.de" },
     { name = "Lukas Burgholzer", email = "lukas.burgholzer@tum.de"},
 ]
 keywords = ["MQT",  "quantum computing", "compilation", "machine learning", "prediction"]
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE.md"]
 requires-python = ">=3.10"
 dynamic = ["version"]
 
@@ -61,23 +62,33 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
 ]
 
-[project.optional-dependencies]
-test = ["pytest>=7.2"]
-coverage = ["mqt.predictor[test]", "pytest-cov>=4"]
-dev = ["mqt.predictor[coverage]"]
+[dependency-groups]
+test = [
+    "pytest>=8.3.5",
+    "pytest-console-scripts>=1.4.1",
+    "pytest-cov>=6.1.1",
+    "pytest-sugar>=1.0.0",
+    "pytest-xdist>=3.7.0",
+]
 docs = [
-    "furo>=2023.9.10",
-    "setuptools-scm>=8.1",
-    "sphinx_design>=0.6",
-    "sphinx-autoapi>=3",
-    "sphinx-copybutton>=0.5",
-    "sphinxcontrib-bibtex>=2.4.2",
-    "sphinxcontrib-svg2pdfconverter>=1.2",
-    "sphinxext-opengraph>=0.9",
-    "ipython",
-    "ipykernel",
-    "nbsphinx",
-    "sphinx-autodoc-typehints",
+    "furo>=2024.8.6",
+    "myst-nb>=1.2.0",
+    "setuptools-scm>=8.2",
+    "sphinx-design>=0.6.1",
+    "sphinx-autoapi>=3.6.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinxcontrib-bibtex>=2.6.3",
+    "sphinxcontrib-svg2pdfconverter>=1.3.0",
+    "sphinxext-opengraph>=0.10.0",
+    "qiskit[visualization]>=1.2.1",
+    "openqasm-pygments>=0.1.2",
+    "sphinx>=7.4.7",
+    "sphinx>=8.1.3; python_version >= '3.10'",
+    "sphinx>=8.2.3; python_version >= '3.11'",
+]
+dev = [
+  {include-group = "test"},
+  {include-group = "docs"},
 ]
 
 [project.urls]
@@ -86,13 +97,26 @@ Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
-[tool.setuptools_scm]
+[tool.hatch.build.targets.wheel]
+packages = ["src/mqt"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/mqt/predictor/_version.py"
 
 
 [tool.pytest.ini_options]
 minversion = "7.2"
-testpaths = ["tests"]
-addopts = ["-ra", "--strict-markers", "--strict-config", "--showlocals"]
+testpaths = ["tests/"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+    "--numprocesses=auto",  # Automatically use all available CPU cores for parallel testing
+]
 log_cli_level = "INFO"
 xfail_strict = true
 filterwarnings = [
@@ -131,9 +155,6 @@ filterwarnings = [
     'ignore:.*The class ``qiskit.providers.exceptions.BackendPropertyError`` is deprecated as of qiskit 1.4.*:DeprecationWarning:',
 ]
 
-[tool.check-wheel-contents]
-ignore = "W002"
-
 [tool.coverage]
 run.source = ["mqt.predictor"]
 report.exclude_also = [
@@ -142,11 +163,13 @@ report.exclude_also = [
     'raise AssertionError',
     'raise NotImplementedError',
 ]
+run.disable_warnings = [
+    "no-sysmon",
+]
 
 show_missing = true
 skip_empty = true
 precision = 1
-
 
 [tool.mypy]
 mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
@@ -170,12 +193,12 @@ implicit_reexport = true
 module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*"]
 ignore_missing_imports = true
 
-
 [tool.ruff]
 line-length = 120
 extend-include = ["*.ipynb"]
 preview = true
 unsafe-fixes = true
+
 [tool.ruff.lint]
 extend-select = [
     "A",           # flake8-builtins
