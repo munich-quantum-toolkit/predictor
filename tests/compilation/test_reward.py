@@ -42,5 +42,6 @@ def test_rewards_functions(compiled_qc: QuantumCircuit, device: Target) -> None:
     assert 0 <= reward_expected_fidelity <= 1
     reward_critical_depth = reward.crit_depth(compiled_qc)
     assert 0 <= reward_critical_depth <= 1
+    assert reward.esp_data_available(device)
     reward_estimated_success_probability = reward.estimated_success_probability(compiled_qc, device)
     assert 0 <= reward_estimated_success_probability <= 1

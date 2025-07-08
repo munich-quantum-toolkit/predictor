@@ -104,7 +104,7 @@ def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, sou
     predictor.train_random_forest_classifier(save_classifier=True)
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predicted_dev = ml.predict_device_for_figure_of_merit(qc)
-    assert predicted_dev in get_available_device_names()
+    assert predicted_dev.description in get_available_device_names()
 
     file = source_path / "qc1.qasm"
     with file.open("w", encoding="utf-8") as f:
@@ -113,7 +113,7 @@ def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, sou
     predicted_dev = ml.predict_device_for_figure_of_merit(
         file,
     )
-    assert predicted_dev in get_available_device_names()
+    assert predicted_dev.description in get_available_device_names()
 
     with pytest.raises(
         FileNotFoundError, match=re.escape("The ML model is not trained yet. Please train the model before using it.")
