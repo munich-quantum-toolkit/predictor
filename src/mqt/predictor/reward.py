@@ -104,7 +104,9 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 
     # collect gate and measurement durations for active qubits
     op_times, active_qubits = [], set()
-    for instruction, qargs, _cargs in qc.data:
+    for instr in qc.data:
+        instruction = instr.operation
+        qargs = instr.qubits
         gate_type = instruction.name
 
         if gate_type == "barrier" or gate_type == "id":
@@ -149,7 +151,9 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
     scheduled_circ = pm.run(qc)
 
     res = 1.0
-    for instruction, qargs, _cargs in scheduled_circ.data:
+    for instr in scheduled_circ.data:
+        instruction = instr.operation
+        qargs = instr.qubits
         gate_type = instruction.name
 
         if gate_type == "barrier" or gate_type == "id":
@@ -177,7 +181,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             res *= 1 - device[gate_type][first_qubit_idx,].error
         else:
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
-            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx]
+            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
 
     return float(np.round(res, precision).item())
 
