@@ -42,6 +42,7 @@ dependencies = [
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
     "torch<2.3; sys_platform == 'darwin' and 'x86_64' in platform_machine",  # Restrict torch for macOS x86 since it is not supported anymore since v2.3.0
+    "torch>=2.1; python_version >= '3.12'",
     "torch>=2.0",
     "typing-extensions>=4.1",  # for `assert_never`
 ]
