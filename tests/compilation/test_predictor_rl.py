@@ -50,7 +50,7 @@ def test_predictor_env_hellinger_error() -> None:
     ):
         rl.Predictor(figure_of_merit="estimated_hellinger_distance", device_name="ibm_montreal")
 
-@pytest.mark.xdist_group(name="dependent_tests")
+
 def test_qcompile_with_newly_trained_models() -> None:
     """Test the qcompile function with a newly trained model.
 

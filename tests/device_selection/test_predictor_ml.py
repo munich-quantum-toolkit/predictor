@@ -46,13 +46,14 @@ def target_path() -> Path:
     """Return the target path."""
     return Path("./test_compiled_circuits")
 
+
 def test_load_training_data_not_found(predictor: ml.Predictor) -> None:
     """Test the loading of the training data."""
     msg = "Training data not found. Please run the training script first as described in the documentation that can be found at https://mqt.readthedocs.io/projects/predictor/en/latest/Usage.html."
     with pytest.raises(FileNotFoundError, match=re.escape(msg)):
         predictor.load_training_data()
 
-@pytest.mark.xdist_group(name="dependent_tests")
+
 def test_generate_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the generation of the training data."""
     if not source_path.exists():
@@ -77,7 +78,7 @@ def test_generate_training_data(predictor: ml.Predictor, source_path: Path, targ
             timeout=600, target_path=target_path, source_path=source_path, num_workers=1
         )
 
-@pytest.mark.xdist_group(name="dependent_tests")
+
 def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the saving of the training data."""
     training_data, names_list, scores_list = predictor.generate_trainingdata_from_qasm_files(
@@ -97,7 +98,7 @@ def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_p
         path = ml.helper.get_path_training_data() / "training_data_aggregated" / file
         assert path.exists()
 
-@pytest.mark.xdist_group(name="dependent_tests")
+
 def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, source_path: Path) -> None:
     """Test the training of the random forest classifier."""
     predictor.train_random_forest_classifier(save_classifier=True)
@@ -119,7 +120,7 @@ def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, sou
     ):
         ml.predict_device_for_figure_of_merit(qc=qc, figure_of_merit="false_input")  # type: ignore[arg-type]
 
-@pytest.mark.xdist_group(name="dependent_tests")
+
 def test_remove_files(source_path: Path, target_path: Path) -> None:
     """Remove files created during testing."""
     if source_path.exists():

@@ -70,7 +70,7 @@ def test_hellinger_distance_error() -> None:
     with pytest.raises(AssertionError, match="p is not a probability distribution"):
         hellinger_distance(p=invalid, q=valid)
 
-@pytest.mark.xdist_group(name="dependent_tests_esp")
+
 def test_train_random_forest_regressor_and_predict() -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
@@ -100,7 +100,6 @@ def test_train_random_forest_regressor_and_predict() -> None:
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
 
-@pytest.mark.xdist_group(name="dependent_tests_esp")
 def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
@@ -117,7 +116,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device_name)
 
         rl_predictor.train_model(
-            timesteps=5,
+            timesteps=100,
             test=True,
         )
 
@@ -140,11 +139,11 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         if sys.platform == "win32":
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.generate_compiled_circuits(
-                    timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                    timeout=10, target_path=target_path, source_path=source_path, num_workers=1
                 )
         else:
             ml_predictor.generate_compiled_circuits(
-                timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                timeout=10, target_path=target_path, source_path=source_path, num_workers=1
             )
 
         # Generate training data from the compiled circuits
@@ -174,7 +173,6 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         assert predicted_dev in mqt.bench.devices.get_available_devices()
 
 
-@pytest.mark.xdist_group(name="dependent_tests_esp")
 def test_remove_files(source_path: Path, target_path: Path) -> None:
     """Remove files created during testing."""
     if source_path.exists():

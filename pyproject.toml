@@ -113,7 +113,6 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--showlocals",
-    "--numprocesses=auto",  # Automatically use all available CPU cores for parallel testing
 ]
 log_cli_level = "INFO"
 xfail_strict = true
