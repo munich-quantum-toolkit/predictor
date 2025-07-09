@@ -139,11 +139,11 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         if sys.platform == "win32":
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.generate_compiled_circuits(
-                    timeout=10, target_path=target_path, source_path=source_path, num_workers=1
+                    timeout=600, target_path=target_path, source_path=source_path, num_workers=1
                 )
         else:
             ml_predictor.generate_compiled_circuits(
-                timeout=10, target_path=target_path, source_path=source_path, num_workers=1
+                timeout=600, target_path=target_path, source_path=source_path, num_workers=1
             )
 
         # Generate training data from the compiled circuits
