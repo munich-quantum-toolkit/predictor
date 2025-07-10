@@ -147,7 +147,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Generate training data from the compiled circuits
         training_data, names_list, scores_list = ml_predictor.generate_trainingdata_from_qasm_files(
-            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path
+            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
         assert len(training_data) > 0
         assert len(names_list) > 0

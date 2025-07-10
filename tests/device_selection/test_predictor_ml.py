@@ -82,7 +82,7 @@ def test_generate_training_data(predictor: ml.Predictor, source_path: Path, targ
 def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the saving of the training data."""
     training_data, names_list, scores_list = predictor.generate_trainingdata_from_qasm_files(
-        path_uncompiled_circuits=source_path, path_compiled_circuits=target_path
+        path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
     )
     assert len(training_data) > 0
     assert len(names_list) > 0

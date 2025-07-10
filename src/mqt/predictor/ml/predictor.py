@@ -167,12 +167,14 @@ class Predictor:
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
+        num_workers: int = -1,
     ) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
         """Handles to create training data from all generated training samples.
 
         Arguments:
             path_uncompiled_circuits: The path to the directory containing the uncompiled circuits. Defaults to None.
             path_compiled_circuits: The path to the directory containing the compiled circuits. Defaults to None.
+            num_workers: The number of workers to be used for parallelization. Defaults to -1.
 
         Returns:
             The training data, consisting of training_data, name_list, scores_list
@@ -189,7 +191,7 @@ class Predictor:
         name_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=-1, verbose=100)(
+        results = Parallel(n_jobs=num_workers, verbose=100)(
             delayed(self.generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
