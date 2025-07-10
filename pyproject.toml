@@ -29,20 +29,21 @@ dynamic = ["version"]
 
 dependencies = [
     "mqt.bench>=2.0.0",
-    "qiskit>=1.0,<2.0,!=1.3.2", # explicitly upper cap Qiskit 2.0 as it is not supported yet. 1.3.2 causes a Qiskit error when using the CommutativeInverseCancellation pass, see https://github.com/Qiskit/qiskit/issues/13742
+    "qiskit!=1.3.2, <2", # explicitly upper cap Qiskit 2.0 as it is not supported yet. 1.3.2 causes a Qiskit error when using the CommutativeInverseCancellation pass, see https://github.com/Qiskit/qiskit/issues/13742
     # lowest version that supports the used pytket AutoRebase pass instead of auto_rebase
-    "pytket>=2.6.0",
+    "pytket>=1.29.0",
     "pytket-qiskit>=0.66.0",
     "sb3_contrib>=2.0.0",
     "tqdm>=4.66.0",
     "scikit-learn>=1.5.1",
     "tensorboard>=2.17.0",
     "bqskit>=1.2.0",
+    "numpy>=2.1; python_version >= '3.13'",
     "numpy>=1.26; python_version >= '3.12'",
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
-    "numpy>=1.22,<2; sys_platform == 'darwin' and 'x86_64' in platform_machine",  # Restrict numpy v2 for macOS x86 since it is not supported anymore since torch v2.3.0
-    "torch>=2.2.2,<2.3.0; sys_platform == 'darwin' and 'x86_64' in platform_machine",  # Restrict torch v2.3.0 for macOS x86 since it is not supported anymore.
+    "numpy>=1.22,<2; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict numpy v2 for macOS x86 since it is not supported anymore since torch v2.3.0
+    "torch>=2.2.2,<2.3.0; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict torch v2.3.0 for macOS x86 since it is not supported anymore.
     "typing-extensions>=4.1",  # for `assert_never`
 ]
 
