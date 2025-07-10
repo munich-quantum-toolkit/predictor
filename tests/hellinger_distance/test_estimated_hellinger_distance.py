@@ -73,8 +73,8 @@ def test_hellinger_distance_error() -> None:
 def test_train_random_forest_regressor_and_predict() -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
-    device = get_device("iqm_crystal_20")
-    n_circuits = 16
+    device = get_device("iqm_crystal_5")
+    n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
     for i in range(1, device.num_qubits):
@@ -102,7 +102,7 @@ def test_train_random_forest_regressor_and_predict() -> None:
 def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
-    device_name = "iqm_crystal_20"
+    device_name = "iqm_crystal_5"
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -115,7 +115,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device_name)
 
         rl_predictor.train_model(
-            timesteps=5,
+            timesteps=500,
             test=True,
         )
 
@@ -138,11 +138,11 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         if sys.platform == "win32":
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.generate_compiled_circuits(
-                    timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                    timeout=200, target_path=target_path, source_path=source_path, num_workers=1
                 )
         else:
             ml_predictor.generate_compiled_circuits(
-                timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                timeout=200, target_path=target_path, source_path=source_path, num_workers=1
             )
 
         # Generate training data from the compiled circuits
