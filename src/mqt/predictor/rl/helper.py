@@ -203,6 +203,7 @@ def get_actions_opt() -> list[dict[str, Any]]:
                 synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
                 max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
                 seed=10,
+                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
             ),
             "origin": "bqskit",
         },
@@ -309,6 +310,7 @@ def get_actions_mapping() -> list[dict[str, Any]]:
                 synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
                 max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
                 seed=10,
+                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
             ),
             "origin": "bqskit",
         },
@@ -334,6 +336,7 @@ def get_actions_synthesis() -> list[dict[str, Any]]:
                 synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
                 max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
                 seed=10,
+                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
             ),
             "origin": "bqskit",
         },
@@ -378,7 +381,6 @@ def get_state_sample(max_qubits: int, rng: Generator) -> tuple[QuantumCircuit, s
     except Exception:
         raise RuntimeError("Could not read QuantumCircuit from: " + str(file_list[random_index])) from None
 
-    print("QC: ", str(file_list[random_index]))
     return qc, str(file_list[random_index])
 
 
