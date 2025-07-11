@@ -65,7 +65,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.device = device
 
         # check for uni-directional coupling map
-        coupling_set = set(tuple(pair) for pair in self.device.build_coupling_map())
+        coupling_set = {tuple(pair) for pair in self.device.build_coupling_map()}
         if any((b, a) not in coupling_set for (a, b) in coupling_set):
             msg = f"The connectivity of the device '{self.device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
             warnings.warn(msg, UserWarning, stacklevel=2)

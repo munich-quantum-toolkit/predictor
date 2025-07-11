@@ -15,10 +15,11 @@ from pathlib import Path
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
-from qiskit.circuit.library import CXGate, U3Gate
+from mqt.bench.targets import get_device
+from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
-from mqt.bench.targets import get_device
+
 from mqt.predictor import rl
 
 
@@ -95,10 +96,9 @@ def test_qcompile_with_false_input() -> None:
 def test_warning_for_unidirectional_device() -> None:
     """Test the warning for a unidirectional device."""
     target = Target()
-    for qubit in [0, 1]:
-        target.add_instruction(U3Gate(), {(qubit,): InstructionProperties()})
     target.add_instruction(CXGate(), {(0, 1): InstructionProperties()})
+    target.description = "uni-directional device"
 
-    msg = "The connectivity of the device 'oqc_lucy' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
+    msg = "The connectivity of the device 'uni-directional device' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
     with pytest.warns(UserWarning, match=re.escape(msg)):
         rl.Predictor(figure_of_merit="expected_fidelity", device=target)
