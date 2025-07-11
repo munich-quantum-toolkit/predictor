@@ -32,7 +32,7 @@ def test_predictor_initialization_with_all_devices() -> None:
 @pytest.fixture
 def predictor() -> ml.Predictor:
     """Return the predictor."""
-    return ml.Predictor(figure_of_merit="expected_fidelity", devices=[get_device("ibm_falcon_127")])
+    return ml.Predictor(figure_of_merit="expected_fidelity", devices=[get_device("ibm_falcon_27")])
 
 
 @pytest.fixture

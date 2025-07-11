@@ -69,7 +69,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         with pytest.raises(
             FileNotFoundError,
             match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+                "The RL model 'model_expected_fidelity_ibm_falcon_27' is not trained yet. Please train the model before using it."
             ),
         ):
             rl.qcompile(qc, figure_of_merit=figure_of_merit, device=device)
