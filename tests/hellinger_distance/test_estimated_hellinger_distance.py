@@ -197,7 +197,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml.Predictor(figure_of_merit, devices=[device.description])
+        ml_predictor = ml.Predictor(figure_of_merit, devices=[device])
 
         # Prepare uncompiled circuits
         if not source_path.exists():

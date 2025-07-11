@@ -67,7 +67,7 @@ class Predictor:
         self.clf = None
         self.figure_of_merit = figure_of_merit
         if devices is None:
-            self.devices = get_available_device_names()
+            self.devices = [get_device(device) for device in get_available_device_names()]
         else:
             self.devices = devices
         self.devices.sort(
