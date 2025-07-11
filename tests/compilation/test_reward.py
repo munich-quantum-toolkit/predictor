@@ -20,7 +20,12 @@ from qiskit import QuantumCircuit, transpile
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
 
+
+from qiskit.circuit.library import CXGate, Measure, XGate
+from qiskit.transpiler import InstructionProperties, Target
+
 from mqt.predictor import reward
+from mqt.predictor.reward import esp_data_available
 
 
 @pytest.fixture
@@ -45,3 +50,73 @@ def test_rewards_functions(compiled_qc: QuantumCircuit, device: Target) -> None:
     assert reward.esp_data_available(device)
     reward_estimated_success_probability = reward.estimated_success_probability(compiled_qc, device)
     assert 0 <= reward_estimated_success_probability <= 1
+
+
+def make_target(
+    *,
+    t1: float = 1e-6,
+    t2: float = 1e-6,
+    meas_err: float = 0.01,
+    meas_dur: float = 1e-6,
+    x_err: float = 0.01,
+    x_dur: float = 1e-6,
+    cx_err: float = 0.01,
+    cx_dur: float = 1e-6,
+    no_qubit_props: bool = False,
+) -> Target:
+    """Create a Qiskit Target object with customizable error/duration parameters."""
+    t = Target(num_qubits=2)
+
+    t.add_instruction(
+        Measure(),
+        {
+            (0,): InstructionProperties(error=meas_err, duration=meas_dur),
+            (1,): InstructionProperties(error=meas_err, duration=meas_dur),
+        },
+    )
+    t.add_instruction(
+        XGate(),
+        {
+            (0,): InstructionProperties(error=x_err, duration=x_dur),
+            (1,): InstructionProperties(error=x_err, duration=x_dur),
+        },
+    )
+    t.add_instruction(
+        CXGate(),
+        {
+            (0, 1): InstructionProperties(error=cx_err, duration=cx_dur),
+            (1, 0): InstructionProperties(error=cx_err, duration=cx_dur),
+        },
+    )
+
+    if no_qubit_props:
+        t.qubit_properties = None
+    else:
+        t.qubit_properties = [
+            type("QubitProps", (), {"t1": t1, "t2": t2}),
+            type("QubitProps", (), {"t1": t1, "t2": t2}),
+        ]
+    return t
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"t1": -1.0},
+        {"t2": -1.0},
+        {"meas_err": -0.1},
+        {"meas_err": 1.1},
+        {"meas_dur": -1.0},
+        {"x_err": -0.1},
+        {"x_err": 1.1},
+        {"x_dur": -1.0},
+        {"cx_err": -0.1},
+        {"cx_err": 1.1},
+        {"cx_dur": -1.0},
+        {"no_qubit_props": True},
+    ],
+)
+def test_esp_data_available_invalid_kwargs(kwargs: dict[str, float | bool]) -> None:
+    """Test that `esp_data_available` returns False for invalid device configurations."""
+    target = make_target(**kwargs)
+    assert not esp_data_available(target)
