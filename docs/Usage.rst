@@ -58,13 +58,18 @@ the following command based on the training data in the form of quantum circuits
 .. code-block:: python
 
     import mqt.predictor
+    from mqt.bench.targets import get_target
 
+    device = get_target(
+        "ibm_falcon_27"
+    )  # or any other device given as a Qiskit Target object
     rl_pred = mqt.predictor.rl.Predictor(
-        figure_of_merit="expected_fidelity", device_name="ibm_washington"
+        device=device,
+        figure_of_merit="expected_fidelity",
     )
     rl_pred.train_model(timesteps=100000, model_name="sample_model_rl")
 
-This will train a reinforcement learning model for the ``ibm_washington`` device with the expected fidelity as figure of merit.
+This will train a reinforcement learning model for the ``ibm_falcon_27`` device with the expected fidelity as figure of merit.
 Additionally to the expected fidelity, also critical depth is provided as another figure of merit.
 Further figures of merit can be added in `mqt.predictor.reward.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/reward.py>`_.
 
@@ -75,7 +80,10 @@ This is done by first creating the necessary training data (based on the trainin
 
 .. code-block:: python
 
-    ml_pred = mqt.predictor.ml.Predictor(figure_of_merit="expected_fidelity")
+    device = get_device("ibm_falcon_27")
+    ml_pred = mqt.predictor.ml.Predictor(
+        devices=[device], figure_of_merit="expected_fidelity"
+    )
     ml_pred.generate_compiled_circuits(timeout=600)  # timeout in seconds
     training_data, name_list, scores_list = ml_pred.generate_trainingdata_from_qasm_files()
     ml_pred.save_training_data(
@@ -85,22 +93,22 @@ This is done by first creating the necessary training data (based on the trainin
     )
 
 This will compile all provided uncompiled training circuits for all available devices and figures of merit.
-However, only devices with a bidirectional connectivity are supported.
-To this end, the following the devices currently supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are supported:
-
-- ibm_washington
-- ibm_montreal
-- ionq_harmony
-- ionq_aria1
-- rigetti_aspen_m3
-- quantinuum_h2
-- iqm_adonis
-- iqm_apollo
-
-Furthermore, a selection of the devices could be used, such as ``devices=["ibm_montreal", "ibm_washington", "ionq_aria1"]``.
+Furthermore, a selection of the devices could be used, such as ``devices=[get_device("ibm_falcon_27"), get_device("ibm_eagle_127"), get_device("quantinuum_h2_56")]``.
 Afterwards, the training data is generated individually for a figure of merit.
-This training data can then be saved and used to train the supervised machine learning model:
 
+
+The devices currently supported by `MQT Bench <https://github.com/cda-tum/mqt-bench>`_ can by accessed via:
+
+.. code-block:: python
+
+    from mqt.bench.targets import get_device, get_available_device_names
+
+    for num, device_name in enumerate(get_available_device_names()):
+        print(f"{num+1}: {device_name} with {get_device(device_name).num_qubits} qubits")
+
+
+
+This training data can then be saved and used to train the supervised machine learning model:
 .. code-block:: python
 
     ml_pred.train_random_forest_classifier()
@@ -112,9 +120,9 @@ the circuit for the predicted device using reinforcement learning by running:
 .. code-block:: python
 
     from mqt.predictor import qcompile
-    from mqt.bench import get_benchmark
+    from mqt.bench import get_benchmark, BenchmarkLevel
 
-    qc_uncompiled = get_benchmark(benchmark_name="ghz", level="alg", circuit_size=5)
+    qc_uncompiled = get_benchmark(benchmark="ghz", level=BenchmarkLevel.ALG, circuit_size=5)
     compiled_qc, compilation_information, device = qcompile(
         uncompiled_qc, figure_of_merit="expected_fidelity"
     )
