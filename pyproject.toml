@@ -20,6 +20,7 @@ readme = "README.md"
 authors = [
     { name = "Nils Quetschlich", email = "nils.quetschlich@tum.de" },
     { name = "Lukas Burgholzer", email = "lukas.burgholzer@tum.de"},
+    { name = "Patrick Hopf", email = "patrick.hopf@tum.de"},
 ]
 keywords = ["MQT",  "quantum computing", "compilation", "machine learning", "prediction"]
 license = "MIT"
