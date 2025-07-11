@@ -51,7 +51,7 @@ class Predictor:
     def __init__(
         self,
         figure_of_merit: reward.figure_of_merit = "expected_fidelity",
-        devices: list[str] | None = None,
+        devices: list[Target] | None = None,
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
@@ -69,9 +69,9 @@ class Predictor:
         if devices is None:
             self.devices = get_available_device_names()
         else:
-            self.devices = [get_device(device) for device in devices]
+            self.devices = devices
         self.devices.sort(
-            key=lambda x: x
+            key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
     def set_classifier(self, clf: RandomForestClassifier) -> None:
@@ -158,9 +158,7 @@ class Predictor:
                 zip_ref.extractall(source_path)
 
         Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self.compile_all_circuits_devicewise)(
-                device, timeout, source_path, target_path, logger.level
-            )
+            delayed(self.compile_all_circuits_devicewise)(device, timeout, source_path, target_path, logger.level)
             for device in self.devices
         )
 
