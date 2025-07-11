@@ -116,7 +116,7 @@ def make_target(
         {"no_qubit_props": True},
     ],
 )
-def test_esp_data_available_invalid_kwargs(kwargs: dict[str, float | bool]) -> None:
+def test_esp_data_available_invalid_target(kwargs: dict[str, float | bool]) -> None:
     """Test that `esp_data_available` returns False for invalid device configurations."""
     target = make_target(**kwargs)
     assert not esp_data_available(target)
