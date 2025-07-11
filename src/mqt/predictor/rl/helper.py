@@ -77,6 +77,7 @@ from bqskit import compile as bqskit_compile
 from bqskit.ir import gates
 from qiskit import QuantumRegister
 from qiskit.passmanager import ConditionalController
+from qiskit.transpiler import Target
 from qiskit.transpiler.preset_passmanagers import common
 
 logger = logging.getLogger("mqt-predictor")
@@ -84,16 +85,16 @@ logger = logging.getLogger("mqt-predictor")
 
 def qcompile(
     qc: QuantumCircuit | str,
+    device: Target | None,
     figure_of_merit: reward.figure_of_merit | None = "expected_fidelity",
-    device_name: str | None = "ibm_washington",
     predictor_singleton: rl.Predictor | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
     Arguments:
         qc: The quantum circuit to be compiled. If a string is given, it is assumed to be a path to a qasm file.
+        device: The device to compile to.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
-        device_name: The name of the device to compile to. Defaults to "ibm_washington".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
 
     Returns:
@@ -103,10 +104,10 @@ def qcompile(
         if figure_of_merit is None:
             msg = "figure_of_merit must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        if device_name is None:
-            msg = "device_name must not be None if predictor_singleton is None."
+        if device is None:
+            msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device_name)
+        predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
     else:
         predictor = predictor_singleton
 

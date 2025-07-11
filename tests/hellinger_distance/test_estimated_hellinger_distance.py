@@ -189,7 +189,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device.description)
+        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
 
         rl_predictor.train_model(
             timesteps=5,

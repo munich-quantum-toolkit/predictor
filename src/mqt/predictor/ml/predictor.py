@@ -80,7 +80,7 @@ class Predictor:
 
     def compile_all_circuits_devicewise(
         self,
-        device_name: str,
+        device: Target,
         timeout: int,
         source_path: Path | None = None,
         target_path: Path | None = None,
@@ -89,7 +89,7 @@ class Predictor:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
         Arguments:
-            device_name: The name of the device to be used for compilation.
+            device: The device to be used for compilation.
             timeout: The timeout in seconds for the compilation of a single circuit.
             source_path: The path to the directory containing the circuits to be compiled. Defaults to None.
             target_path: The path to the directory where the compiled circuits should be saved. Defaults to None.
@@ -97,11 +97,10 @@ class Predictor:
         """
         logger.setLevel(logger_level)
 
-        logger.info("Processing: " + device_name + " for " + self.figure_of_merit)
-        rl_pred = rl.Predictor(figure_of_merit=self.figure_of_merit, device_name=device_name)
+        logger.info("Processing: " + device.description + " for " + self.figure_of_merit)
+        rl_pred = rl.Predictor(figure_of_merit=self.figure_of_merit, device=device)
 
-        dev = get_device(device_name)
-        dev_max_qubits = dev.num_qubits
+        dev_max_qubits = device.num_qubits
 
         if source_path is None:
             source_path = ml.helper.get_path_training_circuits()
@@ -116,18 +115,20 @@ class Predictor:
             if qc.num_qubits > dev_max_qubits:
                 continue
 
-            target_filename = Path(filename).stem + "_" + self.figure_of_merit + "-" + dev.description
+            target_filename = Path(filename).stem + "_" + self.figure_of_merit + "-" + device.description
             if (target_path / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = utils.timeout_watcher(rl.qcompile, [qc, self.figure_of_merit, device_name, rl_pred], timeout)
+                res = utils.timeout_watcher(
+                    rl.qcompile, [qc, self.figure_of_merit, device.description, rl_pred], timeout
+                )
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(target_path / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
                         dump(compiled_qc, f)
 
             except Exception as e:
-                print(e, filename, device_name)
+                print(e, filename, device.description)
                 raise RuntimeError("Error during compilation: " + str(e)) from e
 
     def generate_compiled_circuits(
@@ -158,7 +159,7 @@ class Predictor:
 
         Parallel(n_jobs=num_workers, verbose=100)(
             delayed(self.compile_all_circuits_devicewise)(
-                device.description, timeout, source_path, target_path, logger.level
+                device, timeout, source_path, target_path, logger.level
             )
             for device in self.devices
         )

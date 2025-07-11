@@ -22,6 +22,7 @@ from mqt.predictor import reward, rl
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
+    from qiskit.transpiler import Target
 
 logger = logging.getLogger("mqt-predictor")
 PATH_LENGTH = 260
@@ -31,13 +32,13 @@ class Predictor:
     """The Predictor class is used to train a reinforcement learning model for a given figure of merit and device such that it acts as a compiler."""
 
     def __init__(
-        self, figure_of_merit: reward.figure_of_merit, device_name: str, logger_level: int = logging.INFO
+        self, figure_of_merit: reward.figure_of_merit, device: Target, logger_level: int = logging.INFO
     ) -> None:
         """Initializes the Predictor object."""
         logger.setLevel(logger_level)
 
-        self.env = rl.PredictorEnv(reward_function=figure_of_merit, device_name=device_name)
-        self.device_name = device_name
+        self.env = rl.PredictorEnv(reward_function=figure_of_merit, device=device)
+        self.device_name = device.description
         self.figure_of_merit = figure_of_merit
 
     def compile_as_predicted(

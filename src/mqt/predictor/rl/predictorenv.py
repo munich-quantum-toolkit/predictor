@@ -22,17 +22,18 @@ else:
 if TYPE_CHECKING:
     from pathlib import Path
 
+import warnings
+
 import numpy as np
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
-from mqt.bench.targets import get_device
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
@@ -46,7 +47,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
     """Predictor environment for reinforcement learning."""
 
     def __init__(
-        self, reward_function: reward.figure_of_merit = "expected_fidelity", device_name: str = "ibm_washington"
+        self,
+        device: Target,
+        reward_function: reward.figure_of_merit = "expected_fidelity",
     ) -> None:
         """Initializes the PredictorEnv object."""
         logger.info("Init env: " + reward_function)
@@ -59,7 +62,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
         self.used_actions: list[str] = []
-        self.device = get_device(device_name)
+        self.device = device
+
+        # check for uni-directional coupling map
+        coupling_set = set(tuple(pair) for pair in self.device.build_coupling_map())
+        if any((b, a) not in coupling_set for (a, b) in coupling_set):
+            msg = f"The connectivity of the device '{self.device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
+            warnings.warn(msg, UserWarning, stacklevel=2)
 
         index = 0
 
@@ -92,7 +101,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.action_terminate_index = index
 
         if reward_function == "estimated_success_probability" and not reward.esp_data_available(self.device):
-            msg = f"Missing calibration data for ESP calculation on {device_name}."
+            msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
         if reward_function == "estimated_hellinger_distance":
             hellinger_model_path = get_hellinger_model_path(self.device)
