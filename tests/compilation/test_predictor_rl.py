@@ -53,7 +53,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
     figure_of_merit = "expected_fidelity"
-    device = "ibm_eagle_127"
+    device = "ibm_falcon_127"
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device)
 
@@ -63,7 +63,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         with pytest.raises(
             FileNotFoundError,
             match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_eagle_127' is not trained yet. Please train the model before using it."
+                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
             ),
         ):
             rl.qcompile(qc, figure_of_merit=figure_of_merit, device_name=device)
