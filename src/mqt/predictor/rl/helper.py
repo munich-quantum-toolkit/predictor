@@ -515,19 +515,38 @@ def get_bqskit_native_gates(device: Device) -> list[gates.Gate] | None:
     Returns:
         The native gates of the given provider.
     """
-    native_gatesets = {
-        "ibm_heron": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.CZGate()],
-        "ibm_eagle": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.ECRGate()],
-        "ibm_falcon": [gates.RZGate(), gates.SXGate(), gates.XGate(), gates.CXGate()],
-        "quantinuum": [gates.RZZGate(), gates.RZGate(), gates.RYGate(), gates.RXGate()],
-        "iqm": [gates.U3Gate(), gates.CZGate()],
+    gate_map = {
+        "rz": gates.RZGate(),
+        "rx": gates.RXGate(),
+        "ry": gates.RYGate(),
+        "sx": gates.SXGate(),
+        "x": gates.XGate(),
+        "cz": gates.CZGate(),
+        "cx": gates.CXGate(),
+        "ecr": gates.ECRGate(),
+        "rzz": gates.RZZGate(),
+        "u3": gates.U3Gate(),
+        "id": gates.IdentityGate(),
+        "reset": gates.Reset(),
+        "zz": gates.ZZGate(),
+        "iswap": gates.ISwapGate(),
     }
 
-    for key, value in native_gatesets.items():
-        if device.description.startswith(key):
-            return value
-    msg = f"No native gates found for device {device.description} in BQSKIT"
-    raise ValueError(msg)
+    native_gates = []
+
+    for instr in device.operation_names:
+        name = instr
+
+        if name in ["measure", "delay"]:
+            continue
+
+        if name not in gate_map:
+            msg = f"The '{name}' gate of device '{device.description}' is not supported in BQSKIT."
+            raise ValueError(msg)
+
+        native_gates.append(gate_map[name])
+
+    return native_gates
 
 
 def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:

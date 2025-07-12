@@ -69,10 +69,8 @@ def test_bqskit_synthesis_action(device: Target) -> None:
 
     transpile_pass = action_bqskit_synthesis_action["transpile_pass"](device)
     bqskit_qc = qiskit_to_bqskit(qc)
-    if "rigetti" in device.description or "ionq" in device.description:
-        with pytest.raises(
-            ValueError, match=re.escape(f"No native gates found for device {device.description} in BQSKIT")
-        ):
+    if "rigetti" in device.description or "ionq" in device.description or "iqm" in device.description:
+        with pytest.raises(ValueError, match=re.escape("not supported in BQSKIT")):
             bqskit_to_qiskit(transpile_pass(bqskit_qc))
         return
     native_gates_qc = bqskit_to_qiskit(transpile_pass(bqskit_qc))
@@ -80,9 +78,7 @@ def test_bqskit_synthesis_action(device: Target) -> None:
     check_nat_gates = GatesInBasis(target=device)
     check_nat_gates(native_gates_qc)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-    # IQM devices have a native R gate that is approximated using the U3 gate, but this equivalence is not recognized
-    # by the currently implemented check whether the synthesis was successful.
-    assert only_nat_gates or "iqm" in device.description
+    assert only_nat_gates
 
 
 def test_bqskit_mapping_action_swaps_necessary() -> None:
