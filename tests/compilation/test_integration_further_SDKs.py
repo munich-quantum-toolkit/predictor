@@ -51,7 +51,6 @@ def test_bqskit_o2_action() -> None:
 @pytest.mark.parametrize("device", [get_device(name) for name in get_available_device_names()])
 def test_bqskit_synthesis_action(device: Target) -> None:
     """Test the BQSKitSynthesis action for all devices."""
-    print(device.description)
     action_bqskit_synthesis_action = None
     for action in helper.get_actions_synthesis():
         if action["name"] == "BQSKitSynthesis":
