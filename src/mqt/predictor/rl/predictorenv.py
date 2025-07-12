@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import sys
-import warnings
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
@@ -23,17 +22,18 @@ else:
 if TYPE_CHECKING:
     from pathlib import Path
 
+import warnings
+
 import numpy as np
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
-from mqt.bench.devices import get_device_by_name
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
@@ -47,7 +47,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
     """Predictor environment for reinforcement learning."""
 
     def __init__(
-        self, reward_function: reward.figure_of_merit = "expected_fidelity", device_name: str = "ibm_washington"
+        self,
+        device: Target,
+        reward_function: reward.figure_of_merit = "expected_fidelity",
     ) -> None:
         """Initializes the PredictorEnv object."""
         logger.info("Init env: " + reward_function)
@@ -60,12 +62,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
         self.used_actions: list[str] = []
-        self.device = get_device_by_name(device_name)
+        self.device = device
+
         # check for uni-directional coupling map
-        for a, b in self.device.coupling_map:
-            if [b, a] not in self.device.coupling_map:
-                msg = f"The connectivity of the device '{device_name}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
-                warnings.warn(msg, UserWarning, stacklevel=2)
+        coupling_set = {tuple(pair) for pair in self.device.build_coupling_map()}
+        if any((b, a) not in coupling_set for (a, b) in coupling_set):
+            msg = f"The connectivity of the device '{self.device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
+            warnings.warn(msg, UserWarning, stacklevel=2)
 
         index = 0
 
@@ -98,12 +101,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.action_terminate_index = index
 
         if reward_function == "estimated_success_probability" and not reward.esp_data_available(self.device):
-            msg = f"Missing calibration data for ESP calculation on {device_name}."
+            msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
         if reward_function == "estimated_hellinger_distance":
             hellinger_model_path = get_hellinger_model_path(self.device)
             if not hellinger_model_path.is_file():
-                msg = f"Missing trained model for Hellinger distance estimates on {self.device.name}."
+                msg = f"Missing trained model for Hellinger distance estimates on {self.device.description}."
                 raise ValueError(msg)
             self.hellinger_model = load(hellinger_model_path)
         self.reward_function = reward_function
@@ -113,6 +116,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.num_qubits_uncompiled_circuit = 0
 
         self.has_parameterized_gates = False
+        self.rng = np.random.default_rng(10)
 
         spaces = {
             "num_qubits": Discrete(128),
@@ -200,7 +204,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
         else:
-            self.state, self.filename = rl.helper.get_state_sample(self.device.num_qubits)
+            self.state, self.filename = rl.helper.get_state_sample(self.device.num_qubits, self.rng)
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
@@ -234,7 +238,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             ]
 
         # only allow VF2PostLayout if "ibm" is in the device name
-        if "ibm" not in self.device.name:
+        if "ibm" not in self.device.description:
             action_mask = [
                 action_mask[i] and self.action_set[i].get("name") != "VF2PostLayout" for i in range(len(action_mask))
             ]
@@ -258,8 +262,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         pm.append(
                             DoWhileController(
                                 action["transpile_pass"](
-                                    self.device.basis_gates,
-                                    CouplingMap(self.device.coupling_map) if self.layout is not None else None,
+                                    self.device.operation_names,
+                                    CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
                                 ),
                                 do_while=action["do_while"],
                             ),
@@ -362,7 +366,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
-        check_nat_gates = GatesInBasis(basis_gates=self.device.basis_gates)
+        check_nat_gates = GatesInBasis(target=self.device)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
@@ -372,7 +376,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 actions += self.actions_routing_indices
             return actions
 
-        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.coupling_map))
+        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 

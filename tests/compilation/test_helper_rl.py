@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from mqt.bench import get_benchmark
-from mqt.bench.devices import get_device_by_name
+from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets import get_device
 from qiskit import transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
@@ -24,7 +24,7 @@ from mqt.predictor import rl
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", 1, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
     features = rl.helper.create_feature_dict(qc)
     for feature in features.values():
         assert isinstance(feature, np.ndarray | int)
@@ -46,9 +46,9 @@ def test_get_path_training_circuits() -> None:
 
 def test_vf2_layout_and_postlayout() -> None:
     """Test the VF2Layout and VF2PostLayout passes."""
-    qc = get_benchmark("ghz", 1, 3)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
-    for dev in [get_device_by_name("ibm_montreal"), get_device_by_name("ionq_harmony")]:
+    for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
         layout_pass = None
         for layout_action in rl.helper.get_actions_layout():
             if layout_action["name"] == "VF2Layout":
@@ -58,10 +58,8 @@ def test_vf2_layout_and_postlayout() -> None:
         layouted_qc = pm.run(qc)
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
-    dev_success = get_device_by_name("ibm_montreal")
-    qc_transpiled = transpile(
-        qc, basis_gates=dev_success.basis_gates, coupling_map=dev_success.coupling_map, optimization_level=0
-    )
+    dev_success = get_device("ibm_falcon_27")
+    qc_transpiled = transpile(qc, target=dev_success, optimization_level=0)
     assert qc_transpiled.layout is not None
 
     initial_layout_before = qc_transpiled.layout.initial_layout

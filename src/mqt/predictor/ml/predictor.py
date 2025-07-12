@@ -27,7 +27,7 @@ else:
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
-from mqt.bench.devices import Device, get_available_devices, get_device_by_name
+from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -38,6 +38,7 @@ from mqt.predictor.hellinger import get_hellinger_model_path
 
 if TYPE_CHECKING:
     from numpy._typing import NDArray
+    from qiskit.transpiler import Target
 
 plt.rcParams["font.family"] = "Times New Roman"
 
@@ -50,7 +51,7 @@ class Predictor:
     def __init__(
         self,
         figure_of_merit: reward.figure_of_merit = "expected_fidelity",
-        devices: list[str] | None = None,
+        devices: list[Target] | None = None,
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
@@ -66,11 +67,11 @@ class Predictor:
         self.clf = None
         self.figure_of_merit = figure_of_merit
         if devices is None:
-            self.devices = get_available_devices()
+            self.devices = [get_device(device) for device in get_available_device_names()]
         else:
-            self.devices = [get_device_by_name(device) for device in devices]
+            self.devices = devices
         self.devices.sort(
-            key=lambda x: x.name
+            key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
     def set_classifier(self, clf: RandomForestClassifier) -> None:
@@ -79,7 +80,7 @@ class Predictor:
 
     def compile_all_circuits_devicewise(
         self,
-        device_name: str,
+        device: Target,
         timeout: int,
         source_path: Path | None = None,
         target_path: Path | None = None,
@@ -88,7 +89,7 @@ class Predictor:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
         Arguments:
-            device_name: The name of the device to be used for compilation.
+            device: The device to be used for compilation.
             timeout: The timeout in seconds for the compilation of a single circuit.
             source_path: The path to the directory containing the circuits to be compiled. Defaults to None.
             target_path: The path to the directory where the compiled circuits should be saved. Defaults to None.
@@ -96,11 +97,10 @@ class Predictor:
         """
         logger.setLevel(logger_level)
 
-        logger.info("Processing: " + device_name + " for " + self.figure_of_merit)
-        rl_pred = rl.Predictor(figure_of_merit=self.figure_of_merit, device_name=device_name)
+        logger.info("Processing: " + device.description + " for " + self.figure_of_merit)
+        rl_pred = rl.Predictor(figure_of_merit=self.figure_of_merit, device=device)
 
-        dev = get_device_by_name(device_name)
-        dev_max_qubits = dev.num_qubits
+        dev_max_qubits = device.num_qubits
 
         if source_path is None:
             source_path = ml.helper.get_path_training_circuits()
@@ -115,18 +115,18 @@ class Predictor:
             if qc.num_qubits > dev_max_qubits:
                 continue
 
-            target_filename = Path(filename).stem + "_" + self.figure_of_merit + "-" + dev.name
+            target_filename = Path(filename).stem + "_" + self.figure_of_merit + "-" + device.description
             if (target_path / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = utils.timeout_watcher(rl.qcompile, [qc, self.figure_of_merit, device_name, rl_pred], timeout)
+                res = utils.timeout_watcher(rl.qcompile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(target_path / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
                         dump(compiled_qc, f)
 
             except Exception as e:
-                print(e, filename, device_name)
+                print(e, filename, device.description)
                 raise RuntimeError("Error during compilation: " + str(e)) from e
 
     def generate_compiled_circuits(
@@ -156,7 +156,7 @@ class Predictor:
                 zip_ref.extractall(source_path)
 
         Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self.compile_all_circuits_devicewise)(device.name, timeout, source_path, target_path, logger.level)
+            delayed(self.compile_all_circuits_devicewise)(device, timeout, source_path, target_path, logger.level)
             for device in self.devices
         )
 
@@ -164,12 +164,14 @@ class Predictor:
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
+        num_workers: int = -1,
     ) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
         """Handles to create training data from all generated training samples.
 
         Arguments:
             path_uncompiled_circuits: The path to the directory containing the uncompiled circuits. Defaults to None.
             path_compiled_circuits: The path to the directory containing the compiled circuits. Defaults to None.
+            num_workers: The number of workers to be used for parallelization. Defaults to -1.
 
         Returns:
             The training data, consisting of training_data, name_list, scores_list
@@ -186,7 +188,7 @@ class Predictor:
         name_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=-1, verbose=100)(
+        results = Parallel(n_jobs=num_workers, verbose=100)(
             delayed(self.generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
@@ -229,7 +231,7 @@ class Predictor:
             raise RuntimeError("File is not a qasm file: " + str(file))
 
         logger.debug("Checking " + str(file))
-        scores = {dev.name: -1.0 for dev in self.devices}
+        scores = {dev.description: -1.0 for dev in self.devices}
         all_relevant_files = path_compiled_circuits.glob(str(file).split(".")[0] + "*")
 
         for filename in all_relevant_files:
@@ -239,9 +241,9 @@ class Predictor:
             ):
                 continue
             dev_name = filename_str.rsplit("-", maxsplit=1)[-1].split(".", maxsplit=1)[0]
-            if dev_name not in [dev.name for dev in self.devices]:
+            if dev_name not in [dev.description for dev in self.devices]:
                 continue
-            device = get_device_by_name(dev_name)
+            device = get_device(dev_name)
             qc = QuantumCircuit.from_qasm_file(filename_str)
             if self.figure_of_merit == "critical_depth":
                 score = reward.crit_depth(qc)
@@ -257,7 +259,7 @@ class Predictor:
 
         num_not_empty_entries = 0
         for dev in self.devices:
-            if scores[dev.name] != -1.0:
+            if scores[dev.description] != -1.0:
                 num_not_empty_entries += 1
 
         if num_not_empty_entries == 0:
@@ -293,7 +295,7 @@ class Predictor:
     @staticmethod
     def train_random_forest_model(
         training_data: ml.helper.TrainingData,
-        device: Device | None,
+        device: Target | None,
         figure_of_merit: str | reward.figure_of_merit,
         save_model: bool = True,
     ) -> RandomForestRegressor | RandomForestClassifier:
@@ -420,7 +422,7 @@ class Predictor:
 
 def predict_device_for_figure_of_merit(
     qc: Path | QuantumCircuit, figure_of_merit: reward.figure_of_merit = "expected_fidelity"
-) -> Device:
+) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
     Arguments:
@@ -451,7 +453,7 @@ def predict_device_for_figure_of_merit(
     ])
 
     for dev_name in sorted_devices:
-        dev = get_device_by_name(dev_name)
+        dev = get_device(dev_name)
         if dev.num_qubits >= qc.num_qubits:
             return dev
     msg = f"No suitable device found for the given quantum circuit with {qc.num_qubits} qubits."
@@ -461,7 +463,7 @@ def predict_device_for_figure_of_merit(
 def train_random_forest_regressor(
     x_train: NDArray[np.float64],
     y_train: NDArray[np.float64],
-    device: Device | None,
+    device: Target | None,
     save_model: bool = True,
 ) -> RandomForestRegressor:
     """Trains a random forest regressor on a Hellinger distance dataset.

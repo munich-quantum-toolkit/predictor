@@ -14,9 +14,9 @@ import re
 import sys
 from pathlib import Path
 
-import mqt.bench.devices
 import pytest
-from mqt.bench import get_benchmark
+from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets import get_available_device_names, get_device
 from qiskit.qasm2 import dump
 
 from mqt.predictor import ml
@@ -32,7 +32,7 @@ def test_predictor_initialization_with_all_devices() -> None:
 @pytest.fixture
 def predictor() -> ml.Predictor:
     """Return the predictor."""
-    return ml.Predictor(figure_of_merit="expected_fidelity", devices=["ionq_harmony"])
+    return ml.Predictor(figure_of_merit="expected_fidelity", devices=[get_device("ibm_falcon_127")])
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def test_generate_training_data(predictor: ml.Predictor, source_path: Path, targ
         target_path.mkdir()
 
     for i in range(2, 8):
-        qc = get_benchmark("ghz", 1, i)
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
         path = source_path / f"qc{i}.qasm"
         with path.open("w", encoding="utf-8") as f:
             dump(qc, f)
@@ -82,7 +82,7 @@ def test_generate_training_data(predictor: ml.Predictor, source_path: Path, targ
 def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the saving of the training data."""
     training_data, names_list, scores_list = predictor.generate_trainingdata_from_qasm_files(
-        path_uncompiled_circuits=source_path, path_compiled_circuits=target_path
+        path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
     )
     assert len(training_data) > 0
     assert len(names_list) > 0
@@ -102,9 +102,9 @@ def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_p
 def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, source_path: Path) -> None:
     """Test the training of the random forest classifier."""
     predictor.train_random_forest_classifier(save_classifier=True)
-    qc = get_benchmark("ghz", 1, 3)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predicted_dev = ml.predict_device_for_figure_of_merit(qc)
-    assert predicted_dev in mqt.bench.devices.get_available_devices()
+    assert predicted_dev.description in get_available_device_names()
 
     file = source_path / "qc1.qasm"
     with file.open("w", encoding="utf-8") as f:
@@ -113,7 +113,7 @@ def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, sou
     predicted_dev = ml.predict_device_for_figure_of_merit(
         file,
     )
-    assert predicted_dev in mqt.bench.devices.get_available_devices()
+    assert predicted_dev.description in get_available_device_names()
 
     with pytest.raises(
         FileNotFoundError, match=re.escape("The ML model is not trained yet. Please train the model before using it.")
@@ -144,8 +144,8 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
 
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
     """Test the prediction of the device for a given figure of merit with a wrong device name."""
-    num_qubits = 100
-    qc = get_benchmark("ghz", 1, num_qubits)
+    num_qubits = 130
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, num_qubits)
     with pytest.raises(
         ValueError, match=re.escape(f"No suitable device found for the given quantum circuit with {num_qubits} qubits.")
     ):

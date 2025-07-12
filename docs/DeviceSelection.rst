@@ -29,19 +29,8 @@ The trained model then acts as a predictor and can be used to predict the most s
 
 Supported Quantum Devices
 -------------------------
-Currently, devices based on two qubit technologies are supported:
-
-- Superconducting-based:
-    - IQM Adonis with 5 qubits
-    - IQM Apollo with 20 qubits
-    - IBM Montreal with 27 qubits
-    - Quantinuum H2 with 32 qubits
-    - Rigetti Aspen-M3 with 80 qubits
-    - IBM Washington with 127 qubits
-- Ion Trap-based:
-    - IonQ Harmony with 11 qubits
-    - IonQ Aria1 with 25
-    - Quantinuum H2 with 32 qubits
+Any device provided as a Qiskit Target object can be used with the MQT Predictor framework.
+MQT Bench provides a set of devices that can be used out-of-the-box which are available under `MQT Bench Devices and Parameters <https://mqt.readthedocs.io/projects/bench/en/latest/parameter.html>`_.
 
 
 Adding further devices is straight-forward and requires only to provide its native gate-set, connectivity, and calibration data.
