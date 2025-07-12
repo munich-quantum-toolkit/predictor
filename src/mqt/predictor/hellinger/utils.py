@@ -16,13 +16,14 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
-from mqt.bench.utils import calc_supermarq_features
 from qiskit.converters import circuit_to_dag
 
+from mqt.predictor.utils import calc_supermarq_features
+
 if TYPE_CHECKING:
-    from mqt.bench.devices import Device
     from numpy.typing import NDArray
     from qiskit import QuantumCircuit
+    from qiskit.compiler import Target
 
 
 def hellinger_distance(p: NDArray[np.float64], q: NDArray[np.float64]) -> float:
@@ -34,7 +35,7 @@ def hellinger_distance(p: NDArray[np.float64], q: NDArray[np.float64]) -> float:
 
 
 def calc_device_specific_features(
-    qc: QuantumCircuit, device: Device, ignore_gates: list[str] | None = None
+    qc: QuantumCircuit, device: Target, ignore_gates: list[str] | None = None
 ) -> NDArray[np.float64]:
     """Creates and returns a device-specific feature vector for a given quantum circuit and device.
 
@@ -57,7 +58,7 @@ def calc_device_specific_features(
         ignore_gates = ["barrier", "id", "measure"]
 
     # Create a dictionary with all native gates
-    native_gate_dict = {gate: 0.0 for gate in device.basis_gates if gate not in ignore_gates}
+    native_gate_dict = {gate: 0.0 for gate in device.operation_names if gate not in ignore_gates}
     # Add the number of operations for each native gate
     for key, val in qc.count_ops().items():
         if key in native_gate_dict:
@@ -131,10 +132,12 @@ def calc_device_specific_features(
     return np.array(list(feature_dict.values()))
 
 
-def get_hellinger_model_path(device: Device) -> Path:
+def get_hellinger_model_path(device: Target) -> Path:
     """Returns the path to the trained model folder resulting from the machine learning training."""
     training_data_path = Path(str(resources.files("mqt.predictor"))) / "ml" / "training_data"
     model_path = (
-        training_data_path / "trained_model" / ("trained_hellinger_distance_regressor_" + device.name + ".joblib")
+        training_data_path
+        / "trained_model"
+        / ("trained_hellinger_distance_regressor_" + device.description + ".joblib")
     )
     return Path(model_path)

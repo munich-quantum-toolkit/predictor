@@ -73,10 +73,10 @@ The following code gives an example on the usage:
 
 ```python3
 from mqt.predictor import qcompile
-from mqt.bench import get_benchmark
+from mqt.bench import get_benchmark, BenchmarkLevel
 
 # get a benchmark circuit on algorithmic level representing the GHZ state with 5 qubits from [MQT Bench](https://github.com/munich-quantum-toolkit/bench)
-qc_uncompiled = get_benchmark(benchmark_name="ghz", level="alg", circuit_size=5)
+qc_uncompiled = get_benchmark(benchmark="ghz", level=BenchmarkLevel.ALG, circuit_size=5)
 
 # compile it using the MQT Predictor
 qc_compiled, compilation_information, quantum_device = qcompile(

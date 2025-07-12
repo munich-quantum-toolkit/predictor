@@ -14,17 +14,20 @@ import re
 import sys
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import mqt.bench.devices
 import numpy as np
 import pytest
-from mqt.bench import get_benchmark
-from mqt.bench.devices import get_device_by_name
+from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 
 from mqt.predictor import ml, rl
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
+
+if TYPE_CHECKING:
+    from qiskit.transpiler import Target
 
 
 @pytest.fixture
@@ -39,15 +42,90 @@ def target_path() -> Path:
     return Path("./test_compiled_circuits")
 
 
-def test_create_device_specific_feature_dict() -> None:
+@pytest.fixture
+def device() -> Path:
+    """Return the target device."""
+    return get_device("quantinuum_h2_56")
+
+
+def test_create_device_specific_feature_dict(device: Target) -> None:
     """Test the creation of a device-specific feature vector."""
-    device = get_device_by_name("iqm_adonis")
     qc = QuantumCircuit(device.num_qubits)
     for i in range(1, device.num_qubits):
         qc.cz(0, i)
 
     feature_vector = calc_device_specific_features(qc, device)
-    expected_feat_vec = np.array([0.0, 4.0, 1.0, 1.0, 1.0, 1.0, 1.0, 4.0, 5.0, 1.0, 1.0, 0.0, 2 / 5, 1 / 5, 0.0, 1 / 2])
+    expected_feat_vec = np.array([
+        0.00000000e00,
+        0.00000000e00,
+        0.00000000e00,
+        0.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        1.00000000e00,
+        5.50000000e01,
+        5.60000000e01,
+        1.00000000e00,
+        1.00000000e00,
+        0.00000000e00,
+        3.57142857e-02,
+        1.78571429e-02,
+        0.00000000e00,
+        3.57142857e-02,
+    ])
 
     assert np.allclose(feature_vector, expected_feat_vec)
 
@@ -71,11 +149,10 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-def test_train_random_forest_regressor_and_predict() -> None:
+def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
-    device = get_device_by_name("iqm_apollo")
-    n_circuits = 16
+    n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
     for i in range(1, device.num_qubits):
@@ -100,20 +177,19 @@ def test_train_random_forest_regressor_and_predict() -> None:
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
 
-def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path) -> None:
+def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
-    device_name = "iqm_apollo"
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
             category=UserWarning,
-            message=f"The connectivity of the device '{device_name}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality.",
+            message=f"The connectivity of the device '{device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality.",
         )
 
         # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device_name=device_name)
+        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
 
         rl_predictor.train_model(
             timesteps=5,
@@ -121,7 +197,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml.Predictor(figure_of_merit, devices=[device_name])
+        ml_predictor = ml.Predictor(figure_of_merit, devices=[device])
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -129,8 +205,8 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         if not target_path.exists():
             target_path.mkdir()
 
-        for i in range(2, 8):
-            qc = get_benchmark("ghz", 1, i)
+        for i in range(2, 5):
+            qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
             path = source_path / f"qc{i}.qasm"
             with path.open("w", encoding="utf-8") as f:
                 dump(qc, f)
@@ -148,7 +224,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Generate training data from the compiled circuits
         training_data, names_list, scores_list = ml_predictor.generate_trainingdata_from_qasm_files(
-            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path
+            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
         assert len(training_data) > 0
         assert len(names_list) > 0
@@ -166,11 +242,11 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Train the ML model
         ml_predictor.train_random_forest_classifier(save_classifier=True)
-        qc = get_benchmark("ghz", 1, 3)
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
         predicted_dev = ml.predict_device_for_figure_of_merit(qc, figure_of_merit)
-        assert predicted_dev in mqt.bench.devices.get_available_devices()
+        assert predicted_dev.description in get_available_device_names()
 
 
 def test_remove_files(source_path: Path, target_path: Path) -> None:

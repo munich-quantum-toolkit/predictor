@@ -65,7 +65,6 @@ extensions = [
     "sphinx_copybutton",
     "nbsphinx",
     "sphinxext.opengraph",
-    "sphinx_autodoc_typehints",
 ]
 
 pygments_style = "colorful"
