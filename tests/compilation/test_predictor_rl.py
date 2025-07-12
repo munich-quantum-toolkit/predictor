@@ -72,14 +72,14 @@ def test_qcompile_with_newly_trained_models() -> None:
                 "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
             ),
         ):
-            rl.qcompile(qc, figure_of_merit=figure_of_merit, device=device)
+            rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
         timesteps=10,
         test=True,
     )
 
-    qc_compiled, compilation_information = rl.qcompile(qc, figure_of_merit=figure_of_merit, device=device)
+    qc_compiled, compilation_information = rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
     assert qc_compiled.layout is not None
     assert compilation_information is not None
 

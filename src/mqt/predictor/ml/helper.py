@@ -38,7 +38,7 @@ def qcompile(
         Returns a tuple containing the compiled quantum circuit, the compilation information and the name of the device used for compilation. If compilation fails, False is returned.
     """
     predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
-    res = rl.qcompile(qc, figure_of_merit=figure_of_merit, device=predicted_device)
+    res = rl.qcompile(qc, device=predicted_device, figure_of_merit=figure_of_merit)
     return *res, predicted_device
 
 
