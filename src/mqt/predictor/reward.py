@@ -116,7 +116,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
         active_qubits.add(first_qubit_idx)
 
         if len(qargs) == 1:  # single-qubit gate
-            duration = 1 - device[gate_type][first_qubit_idx,].duration
+            duration = device[gate_type][first_qubit_idx,].duration
             op_times.append((
                 gate_type,
                 [

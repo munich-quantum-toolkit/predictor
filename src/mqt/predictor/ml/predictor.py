@@ -120,7 +120,7 @@ class Predictor:
                 continue
             try:
                 res = utils.timeout_watcher(
-                    rl.qcompile, [qc, self.figure_of_merit, device.description, rl_pred], timeout
+                    rl.qcompile, [qc, self.figure_of_merit, device, rl_pred], timeout
                 )
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
