@@ -513,23 +513,48 @@ def get_bqskit_native_gates(device: Device) -> list[gates.Gate] | None:
         device: The device for which the native gates are returned.
 
     Returns:
-        The native gates of the given provider.
+        The native gates of the given device as BQSKit gates.
     """
     gate_map = {
-        "rz": gates.RZGate(),
+        # --- 1-qubit gates ---
+        "id": gates.IdentityGate(),
+        "x": gates.XGate(),
+        "y": gates.YGate(),
+        "z": gates.ZGate(),
+        "h": gates.HGate(),
+        "s": gates.SGate(),
+        "sdg": gates.SdgGate(),
+        "t": gates.TGate(),
+        "tdg": gates.TdgGate(),
+        "sx": gates.SXGate(),
         "rx": gates.RXGate(),
         "ry": gates.RYGate(),
-        "sx": gates.SXGate(),
-        "x": gates.XGate(),
-        "cz": gates.CZGate(),
+        "rz": gates.RZGate(),
+        "u1": gates.U1Gate(),
+        "u2": gates.U2Gate(),
+        "u3": gates.U3Gate(),
+        # --- Controlled 1-qubit gates ---
         "cx": gates.CXGate(),
+        "cy": gates.CYGate(),
+        "cz": gates.CZGate(),
+        "ch": gates.CHGate(),
+        "crx": gates.CRXGate(),
+        "cry": gates.CRYGate(),
+        "crz": gates.CRZGate(),
+        "cp": gates.CPGate(),
+        "cu": gates.CUGate(),
+        # --- 2-qubit gates ---
+        "swap": gates.SwapGate(),
+        "iswap": gates.ISwapGate(),
         "ecr": gates.ECRGate(),
         "rzz": gates.RZZGate(),
-        "u3": gates.U3Gate(),
-        "id": gates.IdentityGate(),
-        "reset": gates.Reset(),
+        "rxx": gates.RXXGate(),
+        "ryy": gates.RYYGate(),
         "zz": gates.ZZGate(),
-        "iswap": gates.ISwapGate(),
+        # --- 3-qubit gates ---
+        "ccx": gates.CCXGate(),
+        # --- Others / approximations ---
+        "reset": gates.Reset(),
     }
 
     native_gates = []
