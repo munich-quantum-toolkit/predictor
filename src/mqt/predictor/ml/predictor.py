@@ -119,9 +119,7 @@ class Predictor:
             if (target_path / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = utils.timeout_watcher(
-                    rl.qcompile, [qc, self.figure_of_merit, device, rl_pred], timeout
-                )
+                res = utils.timeout_watcher(rl.qcompile, [qc, self.figure_of_merit, device, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(target_path / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
