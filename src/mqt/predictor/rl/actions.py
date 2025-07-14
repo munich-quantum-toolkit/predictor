@@ -68,6 +68,7 @@ from mqt.predictor.rl.parsing import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import Any
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
@@ -105,7 +106,10 @@ class Action:
     transpile_pass: (
         list[qiskit_BasePass | tket_BasePass]
         | Callable[..., list[qiskit_BasePass | tket_BasePass]]
-        | Callable[..., Circuit]
+        | Callable[
+            ...,
+            Callable[..., tuple[Any, ...] | Circuit],
+        ]
     )
 
 
@@ -118,7 +122,13 @@ class DeviceIndependentAction(Action):
 class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
-    transpile_pass: Callable[..., list[qiskit_BasePass | tket_BasePass]] | Callable[..., Circuit]
+    transpile_pass: (
+        Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        | Callable[
+            ...,
+            Callable[..., tuple[Any, ...] | Circuit],
+        ]
+    )
     do_while: Callable[[dict[str, Circuit]], bool] | None = None
 
 

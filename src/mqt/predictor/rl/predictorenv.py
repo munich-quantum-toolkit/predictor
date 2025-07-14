@@ -25,7 +25,11 @@ else:
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from bqskit import Circuit
+
+
 import warnings
+from typing import cast
 
 import numpy as np
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
@@ -320,6 +324,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         transpile_pass = action.transpile_pass(self.device)
                     else:
                         transpile_pass = action.transpile_pass
+                    assert isinstance(transpile_pass, list)
                     for elem in transpile_pass:
                         elem.apply(tket_qc)
                     qbs = tket_qc.qubits
@@ -348,9 +353,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         bqskit_compiled_qc = action.transpile_pass(bqskit_qc)
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
                     elif action_index in self.actions_mapping_indices:
-                        mapping_res = action.transpile_pass(bqskit_qc)
-                        assert isinstance(mapping_res, tuple)
-                        assert len(mapping_res) == 3
+                        mapping_res = cast(
+                            "tuple[Circuit, list[int], list[int]]",
+                            action.transpile_pass(bqskit_qc),
+                        )
                         bqskit_compiled_qc, initial_layout, final_layout = mapping_res
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
                         layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
