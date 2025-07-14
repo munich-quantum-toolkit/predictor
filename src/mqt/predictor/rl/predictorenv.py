@@ -42,7 +42,6 @@ from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor import reward, rl
 from mqt.predictor.hellinger import get_hellinger_model_path
-from mqt.predictor.rl.actions import CompilationOrigin, DeviceSpecificAction, PassType, get_actions_by_pass_type
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -75,34 +74,33 @@ class PredictorEnv(Env):  # type: ignore[misc]
             warnings.warn(msg, UserWarning, stacklevel=2)
 
         index = 0
-        action_dict = get_actions_by_pass_type()
 
-        for elem in action_dict[PassType.SYNTHESIS]:
+        for elem in mqt.predictor.rl.actions.get_actions_synthesis():
             self.action_set[index] = elem
             self.actions_synthesis_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.LAYOUT]:
+        for elem in mqt.predictor.rl.actions.get_actions_layout():
             self.action_set[index] = elem
             self.actions_layout_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.ROUTING]:
+        for elem in mqt.predictor.rl.actions.get_actions_routing():
             self.action_set[index] = elem
             self.actions_routing_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.OPT]:
+        for elem in mqt.predictor.rl.actions.get_actions_opt():
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.MAPPING]:
+        for elem in mqt.predictor.rl.actions.get_actions_mapping():
             self.action_set[index] = elem
             self.actions_mapping_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.FINAL_OPT]:
+        for elem in mqt.predictor.rl.actions.get_actions_final_optimization():
             self.action_set[index] = elem
             self.actions_final_optimization_indices.append(index)
             index += 1
 
-        self.action_set[index] = action_dict[PassType.TERMINATE][0]
+        self.action_set[index] = mqt.predictor.rl.actions.get_action_terminate()
         self.action_terminate_index = index
 
         if reward_function == "estimated_success_probability" and not reward.esp_data_available(self.device):
@@ -137,7 +135,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information."""
-        self.used_actions.append(str(self.action_set[action].name))
+        self.used_actions.append(str(self.action_set[action].get("name")))
         altered_qc = self.apply_action(action)
         if not altered_qc:
             return (
@@ -232,21 +230,20 @@ class PredictorEnv(Env):  # type: ignore[misc]
         # it is not clear how tket will handle the layout, so we remove all actions that are from "origin"=="tket" if a layout is set
         if self.layout is not None:
             action_mask = [
-                action_mask[i] and self.action_set[i].origin != CompilationOrigin.TKET for i in range(len(action_mask))
+                action_mask[i] and self.action_set[i].get("origin") != "tket" for i in range(len(action_mask))
             ]
 
         if self.has_parameterized_gates or self.layout is not None:
             # remove all actions that are from "origin"=="bqskit" because they are not supported for parameterized gates
             # or after layout since using BQSKit after a layout is set may result in an error
             action_mask = [
-                action_mask[i] and self.action_set[i].origin != CompilationOrigin.BQSKIT
-                for i in range(len(action_mask))
+                action_mask[i] and self.action_set[i].get("origin") != "bqskit" for i in range(len(action_mask))
             ]
 
         # only allow VF2PostLayout if "ibm" is in the device name
         if "ibm" not in self.device.description:
             action_mask = [
-                action_mask[i] and self.action_set[i].name != "VF2PostLayout" for i in range(len(action_mask))
+                action_mask[i] and self.action_set[i].get("name") != "VF2PostLayout" for i in range(len(action_mask))
             ]
         return action_mask
 
@@ -254,24 +251,24 @@ class PredictorEnv(Env):  # type: ignore[misc]
         """Applies the given action to the current state and returns the altered state."""
         if action_index in self.action_set:
             action = self.action_set[action_index]
-            if action.name == "terminate":
+            if action["name"] == "terminate":
                 return self.state
             if action_index in self.actions_opt_indices:
-                transpile_pass = action.transpile_pass
+                transpile_pass = action["transpile_pass"]
             else:
-                transpile_pass = action.transpile_pass(self.device)
+                transpile_pass = action["transpile_pass"](self.device)
 
-            if action.origin == CompilationOrigin.QISKIT:
+            if action["origin"] == "qiskit":
                 try:
-                    if action.name == "QiskitO3" and isinstance(action, DeviceSpecificAction):
+                    if action["name"] == "QiskitO3":
                         pm = PassManager()
                         pm.append(
                             DoWhileController(
-                                action.transpile_pass(
+                                action["transpile_pass"](
                                     self.device.operation_names,
                                     CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
                                 ),
-                                do_while=action.do_while,
+                                do_while=action["do_while"],
                             ),
                         )
                     else:
@@ -279,7 +276,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     altered_qc = pm.run(self.state)
                 except Exception:
                     logger.exception(
-                        f"Error in executing Qiskit transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
+                        "Error in executing Qiskit transpile pass for {action} at step {i} for {filename}".format(
+                            action=action["name"], i=self.num_steps, filename=self.filename
+                        )
                     )
 
                     self.error_occurred = True
@@ -290,14 +289,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     + self.actions_mapping_indices
                     + self.actions_final_optimization_indices
                 ):
-                    if action.name == "VF2PostLayout":
+                    if action["name"] == "VF2PostLayout":
                         assert pm.property_set["VF2PostLayout_stop_reason"] is not None
                         post_layout = pm.property_set["post_layout"]
                         if post_layout:
-                            altered_qc, pm = mqt.predictor.rl.parsing.postprocess_vf2postlayout(
+                            altered_qc, pm = mqt.predictor.rl.actions.postprocess_vf2postlayout(
                                 altered_qc, post_layout, self.layout
                             )
-                    elif action.name == "VF2Layout":
+                    elif action["name"] == "VF2Layout":
                         if pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
                             assert pm.property_set["layout"]
                     else:
@@ -316,7 +315,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     assert self.layout is not None
                     self.layout.final_layout = pm.property_set["final_layout"]
 
-            elif action.origin == CompilationOrigin.TKET:
+            elif action["origin"] == "tket":
                 try:
                     tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
                     for elem in transpile_pass:
@@ -333,12 +332,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
                 except Exception:
                     logger.exception(
-                        f"Error in executing TKET transpile  pass for {action.name} at step {self.num_steps} for {self.filename}"
+                        "Error in executing TKET transpile  pass for {action} at step {i} for {filename}".format(
+                            action=action["name"], i=self.num_steps, filename=self.filename
+                        )
                     )
                     self.error_occurred = True
                     return None
 
-            elif action.origin == CompilationOrigin.BQSKIT:
+            elif action["origin"] == "bqskit":
                 try:
                     bqskit_qc = qiskit_to_bqskit(self.state)
                     if action_index in self.actions_opt_indices + self.actions_synthesis_indices:
@@ -353,13 +354,15 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         self.layout = layout
                 except Exception:
                     logger.exception(
-                        f"Error in executing BQSKit transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
+                        "Error in executing BQSKit transpile pass for {action} at step {i} for {filename}".format(
+                            action=action["name"], i=self.num_steps, filename=self.filename
+                        )
                     )
                     self.error_occurred = True
                     return None
 
             else:
-                error_msg = f"Origin {action.origin} not supported."
+                error_msg = f"Origin {action['origin']} not supported."
                 raise ValueError(error_msg)
 
         else:
