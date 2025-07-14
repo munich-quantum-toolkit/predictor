@@ -33,8 +33,8 @@ if TYPE_CHECKING:
 def test_bqskit_o2_action() -> None:
     """Test the BQSKitO2 action."""
     action_bqskit_o2 = None
-    for action in mqt.predictor.rl.actions.get_actions_opt():
-        if action["name"] == "BQSKitO2":
+    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.OPT]:
+        if action.name == "BQSKitO2":
             action_bqskit_o2 = action
 
     assert action_bqskit_o2 is not None
@@ -44,7 +44,7 @@ def test_bqskit_o2_action() -> None:
     qc.cx(0, 1)
 
     bqskit_qc = qiskit_to_bqskit(qc)
-    optimized_qc = bqskit_to_qiskit(action_bqskit_o2["transpile_pass"](bqskit_qc))
+    optimized_qc = bqskit_to_qiskit(action_bqskit_o2.transpile_pass(bqskit_qc))
 
     assert optimized_qc != qc
 
@@ -53,8 +53,8 @@ def test_bqskit_o2_action() -> None:
 def test_bqskit_synthesis_action(device: Target) -> None:
     """Test the BQSKitSynthesis action for all devices."""
     action_bqskit_synthesis_action = None
-    for action in mqt.predictor.rl.actions.get_actions_synthesis():
-        if action["name"] == "BQSKitSynthesis":
+    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.SYNTHESIS]:
+        if action.name == "BQSKitSynthesis":
             action_bqskit_synthesis_action = action
 
     assert action_bqskit_synthesis_action is not None
@@ -67,7 +67,7 @@ def test_bqskit_synthesis_action(device: Target) -> None:
     check_nat_gates(qc)
     assert not check_nat_gates.property_set["all_gates_in_basis"]
 
-    transpile_pass = action_bqskit_synthesis_action["transpile_pass"](device)
+    transpile_pass = action_bqskit_synthesis_action.transpile_pass(device)
     bqskit_qc = qiskit_to_bqskit(qc)
     if "rigetti" in device.description or "ionq" in device.description or "iqm" in device.description:
         with pytest.raises(ValueError, match=re.escape("not supported in BQSKIT")):
@@ -84,8 +84,8 @@ def test_bqskit_synthesis_action(device: Target) -> None:
 def test_bqskit_mapping_action_swaps_necessary() -> None:
     """Test the BQSKitMapping action for quantum circuit that requires SWAP gates."""
     bqskit_mapping_action = None
-    for action in mqt.predictor.rl.actions.get_actions_mapping():
-        if action["name"] == "BQSKitMapping":
+    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.MAPPING]:
+        if action.name == "BQSKitMapping":
             bqskit_mapping_action = action
 
     assert bqskit_mapping_action is not None
@@ -102,7 +102,7 @@ def test_bqskit_mapping_action_swaps_necessary() -> None:
 
     device = get_device("ibm_falcon_27")
     bqskit_qc = qiskit_to_bqskit(qc)
-    bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action["transpile_pass"](device)(bqskit_qc)
+    bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action.transpile_pass(device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
     layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc)
 
@@ -151,8 +151,8 @@ def check_mapped_circuit(
 def test_bqskit_mapping_action_no_swaps_necessary() -> None:
     """Test the BQSKitMapping action for a simple quantum circuit that does not require SWAP gates."""
     bqskit_mapping_action = None
-    for action in mqt.predictor.rl.actions.get_actions_mapping():
-        if action["name"] == "BQSKitMapping":
+    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.MAPPING]:
+        if action.name == "BQSKitMapping":
             bqskit_mapping_action = action
 
     assert bqskit_mapping_action is not None
@@ -164,7 +164,7 @@ def test_bqskit_mapping_action_no_swaps_necessary() -> None:
     device = get_device("quantinuum_h2_56")
 
     bqskit_qc = qiskit_to_bqskit(qc_no_swap_needed)
-    bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action["transpile_pass"](device)(bqskit_qc)
+    bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action.transpile_pass(device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
     layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
         input_mapping, output_mapping, mapped_qc, qc_no_swap_needed
@@ -187,21 +187,21 @@ def test_tket_routing() -> None:
 
     device = get_device("quantinuum_h2_56")
 
-    layout_action = mqt.predictor.rl.actions.get_actions_layout()[0]
-    transpile_pass = layout_action["transpile_pass"](device)
+    layout_action = mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.LAYOUT][0]
+    transpile_pass = layout_action.transpile_pass(device)
     pm = PassManager(transpile_pass)
     layouted_qc = pm.run(qc)
     initial_layout = pm.property_set["layout"]
     input_qubit_mapping = pm.property_set["original_qubit_indices"]
 
     routing_action = None
-    for action in mqt.predictor.rl.actions.get_actions_routing():
-        if action["origin"] == "tket":
+    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.ROUTING]:
+        if action.origin == mqt.predictor.rl.actions.CompilationOrigin.TKET:
             routing_action = action
     assert routing_action is not None
 
     tket_qc = qiskit_to_tk(layouted_qc, preserve_param_uuid=True)
-    for elem in routing_action["transpile_pass"](device):
+    for elem in routing_action.transpile_pass(device):
         elem.apply(tket_qc)
 
     qbs = tket_qc.qubits

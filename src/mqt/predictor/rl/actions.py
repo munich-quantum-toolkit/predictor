@@ -61,10 +61,17 @@ from qiskit.transpiler.passes import (
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
 
-from mqt.predictor.rl.parsing import PreProcessTKETRoutingAfterQiskitLayout, get_bqskit_native_gates
+from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
+    get_bqskit_native_gates,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+import logging
+
+logger = logging.getLogger("mqt-predictor")
 
 
 class CompilationOrigin(str, Enum):
@@ -99,7 +106,7 @@ class Action:
 
 
 @dataclass
-class StaticPassAction(Action):
+class DeviceIndependentAction(Action):
     """Action that represents a static compilation pass that can be applied directly."""
 
     def __post_init__(self) -> None:
@@ -109,7 +116,7 @@ class StaticPassAction(Action):
 
 
 @dataclass
-class DeviceSpecificAction(Action):
+class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
     do_while: Callable[[dict[str, Any]], bool] | None = None
@@ -128,9 +135,8 @@ def register_action(action: Action) -> Action:
     return action
 
 
-# Static optimization passes
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -139,7 +145,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "CommutativeCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -148,7 +154,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "CommutativeInverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -157,7 +163,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "RemoveDiagonalGatesBeforeMeasure",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -166,7 +172,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "InverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -175,7 +181,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "OptimizeCliffords",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -184,7 +190,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "Opt2qBlocks",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -193,7 +199,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "PeepholeOptimise2Q",
         CompilationOrigin.TKET,
         PassType.OPT,
@@ -202,7 +208,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "CliffordSimp",
         CompilationOrigin.TKET,
         PassType.OPT,
@@ -211,7 +217,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "FullPeepholeOptimiseCX",
         CompilationOrigin.TKET,
         PassType.OPT,
@@ -220,7 +226,7 @@ register_action(
 )
 
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "RemoveRedundancies",
         CompilationOrigin.TKET,
         PassType.OPT,
@@ -228,9 +234,8 @@ register_action(
     )
 )
 
-# Device-specific optimization passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "QiskitO3",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -258,7 +263,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "BQSKitO2",
         CompilationOrigin.BQSKIT,
         PassType.OPT,
@@ -275,7 +280,7 @@ register_action(
 
 # Final optimization passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
@@ -283,9 +288,8 @@ register_action(
     )
 )
 
-# Layout passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "TrivialLayout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
@@ -299,7 +303,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "DenseLayout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
@@ -313,7 +317,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "VF2Layout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
@@ -332,9 +336,8 @@ register_action(
     )
 )
 
-# Routing passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "BasicSwap",
         CompilationOrigin.QISKIT,
         PassType.ROUTING,
@@ -343,7 +346,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "RoutingPass",
         CompilationOrigin.TKET,
         PassType.ROUTING,
@@ -354,9 +357,8 @@ register_action(
     )
 )
 
-# Mapping passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "SabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
@@ -367,7 +369,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "BQSKitMapping",
         CompilationOrigin.BQSKIT,
         PassType.MAPPING,
@@ -388,9 +390,8 @@ register_action(
     )
 )
 
-# Synthesis passes
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "BasisTranslator",
         CompilationOrigin.QISKIT,
         PassType.SYNTHESIS,
@@ -401,7 +402,7 @@ register_action(
 )
 
 register_action(
-    DeviceSpecificAction(
+    DeviceDependentAction(
         "BQSKitSynthesis",
         CompilationOrigin.BQSKIT,
         PassType.SYNTHESIS,
@@ -417,9 +418,8 @@ register_action(
     )
 )
 
-# Terminate action (no passes)
 register_action(
-    StaticPassAction(
+    DeviceIndependentAction(
         "terminate",
         CompilationOrigin.GENERAL,
         PassType.TERMINATE,

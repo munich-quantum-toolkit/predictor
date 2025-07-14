@@ -42,7 +42,7 @@ from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor import reward, rl
 from mqt.predictor.hellinger import get_hellinger_model_path
-from mqt.predictor.rl.actions import CompilationOrigin, DeviceSpecificAction, PassType, get_actions_by_pass_type
+from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -263,7 +263,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
             if action.origin == CompilationOrigin.QISKIT:
                 try:
-                    if action.name == "QiskitO3" and isinstance(action, DeviceSpecificAction):
+                    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
                         pm = PassManager()
                         pm.append(
                             DoWhileController(
