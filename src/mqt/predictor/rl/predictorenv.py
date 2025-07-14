@@ -14,6 +14,9 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
+import mqt.predictor.rl.actions
+import mqt.predictor.rl.parsing
+
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
     from typing import assert_never
 else:
@@ -72,32 +75,32 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         index = 0
 
-        for elem in rl.helper.get_actions_synthesis():
+        for elem in mqt.predictor.rl.actions.get_actions_synthesis():
             self.action_set[index] = elem
             self.actions_synthesis_indices.append(index)
             index += 1
-        for elem in rl.helper.get_actions_layout():
+        for elem in mqt.predictor.rl.actions.get_actions_layout():
             self.action_set[index] = elem
             self.actions_layout_indices.append(index)
             index += 1
-        for elem in rl.helper.get_actions_routing():
+        for elem in mqt.predictor.rl.actions.get_actions_routing():
             self.action_set[index] = elem
             self.actions_routing_indices.append(index)
             index += 1
-        for elem in rl.helper.get_actions_opt():
+        for elem in mqt.predictor.rl.actions.get_actions_opt():
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
             index += 1
-        for elem in rl.helper.get_actions_mapping():
+        for elem in mqt.predictor.rl.actions.get_actions_mapping():
             self.action_set[index] = elem
             self.actions_mapping_indices.append(index)
             index += 1
-        for elem in rl.helper.get_actions_final_optimization():
+        for elem in mqt.predictor.rl.actions.get_actions_final_optimization():
             self.action_set[index] = elem
             self.actions_final_optimization_indices.append(index)
             index += 1
 
-        self.action_set[index] = rl.helper.get_action_terminate()
+        self.action_set[index] = mqt.predictor.rl.actions.get_action_terminate()
         self.action_terminate_index = index
 
         if reward_function == "estimated_success_probability" and not reward.esp_data_available(self.device):
@@ -290,7 +293,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         assert pm.property_set["VF2PostLayout_stop_reason"] is not None
                         post_layout = pm.property_set["post_layout"]
                         if post_layout:
-                            altered_qc, pm = rl.helper.postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+                            altered_qc, pm = mqt.predictor.rl.actions.postprocess_vf2postlayout(
+                                altered_qc, post_layout, self.layout
+                            )
                     elif action["name"] == "VF2Layout":
                         if pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
                             assert pm.property_set["layout"]
@@ -321,7 +326,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     altered_qc = tk_to_qiskit(tket_qc)
                     if action_index in self.actions_routing_indices:
                         assert self.layout is not None
-                        self.layout.final_layout = rl.helper.final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+                        self.layout.final_layout = mqt.predictor.rl.parsing.final_layout_pytket_to_qiskit(
+                            tket_qc, altered_qc
+                        )
 
                 except Exception:
                     logger.exception(
@@ -341,7 +348,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     elif action_index in self.actions_mapping_indices:
                         bqskit_compiled_qc, initial_layout, final_layout = transpile_pass(bqskit_qc)
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-                        layout = rl.helper.final_layout_bqskit_to_qiskit(
+                        layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
                             initial_layout, final_layout, altered_qc, self.state
                         )
                         self.layout = layout

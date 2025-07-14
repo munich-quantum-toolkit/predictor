@@ -23,7 +23,8 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.layout import TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
-from mqt.predictor.rl import helper
+import mqt.predictor.rl.actions
+import mqt.predictor.rl.parsing
 
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 def test_bqskit_o2_action() -> None:
     """Test the BQSKitO2 action."""
     action_bqskit_o2 = None
-    for action in helper.get_actions_opt():
+    for action in mqt.predictor.rl.actions.get_actions_opt():
         if action["name"] == "BQSKitO2":
             action_bqskit_o2 = action
 
@@ -52,7 +53,7 @@ def test_bqskit_o2_action() -> None:
 def test_bqskit_synthesis_action(device: Target) -> None:
     """Test the BQSKitSynthesis action for all devices."""
     action_bqskit_synthesis_action = None
-    for action in helper.get_actions_synthesis():
+    for action in mqt.predictor.rl.actions.get_actions_synthesis():
         if action["name"] == "BQSKitSynthesis":
             action_bqskit_synthesis_action = action
 
@@ -83,7 +84,7 @@ def test_bqskit_synthesis_action(device: Target) -> None:
 def test_bqskit_mapping_action_swaps_necessary() -> None:
     """Test the BQSKitMapping action for quantum circuit that requires SWAP gates."""
     bqskit_mapping_action = None
-    for action in helper.get_actions_mapping():
+    for action in mqt.predictor.rl.actions.get_actions_mapping():
         if action["name"] == "BQSKitMapping":
             bqskit_mapping_action = action
 
@@ -103,7 +104,7 @@ def test_bqskit_mapping_action_swaps_necessary() -> None:
     bqskit_qc = qiskit_to_bqskit(qc)
     bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action["transpile_pass"](device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
-    layout = helper.final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc)
+    layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc)
 
     assert input_mapping != output_mapping
     assert layout.final_layout is not None
@@ -150,7 +151,7 @@ def check_mapped_circuit(
 def test_bqskit_mapping_action_no_swaps_necessary() -> None:
     """Test the BQSKitMapping action for a simple quantum circuit that does not require SWAP gates."""
     bqskit_mapping_action = None
-    for action in helper.get_actions_mapping():
+    for action in mqt.predictor.rl.actions.get_actions_mapping():
         if action["name"] == "BQSKitMapping":
             bqskit_mapping_action = action
 
@@ -165,7 +166,9 @@ def test_bqskit_mapping_action_no_swaps_necessary() -> None:
     bqskit_qc = qiskit_to_bqskit(qc_no_swap_needed)
     bqskit_qc_mapped, input_mapping, output_mapping = bqskit_mapping_action["transpile_pass"](device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
-    layout = helper.final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc_no_swap_needed)
+    layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
+        input_mapping, output_mapping, mapped_qc, qc_no_swap_needed
+    )
     assert layout is not None
     assert input_mapping == output_mapping
     assert layout.final_layout is None
@@ -184,7 +187,7 @@ def test_tket_routing() -> None:
 
     device = get_device("quantinuum_h2_56")
 
-    layout_action = helper.get_actions_layout()[0]
+    layout_action = mqt.predictor.rl.actions.get_actions_layout()[0]
     transpile_pass = layout_action["transpile_pass"](device)
     pm = PassManager(transpile_pass)
     layouted_qc = pm.run(qc)
@@ -192,7 +195,7 @@ def test_tket_routing() -> None:
     input_qubit_mapping = pm.property_set["original_qubit_indices"]
 
     routing_action = None
-    for action in helper.get_actions_routing():
+    for action in mqt.predictor.rl.actions.get_actions_routing():
         if action["origin"] == "tket":
             routing_action = action
     assert routing_action is not None
@@ -207,7 +210,7 @@ def test_tket_routing() -> None:
 
     mapped_qc = tk_to_qiskit(tket_qc)
 
-    final_layout = helper.final_layout_pytket_to_qiskit(tket_qc, mapped_qc)
+    final_layout = mqt.predictor.rl.parsing.final_layout_pytket_to_qiskit(tket_qc, mapped_qc)
 
     layout = TranspileLayout(
         initial_layout=initial_layout,
