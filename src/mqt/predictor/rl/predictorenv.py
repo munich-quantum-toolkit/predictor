@@ -301,7 +301,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         return altered_qc
 
-    def _handle_qiskit_layout_postprocessing(self, action: Action, pm: PassManager, altered_qc: QuantumCircuit) -> QuantumCircuit:
+    def _handle_qiskit_layout_postprocessing(
+        self, action: Action, pm: PassManager, altered_qc: QuantumCircuit
+    ) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
             assert pm.property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm.property_set["post_layout"]
