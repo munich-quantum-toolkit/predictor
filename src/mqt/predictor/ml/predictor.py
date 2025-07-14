@@ -27,12 +27,12 @@ else:
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
-from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, train_test_split
 
+from mqt.bench.targets import get_available_device_names, get_device
 from mqt.predictor import ml, reward, rl, utils
 from mqt.predictor.hellinger import get_hellinger_model_path
 
