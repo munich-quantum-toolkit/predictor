@@ -1,13 +1,24 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""Helper methods necessary for parsing between circuit formats."""
+
 from __future__ import annotations
 
 import operator
 
 from bqskit.ir import gates
 from pytket import Circuit, Qubit
-from pytket._tket.placement import place_with_map
-from pytket._tket.unit_id import Node
+from pytket.circuit import Node
+from pytket.placement import place_with_map
 from qiskit import QuantumCircuit, QuantumRegister
-from qiskit.transpiler import Layout, TranspileLayout
+from qiskit.transpiler import Layout, PassManager, Target, TranspileLayout
+from qiskit.transpiler.passes import ApplyLayout
 
 
 class PreProcessTKETRoutingAfterQiskitLayout:
@@ -73,7 +84,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
         place_with_map(circuit=circuit, qmap=mapping)
 
 
-def get_bqskit_native_gates(device: Device) -> list[gates.Gate] | None:
+def get_bqskit_native_gates(device: Target) -> list[gates.Gate] | None:
     """Returns the native gates of the given device.
 
     Arguments:
@@ -201,3 +212,27 @@ def final_layout_bqskit_to_qiskit(
         _output_qubit_list=compiled_qc.qubits,
         _input_qubit_count=initial_qc.num_qubits,
     )
+
+
+def postprocess_vf2postlayout(
+    qc: QuantumCircuit, post_layout: Layout, layout_before: TranspileLayout
+) -> tuple[QuantumCircuit, PassManager]:
+    """Postprocess a quantum circuit after VF2 layout assignment.
+
+    Args:
+        qc: The quantum circuit to transform.
+        post_layout: The layout computed after routing.
+        layout_before: The layout before post-routing adjustment.
+
+    Returns:
+        A tuple of the transformed circuit and the PassManager used.
+    """
+    apply_layout = ApplyLayout()
+    assert layout_before is not None
+    apply_layout.property_set["layout"] = layout_before.initial_layout
+    apply_layout.property_set["original_qubit_indices"] = layout_before.input_qubit_mapping
+    apply_layout.property_set["final_layout"] = layout_before.final_layout
+    apply_layout.property_set["post_layout"] = post_layout
+
+    altered_qc = apply_layout(qc)
+    return altered_qc, apply_layout

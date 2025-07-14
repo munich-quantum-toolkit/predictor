@@ -65,7 +65,7 @@ class Predictor:
             action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
             action = int(action)
             action_item = self.env.action_set[action]
-            used_compilation_passes.append(action_item["name"])
+            used_compilation_passes.append(action_item.name)
             obs, _reward_val, terminated, truncated, _info = self.env.step(action)
 
         if not self.env.error_occurred:
