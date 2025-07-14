@@ -1,273 +1,436 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""This modules provides the actions that can be used in the reinforcement learning environment."""
+
 from __future__ import annotations
 
 import os
-from typing import Any
+from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Any
 
-from bqskit import compile as bqskit_compile, MachineModel
-from pytket._tket.architecture import Architecture
-from pytket._tket.passes import PeepholeOptimise2Q, CliffordSimp, FullPeepholeOptimise, RemoveRedundancies, RoutingPass
-from qiskit import QuantumCircuit
+from bqskit import MachineModel
+from bqskit import compile as bqskit_compile
+from pytket.architecture import Architecture
+from pytket.passes import (
+    CliffordSimp,
+    FullPeepholeOptimise,
+    PeepholeOptimise2Q,
+    RemoveRedundancies,
+    RoutingPass,
+)
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.circuit.library import XGate, ZGate
 from qiskit.passmanager import ConditionalController
-from qiskit.transpiler import CouplingMap, Layout, TranspileLayout, PassManager
-from qiskit.transpiler.passes import Optimize1qGatesDecomposition, CommutativeCancellation, \
-    CommutativeInverseCancellation, RemoveDiagonalGatesBeforeMeasure, InverseCancellation, OptimizeCliffords, \
-    Collect2qBlocks, ConsolidateBlocks, UnitarySynthesis, GatesInBasis, Depth, FixedPoint, Size, MinimumPoint, \
-    VF2PostLayout, TrivialLayout, FullAncillaAllocation, EnlargeWithAncilla, ApplyLayout, DenseLayout, VF2Layout, \
-    BasicSwap, SabreLayout, BasisTranslator
+from qiskit.transpiler import (
+    CouplingMap,
+)
+from qiskit.transpiler.passes import (
+    ApplyLayout,
+    BasicSwap,
+    BasisTranslator,
+    Collect2qBlocks,
+    CommutativeCancellation,
+    CommutativeInverseCancellation,
+    ConsolidateBlocks,
+    DenseLayout,
+    Depth,
+    EnlargeWithAncilla,
+    FixedPoint,
+    FullAncillaAllocation,
+    GatesInBasis,
+    InverseCancellation,
+    MinimumPoint,
+    Optimize1qGatesDecomposition,
+    OptimizeCliffords,
+    RemoveDiagonalGatesBeforeMeasure,
+    SabreLayout,
+    Size,
+    TrivialLayout,
+    UnitarySynthesis,
+    VF2Layout,
+    VF2PostLayout,
+)
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
 
-from mqt.predictor.rl.parsing import PreProcessTKETRoutingAfterQiskitLayout, get_bqskit_native_gates
+from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
+    get_bqskit_native_gates,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+import logging
+
+logger = logging.getLogger("mqt-predictor")
 
 
+class CompilationOrigin(str, Enum):
+    """Enumeration of the origin of the compilation action."""
 
-def get_actions_opt() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the optimization passes that are available."""
-    return [
-        {
-            "name": "Optimize1qGatesDecomposition",
-            "transpile_pass": [Optimize1qGatesDecomposition()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "CommutativeCancellation",
-            "transpile_pass": [CommutativeCancellation()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "CommutativeInverseCancellation",
-            "transpile_pass": [CommutativeInverseCancellation()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "RemoveDiagonalGatesBeforeMeasure",
-            "transpile_pass": [RemoveDiagonalGatesBeforeMeasure()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "InverseCancellation",
-            "transpile_pass": [InverseCancellation([XGate(), ZGate()])],
-            "origin": "qiskit",
-        },
-        {
-            "name": "OptimizeCliffords",
-            "transpile_pass": [OptimizeCliffords()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "Opt2qBlocks",
-            "transpile_pass": [Collect2qBlocks(), ConsolidateBlocks()],
-            "origin": "qiskit",
-        },
-        {
-            "name": "PeepholeOptimise2Q",
-            "transpile_pass": [PeepholeOptimise2Q()],
-            "origin": "tket",
-        },
-        {
-            "name": "CliffordSimp",
-            "transpile_pass": [CliffordSimp()],
-            "origin": "tket",
-        },
-        {
-            "name": "FullPeepholeOptimiseCX",
-            "transpile_pass": [FullPeepholeOptimise()],
-            "origin": "tket",
-        },
-        {
-            "name": "RemoveRedundancies",
-            "transpile_pass": [RemoveRedundancies()],
-            "origin": "tket",
-        },
-        {
-            "name": "QiskitO3",
-            "transpile_pass": lambda native_gate, coupling_map: [
-                Collect2qBlocks(),
-                ConsolidateBlocks(basis_gates=native_gate),
-                UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-                Optimize1qGatesDecomposition(basis=native_gate),
-                CommutativeCancellation(basis_gates=native_gate),
-                GatesInBasis(native_gate),
-                ConditionalController(
-                    common.generate_translation_passmanager(
-                        target=None, basis_gates=native_gate, coupling_map=coupling_map
-                    ).to_flow_controller(),
-                    condition=lambda property_set: not property_set["all_gates_in_basis"],
-                ),
-                Depth(recurse=True),
-                FixedPoint("depth"),
-                Size(recurse=True),
-                FixedPoint("size"),
-                MinimumPoint(["depth", "size"], "optimization_loop"),
-            ],
-            "origin": "qiskit",
-            "do_while": lambda property_set: (not property_set["optimization_loop_minimum_point"]),
-        },
-        {
-            "name": "BQSKitO2",
-            "transpile_pass": lambda circuit: bqskit_compile(
-                circuit,
-                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-                seed=10,
-                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+    QISKIT = "qiskit"
+    TKET = "tket"
+    BQSKIT = "bqskit"
+    GENERAL = "general"
+
+
+class PassType(str, Enum):
+    """Enumeration of the type of compilation pass."""
+
+    OPT = "optimization"
+    SYNTHESIS = "synthesis"
+    MAPPING = "mapping"
+    LAYOUT = "layout"
+    ROUTING = "routing"
+    FINAL_OPT = "final_optimization"
+    TERMINATE = "terminate"
+
+
+@dataclass
+class Action:
+    """Base class for all actions in the reinforcement learning environment."""
+
+    name: str
+    origin: CompilationOrigin
+    pass_type: PassType
+    transpile_pass: Any  # Either a list or a callable depending on subclass
+
+
+@dataclass
+class DeviceIndependentAction(Action):
+    """Action that represents a static compilation pass that can be applied directly."""
+
+    def __post_init__(self) -> None:
+        """Ensures that the transpile_pass is a list."""
+        if not isinstance(self.transpile_pass, list):
+            self.transpile_pass = [self.transpile_pass]
+
+
+@dataclass
+class DeviceDependentAction(Action):
+    """Action that represents a device-specific compilation pass that can be applied to a specific device."""
+
+    do_while: Callable[[dict[str, Any]], bool] | None = None
+
+
+# Registry of actions
+_ACTIONS: dict[str, Action] = {}
+
+
+def register_action(action: Action) -> Action:
+    """Registers a new action in the global actions registry."""
+    if action.name in _ACTIONS:
+        msg = f"Action with name {action.name} already registered."
+        raise ValueError(msg)
+    _ACTIONS[action.name] = action
+    return action
+
+
+register_action(
+    DeviceIndependentAction(
+        "Optimize1qGatesDecomposition",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        Optimize1qGatesDecomposition(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "CommutativeCancellation",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        CommutativeCancellation(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "CommutativeInverseCancellation",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        CommutativeInverseCancellation(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "RemoveDiagonalGatesBeforeMeasure",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        RemoveDiagonalGatesBeforeMeasure(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "InverseCancellation",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        InverseCancellation([XGate(), ZGate()]),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "OptimizeCliffords",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        OptimizeCliffords(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "Opt2qBlocks",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        [Collect2qBlocks(), ConsolidateBlocks()],
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "PeepholeOptimise2Q",
+        CompilationOrigin.TKET,
+        PassType.OPT,
+        PeepholeOptimise2Q(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "CliffordSimp",
+        CompilationOrigin.TKET,
+        PassType.OPT,
+        CliffordSimp(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "FullPeepholeOptimiseCX",
+        CompilationOrigin.TKET,
+        PassType.OPT,
+        FullPeepholeOptimise(),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "RemoveRedundancies",
+        CompilationOrigin.TKET,
+        PassType.OPT,
+        RemoveRedundancies(),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "QiskitO3",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        transpile_pass=lambda native_gate, coupling_map: [
+            Collect2qBlocks(),
+            ConsolidateBlocks(basis_gates=native_gate),
+            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+            Optimize1qGatesDecomposition(basis=native_gate),
+            CommutativeCancellation(basis_gates=native_gate),
+            GatesInBasis(native_gate),
+            ConditionalController(
+                common.generate_translation_passmanager(
+                    target=None, basis_gates=native_gate, coupling_map=coupling_map
+                ).to_flow_controller(),
+                condition=lambda property_set: not property_set["all_gates_in_basis"],
             ),
-            "origin": "bqskit",
-        },
-    ]
+            Depth(recurse=True),
+            FixedPoint("depth"),
+            Size(recurse=True),
+            FixedPoint("size"),
+            MinimumPoint(["depth", "size"], "optimization_loop"),
+        ],
+        do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
+    )
+)
 
+register_action(
+    DeviceDependentAction(
+        "BQSKitO2",
+        CompilationOrigin.BQSKIT,
+        PassType.OPT,
+        transpile_pass=lambda circuit: bqskit_compile(
+            circuit,
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
 
-def get_actions_final_optimization() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the optimization passes that are available."""
-    return [
-        {
-            "name": "VF2PostLayout",
-            "transpile_pass": lambda device: VF2PostLayout(
-                target=device,
+# Final optimization passes
+register_action(
+    DeviceDependentAction(
+        "VF2PostLayout",
+        CompilationOrigin.QISKIT,
+        PassType.FINAL_OPT,
+        transpile_pass=lambda device: VF2PostLayout(target=device),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "TrivialLayout",
+        CompilationOrigin.QISKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: [
+            TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+        ],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "DenseLayout",
+        CompilationOrigin.QISKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: [
+            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+        ],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "VF2Layout",
+        CompilationOrigin.QISKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: [
+            VF2Layout(target=device),
+            ConditionalController(
+                [
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                == VF2LayoutStopReason.SOLUTION_FOUND,
             ),
-            "origin": "qiskit",
-        }
-    ]
+        ],
+    )
+)
 
+register_action(
+    DeviceDependentAction(
+        "BasicSwap",
+        CompilationOrigin.QISKIT,
+        PassType.ROUTING,
+        transpile_pass=lambda device: [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))],
+    )
+)
 
-def get_actions_layout() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the layout passes that are available."""
-    return [
-        {
-            "name": "TrivialLayout",
-            "transpile_pass": lambda device: [
-                TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-            ],
-            "origin": "qiskit",
-        },
-        {
-            "name": "DenseLayout",
-            "transpile_pass": lambda device: [
-                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-            ],
-            "origin": "qiskit",
-        },
-        {
-            "name": "VF2Layout",
-            "transpile_pass": lambda device: [
-                VF2Layout(
-                    target=device,
-                ),
-                ConditionalController(
-                    [
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                    == VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-            ],
-            "origin": "qiskit",
-        },
-    ]
+register_action(
+    DeviceDependentAction(
+        "RoutingPass",
+        CompilationOrigin.TKET,
+        PassType.ROUTING,
+        transpile_pass=lambda device: [
+            PreProcessTKETRoutingAfterQiskitLayout(),
+            RoutingPass(Architecture(list(device.build_coupling_map()))),
+        ],
+    )
+)
 
+register_action(
+    DeviceDependentAction(
+        "SabreMapping",
+        CompilationOrigin.QISKIT,
+        PassType.MAPPING,
+        transpile_pass=lambda device: [
+            SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)
+        ],
+    )
+)
 
-def get_actions_routing() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the routing passes that are available."""
-    return [
-        {
-            "name": "BasicSwap",
-            "transpile_pass": lambda device: [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))],
-            "origin": "qiskit",
-        },
-        {
-            "name": "RoutingPass",
-            "transpile_pass": lambda device: [
-                PreProcessTKETRoutingAfterQiskitLayout(),
-                RoutingPass(Architecture(list(device.build_coupling_map()))),
-            ],
-            "origin": "tket",
-        },
-    ]
-
-
-def get_actions_mapping() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the mapping passes that are available."""
-    return [
-        {
-            "name": "SabreMapping",
-            "transpile_pass": lambda device: [
-                SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False),
-            ],
-            "origin": "qiskit",
-        },
-        {
-            "name": "BQSKitMapping",
-            "transpile_pass": lambda device: lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(
-                    num_qudits=device.num_qubits,
-                    gate_set=get_bqskit_native_gates(device),
-                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-                ),
-                with_mapping=True,
-                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-                seed=10,
-                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+register_action(
+    DeviceDependentAction(
+        "BQSKitMapping",
+        CompilationOrigin.BQSKIT,
+        PassType.MAPPING,
+        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+            bqskit_circuit,
+            model=MachineModel(
+                num_qudits=device.num_qubits,
+                gate_set=get_bqskit_native_gates(device),
+                coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
             ),
-            "origin": "bqskit",
-        },
-    ]
+            with_mapping=True,
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "BasisTranslator",
+        CompilationOrigin.QISKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: [
+            BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
+        ],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "BQSKitSynthesis",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+            bqskit_circuit,
+            model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "terminate",
+        CompilationOrigin.GENERAL,
+        PassType.TERMINATE,
+        transpile_pass=[],
+    )
+)
 
 
-def get_actions_synthesis() -> list[dict[str, Any]]:
-    """Returns a list of dictionaries containing information about the synthesis passes that are available."""
-    return [
-        {
-            "name": "BasisTranslator",
-            "transpile_pass": lambda device: [
-                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
-            ],
-            "origin": "qiskit",
-        },
-        {
-            "name": "BQSKitSynthesis",
-            "transpile_pass": lambda device: lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-                seed=10,
-                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-            ),
-            "origin": "bqskit",
-        },
-    ]
-
-
-def get_action_terminate() -> dict[str, Any]:
-    """Returns a dictionary containing information about the terminate pass that is available."""
-    return {"name": "terminate"}
-
-
-def postprocess_vf2postlayout(
-    qc: QuantumCircuit, post_layout: Layout, layout_before: TranspileLayout
-) -> tuple[QuantumCircuit, PassManager]:
-    """Postprocesses the given quantum circuit with the post_layout and returns the altered quantum circuit and the respective PassManager."""
-    apply_layout = ApplyLayout()
-    assert layout_before is not None
-    apply_layout.property_set["layout"] = layout_before.initial_layout
-    apply_layout.property_set["original_qubit_indices"] = layout_before.input_qubit_mapping
-    apply_layout.property_set["final_layout"] = layout_before.final_layout
-    apply_layout.property_set["post_layout"] = post_layout
-
-    altered_qc = apply_layout(qc)
-    return altered_qc, apply_layout
+def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
+    """Returns a dictionary mapping each PassType to a list of Actions of that type."""
+    result: dict[PassType, list[Action]] = defaultdict(list)
+    for action in _ACTIONS.values():
+        result[action.pass_type].append(action)
+    return dict(result)
