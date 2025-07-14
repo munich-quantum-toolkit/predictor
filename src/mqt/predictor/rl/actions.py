@@ -14,7 +14,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from bqskit import MachineModel
 from bqskit import compile as bqskit_compile
@@ -69,9 +69,9 @@ from mqt.predictor.rl.parsing import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-import logging
-
-logger = logging.getLogger("mqt-predictor")
+    from bqskit import Circuit
+    from pytket._tket.passes import BasePass as tket_BasePass
+    from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
 
 class CompilationOrigin(str, Enum):
@@ -102,24 +102,24 @@ class Action:
     name: str
     origin: CompilationOrigin
     pass_type: PassType
-    transpile_pass: Any  # Either a list or a callable depending on subclass
+    transpile_pass: (
+        list[qiskit_BasePass | tket_BasePass]
+        | Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        | Callable[..., Circuit]
+    )
 
 
 @dataclass
 class DeviceIndependentAction(Action):
     """Action that represents a static compilation pass that can be applied directly."""
 
-    def __post_init__(self) -> None:
-        """Ensures that the transpile_pass is a list."""
-        if not isinstance(self.transpile_pass, list):
-            self.transpile_pass = [self.transpile_pass]
-
 
 @dataclass
 class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
-    do_while: Callable[[dict[str, Any]], bool] | None = None
+    transpile_pass: Callable[..., list[qiskit_BasePass | tket_BasePass]] | Callable[..., Circuit]
+    do_while: Callable[[dict[str, Circuit]], bool] | None = None
 
 
 # Registry of actions
@@ -140,7 +140,7 @@ register_action(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        Optimize1qGatesDecomposition(),
+        [Optimize1qGatesDecomposition()],
     )
 )
 
@@ -149,7 +149,7 @@ register_action(
         "CommutativeCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        CommutativeCancellation(),
+        [CommutativeCancellation()],
     )
 )
 
@@ -158,7 +158,7 @@ register_action(
         "CommutativeInverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        CommutativeInverseCancellation(),
+        [CommutativeInverseCancellation()],
     )
 )
 
@@ -167,7 +167,7 @@ register_action(
         "RemoveDiagonalGatesBeforeMeasure",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        RemoveDiagonalGatesBeforeMeasure(),
+        [RemoveDiagonalGatesBeforeMeasure()],
     )
 )
 
@@ -176,7 +176,7 @@ register_action(
         "InverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        InverseCancellation([XGate(), ZGate()]),
+        [InverseCancellation([XGate(), ZGate()])],
     )
 )
 
@@ -185,7 +185,7 @@ register_action(
         "OptimizeCliffords",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        OptimizeCliffords(),
+        [OptimizeCliffords()],
     )
 )
 
@@ -203,7 +203,7 @@ register_action(
         "PeepholeOptimise2Q",
         CompilationOrigin.TKET,
         PassType.OPT,
-        PeepholeOptimise2Q(),
+        [PeepholeOptimise2Q()],
     )
 )
 
@@ -212,7 +212,7 @@ register_action(
         "CliffordSimp",
         CompilationOrigin.TKET,
         PassType.OPT,
-        CliffordSimp(),
+        [CliffordSimp()],
     )
 )
 
@@ -221,7 +221,7 @@ register_action(
         "FullPeepholeOptimiseCX",
         CompilationOrigin.TKET,
         PassType.OPT,
-        FullPeepholeOptimise(),
+        [FullPeepholeOptimise()],
     )
 )
 
@@ -230,7 +230,7 @@ register_action(
         "RemoveRedundancies",
         CompilationOrigin.TKET,
         PassType.OPT,
-        RemoveRedundancies(),
+        [RemoveRedundancies()],
     )
 )
 
@@ -278,7 +278,6 @@ register_action(
     )
 )
 
-# Final optimization passes
 register_action(
     DeviceDependentAction(
         "VF2PostLayout",

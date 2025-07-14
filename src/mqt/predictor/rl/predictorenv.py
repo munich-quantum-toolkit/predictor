@@ -256,26 +256,23 @@ class PredictorEnv(Env):  # type: ignore[misc]
             action = self.action_set[action_index]
             if action.name == "terminate":
                 return self.state
-            if action_index in self.actions_opt_indices:
-                transpile_pass = action.transpile_pass
-            else:
-                transpile_pass = action.transpile_pass(self.device)
-
             if action.origin == CompilationOrigin.QISKIT:
                 try:
                     if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
                         pm = PassManager()
+                        if callable(action.transpile_pass):
+                            passes = action.transpile_pass(
+                                self.device.operation_names,
+                                CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
+                            )
                         pm.append(
                             DoWhileController(
-                                action.transpile_pass(
-                                    self.device.operation_names,
-                                    CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
-                                ),
+                                passes,
                                 do_while=action.do_while,
                             ),
                         )
                     else:
-                        pm = PassManager(transpile_pass)
+                        pm = PassManager(action.transpile_pass)
                     altered_qc = pm.run(self.state)
                 except Exception:
                     logger.exception(
@@ -319,6 +316,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
             elif action.origin == CompilationOrigin.TKET:
                 try:
                     tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
+                    if callable(action.transpile_pass):
+                        transpile_pass = action.transpile_pass(self.device)
+                    else:
+                        transpile_pass = action.transpile_pass
                     for elem in transpile_pass:
                         elem.apply(tket_qc)
                     qbs = tket_qc.qubits
@@ -333,19 +334,24 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
                 except Exception:
                     logger.exception(
-                        f"Error in executing TKET transpile  pass for {action.name} at step {self.num_steps} for {self.filename}"
+                        f"Error in executing TKET transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
                     )
                     self.error_occurred = True
                     return None
 
-            elif action.origin == CompilationOrigin.BQSKIT:
+            elif action.origin == CompilationOrigin.BQSKIT and isinstance(
+                action, mqt.predictor.rl.actions.DeviceDependentAction
+            ):
                 try:
                     bqskit_qc = qiskit_to_bqskit(self.state)
                     if action_index in self.actions_opt_indices + self.actions_synthesis_indices:
-                        bqskit_compiled_qc = transpile_pass(bqskit_qc)
+                        bqskit_compiled_qc = action.transpile_pass(bqskit_qc)
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
                     elif action_index in self.actions_mapping_indices:
-                        bqskit_compiled_qc, initial_layout, final_layout = transpile_pass(bqskit_qc)
+                        mapping_res = action.transpile_pass(bqskit_qc)
+                        assert isinstance(mapping_res, tuple)
+                        assert len(mapping_res) == 3
+                        bqskit_compiled_qc, initial_layout, final_layout = mapping_res
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
                         layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
                             initial_layout, final_layout, altered_qc, self.state
