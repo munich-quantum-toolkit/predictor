@@ -294,14 +294,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if action_index in (
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
         ):
-            self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
+            altered_qc = self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
 
         elif action_index in self.actions_routing_indices and self.layout:
             self.layout.final_layout = pm.property_set["final_layout"]
 
         return altered_qc
 
-    def _handle_qiskit_layout_postprocessing(self, action: Action, pm: PassManager, altered_qc: QuantumCircuit) -> None:
+    def _handle_qiskit_layout_postprocessing(self, action: Action, pm: PassManager, altered_qc: QuantumCircuit) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
             assert pm.property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm.property_set["post_layout"]
