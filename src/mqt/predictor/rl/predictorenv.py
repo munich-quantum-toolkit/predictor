@@ -23,9 +23,12 @@ else:
     from typing_extensions import assert_never
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from bqskit import Circuit
+
+    from mqt.predictor.rl.actions import Action
 
 
 import warnings
@@ -256,129 +259,113 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def apply_action(self, action_index: int) -> QuantumCircuit | None:
         """Applies the given action to the current state and returns the altered state."""
-        if action_index in self.action_set:
-            action = self.action_set[action_index]
-            if action.name == "terminate":
-                return self.state
-            if action.origin == CompilationOrigin.QISKIT:
-                try:
-                    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-                        pm = PassManager()
-                        if callable(action.transpile_pass):
-                            passes = action.transpile_pass(
-                                self.device.operation_names,
-                                CouplingMap(self.device.build_coupling_map()) if self.layout is not None else None,
-                            )
-                        pm.append(
-                            DoWhileController(
-                                passes,
-                                do_while=action.do_while,
-                            ),
-                        )
-                    else:
-                        pm = PassManager(action.transpile_pass)
-                    altered_qc = pm.run(self.state)
-                except Exception:
-                    logger.exception(
-                        f"Error in executing Qiskit transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
-                    )
+        if action_index not in self.action_set:
+            msg = f"Action {action_index} not supported."
+            raise ValueError(msg)
 
-                    self.error_occurred = True
-                    return None
-                if (
-                    action_index
-                    in self.actions_layout_indices
-                    + self.actions_mapping_indices
-                    + self.actions_final_optimization_indices
-                ):
-                    if action.name == "VF2PostLayout":
-                        assert pm.property_set["VF2PostLayout_stop_reason"] is not None
-                        post_layout = pm.property_set["post_layout"]
-                        if post_layout:
-                            altered_qc, pm = mqt.predictor.rl.parsing.postprocess_vf2postlayout(
-                                altered_qc, post_layout, self.layout
-                            )
-                    elif action.name == "VF2Layout":
-                        if pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
-                            assert pm.property_set["layout"]
-                    else:
-                        assert pm.property_set["layout"]
+        action = self.action_set[action_index]
 
-                    if pm.property_set["layout"]:
-                        self.layout = TranspileLayout(
-                            initial_layout=pm.property_set["layout"],
-                            input_qubit_mapping=pm.property_set["original_qubit_indices"],
-                            final_layout=pm.property_set["final_layout"],
-                            _output_qubit_list=altered_qc.qubits,
-                            _input_qubit_count=self.num_qubits_uncompiled_circuit,
-                        )
+        if action.name == "terminate":
+            return self.state
+        if action.origin == CompilationOrigin.QISKIT:
+            return self._apply_qiskit_action(action, action_index)
+        if action.origin == CompilationOrigin.TKET:
+            return self._apply_tket_action(action, action_index)
+        if action.origin == CompilationOrigin.BQSKIT:
+            return self._apply_bqskit_action(action, action_index)
+        msg = f"Origin {action.origin} not supported."
+        raise ValueError(msg)
 
-                elif action_index in self.actions_routing_indices:
-                    assert self.layout is not None
-                    self.layout.final_layout = pm.property_set["final_layout"]
-
-            elif action.origin == CompilationOrigin.TKET:
-                try:
-                    tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
-                    if callable(action.transpile_pass):
-                        transpile_pass = action.transpile_pass(self.device)
-                    else:
-                        transpile_pass = action.transpile_pass
-                    assert isinstance(transpile_pass, list)
-                    for elem in transpile_pass:
-                        elem.apply(tket_qc)
-                    qbs = tket_qc.qubits
-                    qubit_map = {qbs[i]: Qubit("q", i) for i in range(len(qbs))}
-                    tket_qc.rename_units(qubit_map)  # type: ignore[arg-type]
-                    altered_qc = tk_to_qiskit(tket_qc)
-                    if action_index in self.actions_routing_indices:
-                        assert self.layout is not None
-                        self.layout.final_layout = mqt.predictor.rl.parsing.final_layout_pytket_to_qiskit(
-                            tket_qc, altered_qc
-                        )
-
-                except Exception:
-                    logger.exception(
-                        f"Error in executing TKET transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
-                    )
-                    self.error_occurred = True
-                    return None
-
-            elif action.origin == CompilationOrigin.BQSKIT and isinstance(
-                action, mqt.predictor.rl.actions.DeviceDependentAction
-            ):
-                try:
-                    bqskit_qc = qiskit_to_bqskit(self.state)
-                    if action_index in self.actions_opt_indices + self.actions_synthesis_indices:
-                        bqskit_compiled_qc = action.transpile_pass(bqskit_qc)
-                        altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-                    elif action_index in self.actions_mapping_indices:
-                        mapping_res = cast(
-                            "tuple[Circuit, list[int], list[int]]",
-                            action.transpile_pass(bqskit_qc),
-                        )
-                        bqskit_compiled_qc, initial_layout, final_layout = mapping_res
-                        altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-                        layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
-                            initial_layout, final_layout, altered_qc, self.state
-                        )
-                        self.layout = layout
-                except Exception:
-                    logger.exception(
-                        f"Error in executing BQSKit transpile pass for {action.name} at step {self.num_steps} for {self.filename}"
-                    )
-                    self.error_occurred = True
-                    return None
-
-            else:
-                error_msg = f"Origin {action.origin} not supported."
-                raise ValueError(error_msg)
-
+    def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
+        if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+            passes = action.transpile_pass(
+                self.device.operation_names,
+                CouplingMap(self.device.build_coupling_map()) if self.layout else None,
+            )
+            pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
         else:
-            error_msg = f"Action {action_index} not supported."
-            raise ValueError(error_msg)
+            transpile_pass = (
+                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+            )
+            pm = PassManager(transpile_pass)
+
+        altered_qc = pm.run(self.state)
+
+        if action_index in (
+            self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
+        ):
+            self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
+
+        elif action_index in self.actions_routing_indices and self.layout:
+            self.layout.final_layout = pm.property_set["final_layout"]
 
         return altered_qc
+
+    def _handle_qiskit_layout_postprocessing(self, action: Action, pm: PassManager, altered_qc: QuantumCircuit) -> None:
+        if action.name == "VF2PostLayout":
+            assert pm.property_set["VF2PostLayout_stop_reason"] is not None
+            post_layout = pm.property_set["post_layout"]
+            if post_layout:
+                altered_qc, _ = mqt.predictor.rl.parsing.postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+        elif action.name == "VF2Layout":
+            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+            assert pm.property_set["layout"]
+        else:
+            assert pm.property_set["layout"]
+
+        if pm.property_set["layout"]:
+            self.layout = TranspileLayout(
+                initial_layout=pm.property_set["layout"],
+                input_qubit_mapping=pm.property_set["original_qubit_indices"],
+                final_layout=pm.property_set["final_layout"],
+                _output_qubit_list=altered_qc.qubits,
+                _input_qubit_count=self.num_qubits_uncompiled_circuit,
+            )
+
+    def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
+        tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
+        transpile_pass = (
+            action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+        )
+        assert isinstance(transpile_pass, list)
+        for p in transpile_pass:
+            p.apply(tket_qc)
+
+        qbs = tket_qc.qubits
+        tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
+        altered_qc = tk_to_qiskit(tket_qc)
+
+        if action_index in self.actions_routing_indices:
+            assert self.layout is not None
+            self.layout.final_layout = mqt.predictor.rl.parsing.final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+
+        return altered_qc
+
+    def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
+        bqskit_qc = qiskit_to_bqskit(self.state)
+        assert callable(action.transpile_pass)
+        if action_index in self.actions_opt_indices:
+            transpile = cast("Callable[[Circuit], Circuit]", action.transpile_pass)
+            bqskit_compiled_qc = transpile(bqskit_qc)
+        elif action_index in self.actions_synthesis_indices:
+            factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action.transpile_pass)
+            bqskit_compiled_qc = factory(self.device)(bqskit_qc)
+        elif action_index in self.actions_mapping_indices:
+            factory = cast(
+                "Callable[[Target], Callable[[Circuit], tuple[Circuit, list[int], list[int]]]]",
+                action.transpile_pass,
+            )
+            bqskit_compiled_qc, initial, final = factory(self.device)(bqskit_qc)
+            compiled_qiskit_qc = bqskit_to_qiskit(bqskit_compiled_qc)
+            self.layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
+                initial, final, compiled_qiskit_qc, self.state
+            )
+            return compiled_qiskit_qc
+        else:
+            msg = f"Unhandled BQSKit action index: {action_index}"
+            raise ValueError(msg)
+
+        return bqskit_to_qiskit(bqskit_compiled_qc)
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
