@@ -9,7 +9,11 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
-## [2.2.0] - 2025-02-02
+## [2.3.0] - tbd
+
+### Changed
+
+- ✨ Improve RL Action Handling by Using DataClasses ([#401]) ([**@nquetschlich**])
 
 _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-toolkit/predictor/releases) for previous changelogs._
 
@@ -21,6 +25,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 <!-- Contributor -->
+
+[**@burgholzer**]: https://github.com/burgholzer
+[**@nquetschlich**]: https://github.com/nquetschlich
 
 <!-- General links -->
 
