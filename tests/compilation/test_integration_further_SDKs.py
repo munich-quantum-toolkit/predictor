@@ -30,10 +30,16 @@ if TYPE_CHECKING:
     from qiskit.transpiler import Target
 
 
-def test_bqskit_o2_action() -> None:
+@pytest.fixture
+def available_actions_dict() -> dict[str, mqt.predictor.rl.actions.Action]:
+    """Return a dictionary of available actions."""
+    return mqt.predictor.rl.actions.get_actions_by_pass_type()
+
+
+def test_bqskit_o2_action(available_actions_dict: dict[str, mqt.predictor.rl.actions.Action]) -> None:
     """Test the BQSKitO2 action."""
     action_bqskit_o2 = None
-    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.OPT]:
+    for action in available_actions_dict[mqt.predictor.rl.actions.PassType.OPT]:
         if action.name == "BQSKitO2":
             action_bqskit_o2 = action
 
@@ -50,10 +56,12 @@ def test_bqskit_o2_action() -> None:
 
 
 @pytest.mark.parametrize("device", [get_device(name) for name in get_available_device_names()])
-def test_bqskit_synthesis_action(device: Target) -> None:
+def test_bqskit_synthesis_action(
+    device: Target, available_actions_dict: dict[str, mqt.predictor.rl.actions.Action]
+) -> None:
     """Test the BQSKitSynthesis action for all devices."""
     action_bqskit_synthesis_action = None
-    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.SYNTHESIS]:
+    for action in available_actions_dict[mqt.predictor.rl.actions.PassType.SYNTHESIS]:
         if action.name == "BQSKitSynthesis":
             action_bqskit_synthesis_action = action
 
@@ -81,10 +89,12 @@ def test_bqskit_synthesis_action(device: Target) -> None:
     assert only_nat_gates
 
 
-def test_bqskit_mapping_action_swaps_necessary() -> None:
+def test_bqskit_mapping_action_swaps_necessary(
+    available_actions_dict: dict[str, mqt.predictor.rl.actions.Action],
+) -> None:
     """Test the BQSKitMapping action for quantum circuit that requires SWAP gates."""
     bqskit_mapping_action = None
-    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.MAPPING]:
+    for action in available_actions_dict[mqt.predictor.rl.actions.PassType.MAPPING]:
         if action.name == "BQSKitMapping":
             bqskit_mapping_action = action
 
@@ -148,10 +158,12 @@ def check_mapped_circuit(
         assert virtual_qubit in layout.initial_layout._p2v.values()  # noqa: SLF001
 
 
-def test_bqskit_mapping_action_no_swaps_necessary() -> None:
+def test_bqskit_mapping_action_no_swaps_necessary(
+    available_actions_dict: dict[str, mqt.predictor.rl.actions.Action],
+) -> None:
     """Test the BQSKitMapping action for a simple quantum circuit that does not require SWAP gates."""
     bqskit_mapping_action = None
-    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.MAPPING]:
+    for action in available_actions_dict[mqt.predictor.rl.actions.PassType.MAPPING]:
         if action.name == "BQSKitMapping":
             bqskit_mapping_action = action
 
@@ -176,7 +188,7 @@ def test_bqskit_mapping_action_no_swaps_necessary() -> None:
     check_mapped_circuit(qc_no_swap_needed, mapped_qc, device, layout)
 
 
-def test_tket_routing() -> None:
+def test_tket_routing(available_actions_dict: dict[str, mqt.predictor.rl.actions.Action]) -> None:
     """Test the TKETRouting action."""
     qc = QuantumCircuit(5)
     qc.h(0)
@@ -187,7 +199,7 @@ def test_tket_routing() -> None:
 
     device = get_device("quantinuum_h2_56")
 
-    layout_action = mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.LAYOUT][0]
+    layout_action = available_actions_dict[mqt.predictor.rl.actions.PassType.LAYOUT][0]
     transpile_pass = layout_action.transpile_pass(device)
     pm = PassManager(transpile_pass)
     layouted_qc = pm.run(qc)
@@ -195,7 +207,7 @@ def test_tket_routing() -> None:
     input_qubit_mapping = pm.property_set["original_qubit_indices"]
 
     routing_action = None
-    for action in mqt.predictor.rl.actions.get_actions_by_pass_type()[mqt.predictor.rl.actions.PassType.ROUTING]:
+    for action in available_actions_dict[mqt.predictor.rl.actions.PassType.ROUTING]:
         if action.origin == mqt.predictor.rl.actions.CompilationOrigin.TKET:
             routing_action = action
     assert routing_action is not None
