@@ -43,15 +43,10 @@ MQT Predictor Framework Setup
 To run ``qcompile``, the MQT Predictor framework must be set up. How this is properly done is described next.
 
 First, the to-be-considered quantum devices must be included in the framework.
-Currently, all devices supported by `MQT Bench <https://github.com/cda-tum/mqt-bench>`_ are natively supported.
-In case another device shall be considered, it can be added by using a similar format as in MQT Bench but it is not
-necessary to add it in the repository since it can be directly added to the MQT Predictor framework as follows:
+All devices supported by `MQT Bench <https://github.com/cda-tum/mqt-bench>`_ are natively supported.
+Furthermore, a custom device can be added to the framework as long as it is provided as a Qiskit Target object.
 
-- Modify in `mqt/predictor/rl/predictorenv.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/predictorenv.py>`_. the line where ``mqt.bench.devices.get_device_by_name`` is used.
-- Modify in `mqt/predictor/ml/predictor.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/ml/predictor.py>`_. the lines where ``mqt.bench.devices.*`` are used.
-- Follow the same data format as defined in `mqt.bench.devices.device.py <https://github.com/cda-tum/mqt-bench/tree/main/src/mqt/bench/devices/device.py>`_
-
-Second, for each supported device, a respective reinforcement learning model must be trained. This is done by running
+Second, for each device, a respective reinforcement learning model must be trained. This is done by running
 the following command based on the training data in the form of quantum circuits provided as qasm files in
 `mqt/predictor/rl/training_data/training_circuits <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/training_data/training_circuits>`_:
 
@@ -72,6 +67,29 @@ the following command based on the training data in the form of quantum circuits
 This will train a reinforcement learning model for the ``ibm_falcon_27`` device with the expected fidelity as figure of merit.
 Additionally to the expected fidelity, also critical depth is provided as another figure of merit.
 Further figures of merit can be added in `mqt.predictor.reward.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/reward.py>`_.
+Please note that there is a pre-configured set of available compilation passes that are supported.
+This is defined in `mqt.predictor.rl.actions.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/actions.py>`_ and can be easily extended.
+If another compilation pass from Qiskit, TKET, or BQSKit shall be added, this can be done using:
+
+.. code-block:: python
+
+    from mqt.predictor.rl.actions import (
+        CompilationOrigin,
+        DeviceIndependentAction,
+        PassType,
+        register_action,
+    )
+
+    my_custom_pass = ...  # Define your custom pass here, e.g., a Qiskit pass
+    action = DeviceIndependentAction(
+        name="test_action",
+        pass_type=PassType.OPT,
+        transpile_pass=[my_custom_pass],
+        origin=CompilationOrigin.QISKIT,
+    )
+    register_action(action)
+
+For other sources, defining a new ``CompilationOrigin`` is necessary as well as providing parsing methods to and from Qiskit's QuantumCircuit, since this is used as our internal representation of quantum circuits.
 
 Third, after the reinforcement learning models that are used for the respective compilations are trained, the
 supervised machine learning model to predict the device selection must be trained.
