@@ -75,7 +75,7 @@ def test_qcompile_with_newly_trained_models() -> None:
             rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
-        timesteps=10,
+        timesteps=100,
         test=True,
     )
 
