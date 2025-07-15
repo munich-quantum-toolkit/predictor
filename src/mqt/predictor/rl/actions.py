@@ -299,20 +299,6 @@ register_action(
 
 register_action(
     DeviceDependentAction(
-        "TrivialLayout",
-        CompilationOrigin.QISKIT,
-        PassType.LAYOUT,
-        transpile_pass=lambda device: [
-            TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-        ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
         "DenseLayout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
@@ -342,15 +328,6 @@ register_action(
                 == VF2LayoutStopReason.SOLUTION_FOUND,
             ),
         ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        "BasicSwap",
-        CompilationOrigin.QISKIT,
-        PassType.ROUTING,
-        transpile_pass=lambda device: [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))],
     )
 )
 
