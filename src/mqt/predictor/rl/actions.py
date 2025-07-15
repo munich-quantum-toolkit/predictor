@@ -233,7 +233,7 @@ register_action(
         "Opt2qBlocks",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        [Collect2qBlocks(), ConsolidateBlocks()],
+        [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
     )
 )
 
