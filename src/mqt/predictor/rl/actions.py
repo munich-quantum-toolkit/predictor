@@ -159,6 +159,14 @@ def register_action(action: Action) -> Action:
     return action
 
 
+def remove_action(name: str) -> None:
+    """Removes an action from the global actions registry by name."""
+    if name not in _ACTIONS:
+        msg = f"No action with name {name} is registered."
+        raise KeyError(msg)
+    del _ACTIONS[name]
+
+
 register_action(
     DeviceIndependentAction(
         "Optimize1qGatesDecomposition",

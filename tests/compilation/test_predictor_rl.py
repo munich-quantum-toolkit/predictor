@@ -27,6 +27,7 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
     register_action,
+    remove_action,
 )
 
 
@@ -122,3 +123,8 @@ def test_register_action() -> None:
 
     with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
         register_action(action)
+
+    remove_action(action.name)
+
+    with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
+        remove_action("wrong_action_name")
