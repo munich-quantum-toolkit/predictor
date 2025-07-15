@@ -27,7 +27,23 @@ from pytket.passes import (
     RoutingPass,
 )
 from qiskit.circuit import StandardEquivalenceLibrary
-from qiskit.circuit.library import XGate, ZGate
+from qiskit.circuit.library import (
+    CXGate,
+    CYGate,
+    CZGate,
+    ECRGate,
+    HGate,
+    SdgGate,
+    SGate,
+    SwapGate,
+    SXdgGate,
+    SXGate,
+    TdgGate,
+    TGate,
+    XGate,
+    YGate,
+    ZGate,
+)
 from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import (
     CouplingMap,
@@ -184,7 +200,22 @@ register_action(
         "InverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        [InverseCancellation([XGate(), ZGate()])],
+        [
+            InverseCancellation([
+                CXGate(),
+                ECRGate(),
+                CZGate(),
+                CYGate(),
+                XGate(),
+                YGate(),
+                ZGate(),
+                HGate(),
+                SwapGate(),
+                (TGate(), TdgGate()),
+                (SGate(), SdgGate()),
+                (SXGate(), SXdgGate()),
+            ])
+        ],
     )
 )
 
