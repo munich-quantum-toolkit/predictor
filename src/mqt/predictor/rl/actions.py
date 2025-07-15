@@ -442,4 +442,4 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
     result: dict[PassType, list[Action]] = defaultdict(list)
     for action in _ACTIONS.values():
         result[action.pass_type].append(action)
-    return dict(result)
+    return result
