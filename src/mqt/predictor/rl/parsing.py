@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import operator
+from functools import cache
 
 from bqskit.ir import gates
 from pytket import Circuit, Qubit
@@ -84,6 +85,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
         place_with_map(circuit=circuit, qmap=mapping)
 
 
+@cache
 def get_bqskit_native_gates(device: Target) -> list[gates.Gate] | None:
     """Returns the native gates of the given device.
 
