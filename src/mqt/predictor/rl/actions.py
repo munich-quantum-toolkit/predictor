@@ -34,7 +34,6 @@ from qiskit.transpiler import (
 )
 from qiskit.transpiler.passes import (
     ApplyLayout,
-    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
     CommutativeCancellation,
@@ -53,7 +52,6 @@ from qiskit.transpiler.passes import (
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
     Size,
-    TrivialLayout,
     UnitarySynthesis,
     VF2Layout,
     VF2PostLayout,
