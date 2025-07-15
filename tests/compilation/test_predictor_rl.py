@@ -119,3 +119,6 @@ def test_register_action() -> None:
     assert action not in get_actions_by_pass_type()[PassType.OPT]
     register_action(action)
     assert action in get_actions_by_pass_type()[PassType.OPT]
+
+    with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
+        register_action(action)
