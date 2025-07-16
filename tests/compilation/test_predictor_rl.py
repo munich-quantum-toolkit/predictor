@@ -21,6 +21,14 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
 
 from mqt.predictor import rl
+from mqt.predictor.rl.actions import (
+    CompilationOrigin,
+    DeviceIndependentAction,
+    PassType,
+    get_actions_by_pass_type,
+    register_action,
+    remove_action,
+)
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -75,7 +83,7 @@ def test_qcompile_with_newly_trained_models() -> None:
             rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
-        timesteps=10,
+        timesteps=100,
         test=True,
     )
 
@@ -102,3 +110,21 @@ def test_warning_for_unidirectional_device() -> None:
     msg = "The connectivity of the device 'uni-directional device' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
     with pytest.warns(UserWarning, match=re.escape(msg)):
         rl.Predictor(figure_of_merit="expected_fidelity", device=target)
+
+
+def test_register_action() -> None:
+    """Test the register_action function."""
+    action = DeviceIndependentAction(
+        name="test_action", pass_type=PassType.OPT, transpile_pass=[], origin=CompilationOrigin.QISKIT
+    )
+    assert action not in get_actions_by_pass_type()[PassType.OPT]
+    register_action(action)
+    assert action in get_actions_by_pass_type()[PassType.OPT]
+
+    with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
+        register_action(action)
+
+    remove_action(action.name)
+
+    with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
+        remove_action("wrong_action_name")

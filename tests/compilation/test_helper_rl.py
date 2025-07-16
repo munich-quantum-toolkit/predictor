@@ -20,6 +20,8 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
 from mqt.predictor import rl
+from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
+from mqt.predictor.rl.parsing import postprocess_vf2postlayout
 
 
 def test_create_feature_dict() -> None:
@@ -50,9 +52,9 @@ def test_vf2_layout_and_postlayout() -> None:
 
     for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
         layout_pass = None
-        for layout_action in rl.helper.get_actions_layout():
-            if layout_action["name"] == "VF2Layout":
-                layout_pass = layout_action["transpile_pass"](dev)
+        for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
+            if layout_action.name == "VF2Layout":
+                layout_pass = layout_action.transpile_pass(dev)
                 break
         pm = PassManager(layout_pass)
         layouted_qc = pm.run(qc)
@@ -65,9 +67,9 @@ def test_vf2_layout_and_postlayout() -> None:
     initial_layout_before = qc_transpiled.layout.initial_layout
 
     post_layout_pass = None
-    for layout_action in rl.helper.get_actions_final_optimization():
-        if layout_action["name"] == "VF2PostLayout":
-            post_layout_pass = layout_action["transpile_pass"](dev_success)
+    for layout_action in get_actions_by_pass_type()[PassType.FINAL_OPT]:
+        if layout_action.name == "VF2PostLayout":
+            post_layout_pass = layout_action.transpile_pass(dev_success)
             break
 
     pm = PassManager(post_layout_pass)
@@ -75,7 +77,7 @@ def test_vf2_layout_and_postlayout() -> None:
 
     assert pm.property_set["VF2PostLayout_stop_reason"] == VF2PostLayoutStopReason.SOLUTION_FOUND
 
-    postprocessed_vf2postlayout_qc, _ = rl.helper.postprocess_vf2postlayout(
+    postprocessed_vf2postlayout_qc, _ = postprocess_vf2postlayout(
         altered_qc, pm.property_set["post_layout"], qc_transpiled.layout
     )
 
