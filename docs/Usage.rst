@@ -68,7 +68,7 @@ This will train a reinforcement learning model for the ``ibm_falcon_27`` device 
 Additionally to the expected fidelity, also critical depth is provided as another figure of merit.
 Further figures of merit can be added in `mqt.predictor.reward.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/reward.py>`_.
 Please note that there is a pre-configured set of available compilation passes that are supported.
-This is defined in `mqt.predictor.rl.actions.py <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/actions.py>`_ and can be easily extended.
+This is defined in `mqt.predictor.rl.actions <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/actions.py>`_ and can be easily extended.
 If another compilation pass from Qiskit, TKET, or BQSKit shall be added, this can be done using:
 
 .. code-block:: python
