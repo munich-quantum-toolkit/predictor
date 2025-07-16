@@ -27,7 +27,7 @@ else:
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
-from mqt.bench.targets import get_available_device_names, get_device
+from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -37,7 +37,6 @@ from mqt.predictor import ml, reward, rl, utils
 from mqt.predictor.hellinger import get_hellinger_model_path
 
 if TYPE_CHECKING:
-    from numpy._typing import NDArray
     from qiskit.transpiler import Target
 
 plt.rcParams["font.family"] = "Times New Roman"
@@ -65,13 +64,11 @@ class Predictor:
         logger.setLevel(logger_level)
 
         self.figure_of_merit = figure_of_merit
-        if devices is None:
-            self.devices = [get_device(device) for device in get_available_device_names()]
-        else:
-            self.devices = devices
-        self.devices.sort(
-            key=lambda x: x.description
-        )  # sorting is necessary to determine the ground truth label later on when generating the training data
+        self.devices = devices
+        if self.devices is not None:
+            self.devices.sort(
+                key=lambda x: x.description
+            )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
     def setup_device_predictor(self) -> bool:
         """Sets up the device predictor for the given figure of merit."""
@@ -81,10 +78,10 @@ class Predictor:
             self.compile_training_circuits(timeout=600)
             logger.info(f"Generated compiled circuit for {self.figure_of_merit}")
             # Step 2: Generate training data from the compiled circuits
-            _training_data, _name_list, _scores_list = self.generate_training_data()
+            self.generate_training_data()
             logger.info(f"Generated training data for {self.figure_of_merit}")
             # Step 3: Train the random forest classifier
-            self.train_random_forest_classifier()
+            self.train_random_forest_model()
             logger.info(f"Trained random forest classifier for {self.figure_of_merit}")
 
         except Exception:
@@ -92,7 +89,7 @@ class Predictor:
 
         return True
 
-    def compile_all_circuits_devicewise(
+    def _compile_all_circuits_devicewise(
         self,
         device: Target,
         timeout: int,
@@ -169,8 +166,9 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(source_path)
 
+        assert self.devices is not None, "Devices must be provided for compilation."
         Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self.compile_all_circuits_devicewise)(device, timeout, source_path, target_path, logger.level)
+            delayed(self._compile_all_circuits_devicewise)(device, timeout, source_path, target_path, logger.level)
             for device in self.devices
         )
 
@@ -179,7 +177,7 @@ class Predictor:
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         num_workers: int = -1,
-    ) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
+    ) -> None:
         """Creates and saves training data from all generated training samples.
 
         Arguments:
@@ -203,7 +201,7 @@ class Predictor:
         scores_list = []
 
         results = Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self.generate_training_sample)(
+            delayed(self._generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
                 path_compiled_circuits,
@@ -227,9 +225,7 @@ class Predictor:
             data = np.asarray(scores_list, dtype=object)
             np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
 
-        return (training_data, names_list, scores_list)
-
-    def generate_training_sample(
+    def _generate_training_sample(
         self,
         file: Path,
         path_uncompiled_circuit: Path,
@@ -253,6 +249,7 @@ class Predictor:
             raise RuntimeError("File is not a qasm file: " + str(file))
 
         logger.debug("Checking " + str(file))
+        assert self.devices is not None, "Devices must be provided for training."
         scores = {dev.description: -1.0 for dev in self.devices}
         all_relevant_files = path_compiled_circuits.glob(str(file).split(".")[0] + "*")
 
@@ -296,30 +293,8 @@ class Predictor:
         circuit_name = str(file).split(".")[0]
         return training_sample, circuit_name, scores_list
 
-    def train_random_forest_classifier(
-        self,
-    ) -> bool:
-        """Trains a random forest classifier for the given figure of merit.
-
-        Returns:
-            True when the training was successful, False otherwise.
-        """
-        training_data = self.get_prepared_training_data()
-        clf = self.train_random_forest_model(training_data, None, self.figure_of_merit)
-        return clf is not None
-
-    @staticmethod
-    def train_random_forest_model(
-        training_data: ml.helper.TrainingData,
-        device: Target | None,
-        figure_of_merit: str | reward.figure_of_merit,
-    ) -> RandomForestRegressor | RandomForestClassifier:
+    def train_random_forest_model(self) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
-
-        Arguments:
-            training_data: The training data, the names list and the scores list to be saved.
-            device: The device to be used for training.
-            figure_of_merit: The figure of merit to be used for training.
 
         Returns:
             Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
@@ -335,18 +310,19 @@ class Predictor:
             },
         ]
         # Device-specific regression model for Hellinger distance
-        if figure_of_merit == "hellinger_distance":
-            if device is None:
-                msg = "A device must be provided for Hellinger distance model training."
+        if self.figure_of_merit == "hellinger_distance":
+            if self.devices is None or len(self.devices) != 1:
+                msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
 
             mdl = RandomForestRegressor(random_state=0)
-            save_mdl_path = str(get_hellinger_model_path(device))
+            save_mdl_path = str(get_hellinger_model_path(self.devices[0]))
 
         else:  # Default classification model to score all devices
             mdl = RandomForestClassifier(random_state=0)
-            save_mdl_path = str(ml.helper.get_path_trained_model(figure_of_merit))
+            save_mdl_path = str(ml.helper.get_path_trained_model(self.figure_of_merit))
 
+        training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
         mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
 

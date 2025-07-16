@@ -172,8 +172,9 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     labels_list = [distance_label] * n_circuits
 
     # 3. Model Training
-    train_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
-    trained_model = ml.Predictor.train_random_forest_model(train_data, device, figure_of_merit="hellinger_distance")
+    pred = ml.Predictor(figure_of_merit="estimated_hellinger_distance", devices=[device])
+    ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    trained_model = pred.train_random_forest_model()
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
@@ -190,7 +191,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
+        rl_predictor = rl.Predictor(device=device, figure_of_merit=figure_of_merit)
 
         rl_predictor.train_model(
             timesteps=5,
@@ -224,12 +225,9 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             )
 
         # Generate training data from the compiled circuits
-        training_data, names_list, scores_list = ml_predictor.generate_training_data(
+        ml_predictor.generate_training_data(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
-        assert len(training_data) > 0
-        assert len(names_list) > 0
-        assert len(scores_list) > 0
 
         for file in [
             "training_data_estimated_hellinger_distance.npy",
@@ -240,7 +238,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_classifier()
+        ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
@@ -286,10 +284,7 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
     distance_label = rng.random(random_int)
     labels_list = [distance_label]
 
-    train_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    pred = ml.Predictor(figure_of_merit="estimated_hellinger_distance", devices=[])
     with pytest.raises(ValueError, match=re.escape("A device must be provided for Hellinger distance model training.")):
-        ml.Predictor.train_random_forest_model(
-            training_data=train_data,
-            device=None,
-            figure_of_merit="hellinger_distance",
-        )
+        pred.train_random_forest_model()

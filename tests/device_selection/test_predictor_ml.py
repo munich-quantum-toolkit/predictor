@@ -47,13 +47,6 @@ def target_path() -> Path:
     return Path("./test_compiled_circuits")
 
 
-def test_load_training_data_not_found(predictor: ml.Predictor) -> None:
-    """Test the loading of the training data."""
-    msg = "Training data not found. Please run the training script first as described in the documentation that can be found at https://mqt.readthedocs.io/projects/predictor/en/latest/Usage.html."
-    with pytest.raises(FileNotFoundError, match=re.escape(msg)):
-        predictor.load_training_data()
-
-
 def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the generation of the training data."""
     if not source_path.exists():
@@ -77,21 +70,18 @@ def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, 
         predictor.compile_training_circuits(
             timeout=600, target_path=target_path, source_path=source_path, num_workers=1
         )
-
-
-def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
-    """Test the saving of the training data."""
-    training_data, names_list, scores_list = predictor.generate_training_data(
+    predictor.generate_training_data(
         path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
     )
-    assert len(training_data) > 0
-    assert len(names_list) > 0
-    assert len(scores_list) > 0
+    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    assert (data_path / f"training_data_{predictor.figure_of_merit}.npy").exists()
+    assert (data_path / f"names_list_{predictor.figure_of_merit}.npy").exists()
+    assert (data_path / f"scores_list_{predictor.figure_of_merit}.npy").exists()
 
 
 def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, source_path: Path) -> None:
     """Test the training of the random forest classifier."""
-    predictor.train_random_forest_classifier()
+    predictor.train_random_forest_model()
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predicted_dev = ml.predict_device_for_figure_of_merit(qc)
     assert predicted_dev.description in get_available_device_names()
