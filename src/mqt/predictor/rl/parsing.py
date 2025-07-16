@@ -86,7 +86,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
 
 
 @cache
-def get_bqskit_native_gates(device: Target) -> list[gates.Gate]
+def get_bqskit_native_gates(device: Target) -> list[gates.Gate]:
     """Returns the native gates of the given device.
 
     Arguments:
