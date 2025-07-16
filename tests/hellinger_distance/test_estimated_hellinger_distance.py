@@ -172,7 +172,7 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     labels_list = [distance_label] * n_circuits
 
     # 3. Model Training
-    trained_model = ml.train_random_forest_regressor(feature_vector_list, labels_list, device, save_model=True)
+    trained_model = ml.train_random_forest_regressor(feature_vector_list, labels_list, device)
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
@@ -241,7 +241,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_classifier(save_classifier=True)
+        ml_predictor.train_random_forest_classifier()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
@@ -290,4 +290,4 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
 
     # 3. Model Training
     with pytest.raises(ValueError, match=re.escape("A device must be provided for Hellinger distance model training.")):
-        ml.train_random_forest_regressor(feature_vector_list, labels_list, device=None, save_model=True)
+        ml.train_random_forest_regressor(feature_vector_list, labels_list, device=None)

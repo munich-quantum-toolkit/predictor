@@ -272,18 +272,14 @@ class Predictor:
 
     def train_random_forest_classifier(
         self,
-        save_classifier: bool = True,
     ) -> bool:
         """Trains a random forest classifier for the given figure of merit.
-
-        Arguments:
-            save_classifier: Whether to save the classifier. Defaults to True.
 
         Returns:
             True when the training was successful, False otherwise.
         """
         training_data = self.get_prepared_training_data()
-        clf = self.train_random_forest_model(training_data, None, self.figure_of_merit, save_classifier)
+        clf = self.train_random_forest_model(training_data, None, self.figure_of_merit)
         return clf is not None
 
     @staticmethod
@@ -291,7 +287,6 @@ class Predictor:
         training_data: ml.helper.TrainingData,
         device: Target | None,
         figure_of_merit: str | reward.figure_of_merit,
-        save_model: bool = True,
     ) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
 
@@ -299,7 +294,6 @@ class Predictor:
             training_data: The training data, the names list and the scores list to be saved.
             device: The device to be used for training.
             figure_of_merit: The figure of merit to be used for training.
-            save_model: Whether to save the classifier. Defaults to True.
 
         Returns:
             Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
@@ -330,8 +324,7 @@ class Predictor:
         num_cv = min(len(training_data.y_train), 5)
         mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
 
-        if save_model:
-            joblib_dump(mdl, save_mdl_path)
+        joblib_dump(mdl, save_mdl_path)
         logger.info("Random Forest model is trained and saved.")
 
         return mdl.best_estimator_
@@ -458,7 +451,6 @@ def train_random_forest_regressor(
     x_train: NDArray[np.float64],
     y_train: NDArray[np.float64],
     device: Target | None,
-    save_model: bool = True,
 ) -> RandomForestRegressor:
     """Trains a random forest regressor on a Hellinger distance dataset.
 
@@ -466,7 +458,6 @@ def train_random_forest_regressor(
         x_train: The training data (circuit feature vectors).
         y_train: The training labels (Hellinger distance values).
         device: The device to be used for training.
-        save_model: Whether to save the trained model. Defaults to True.
 
     Returns:
         Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
@@ -476,5 +467,7 @@ def train_random_forest_regressor(
     train_data = ml.helper.TrainingData(X_train=x_train, y_train=y_train)
 
     return Predictor.train_random_forest_model(
-        train_data, device, figure_of_merit="hellinger_distance", save_model=save_model
+        train_data,
+        device,
+        figure_of_merit="hellinger_distance",
     )
