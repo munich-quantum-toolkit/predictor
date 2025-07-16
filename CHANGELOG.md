@@ -9,8 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
-### Changed 
- 
+### Changed
+
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
 
 ## [2.2.0] - 2025-02-02
