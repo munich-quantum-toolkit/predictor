@@ -355,60 +355,41 @@ class Predictor:
 
         return mdl.best_estimator_
 
-    def get_prepared_training_data(self) -> ml.helper.TrainingData:
+    def _get_prepared_training_data(self) -> ml.helper.TrainingData:
         """Returns the training data for the given figure of merit."""
-        training_data, names_list, raw_scores_list = self.load_training_data()
-        unzipped_training_data_x, unzipped_training_data_y = zip(*training_data, strict=False)
-        scores_list: list[list[float]] = [[] for _ in range(len(raw_scores_list))]
-        x_raw = list(unzipped_training_data_x)
-        x_list: list[list[float]] = [[] for _ in range(len(x_raw))]
-        y_list = list(unzipped_training_data_y)
-        for i in range(len(x_raw)):
-            x_list[i] = list(x_raw[i])
-            scores_list[i] = list(raw_scores_list[i])
+        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
+            prefix = f"{self.figure_of_merit}.npy"
+            file_data = path / f"training_data_{prefix}"
+            file_names = path / f"names_list_{prefix}"
+            file_scores = path / f"scores_list_{prefix}"
 
-        x, y, indices = (
-            np.array(x_list, dtype=np.float64),
-            np.array(y_list, dtype=str),
-            np.array(range(len(y_list)), dtype=np.int64),
+            if file_data.is_file() and file_names.is_file() and file_scores.is_file():
+                training_data = np.load(file_data, allow_pickle=True)
+                names_list = list(np.load(file_names, allow_pickle=True))
+                scores_list = [list(scores) for scores in np.load(file_scores, allow_pickle=True)]
+            else:
+                msg = "Training data not found."
+                raise FileNotFoundError(msg)
+
+        x_list, y_list = zip(*training_data, strict=False)
+        x = np.array(x_list, dtype=np.float64)
+        y = np.array(y_list, dtype=str)
+        indices = np.arange(len(y), dtype=np.int64)
+
+        x_train, x_test, y_train, y_test, indices_train, indices_test = train_test_split(
+            x, y, indices, test_size=0.3, random_state=5
         )
-
-        (
-            x_train,
-            x_test,
-            y_train,
-            y_test,
-            indices_train,
-            indices_test,
-        ) = train_test_split(x, y, indices, test_size=0.3, random_state=5)
 
         return ml.helper.TrainingData(
-            x_train,
-            y_train,
-            x_test,
-            y_test,
-            indices_train,
-            indices_test,
-            names_list,
-            scores_list,
+            X_train=x_train,
+            y_train=y_train,
+            X_test=x_test,
+            y_test=y_test,
+            indices_train=indices_train.tolist(),
+            indices_test=indices_test.tolist(),
+            names_list=names_list,
+            scores_list=scores_list,
         )
-
-    def load_training_data(self) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
-        """Loads and returns the training data from the training data folder."""
-        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
-            if (
-                path.joinpath("training_data_" + self.figure_of_merit + ".npy").is_file()
-                and path.joinpath("names_list_" + self.figure_of_merit + ".npy").is_file()
-                and path.joinpath("scores_list_" + self.figure_of_merit + ".npy").is_file()
-            ):
-                training_data = np.load(path / ("training_data_" + self.figure_of_merit + ".npy"), allow_pickle=True)
-                names_list = list(np.load(path / ("names_list_" + self.figure_of_merit + ".npy"), allow_pickle=True))
-                scores_list = list(np.load(path / ("scores_list_" + self.figure_of_merit + ".npy"), allow_pickle=True))
-            else:
-                error_msg = "Training data not found. Please run the training script first as described in the documentation that can be found at https://mqt.readthedocs.io/projects/predictor/en/latest/Usage.html."
-                raise FileNotFoundError(error_msg)
-
-            return training_data, names_list, scores_list
 
 
 def predict_device_for_figure_of_merit(
