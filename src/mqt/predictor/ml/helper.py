@@ -109,9 +109,6 @@ def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, int]:
     return res_dct
 
 
-PATH_LENGTH = 260
-
-
 def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
     """Creates and returns a feature dictionary for a given quantum circuit.
 
