@@ -64,7 +64,6 @@ class Predictor:
         """
         logger.setLevel(logger_level)
 
-        self.clf = None
         self.figure_of_merit = figure_of_merit
         if devices is None:
             self.devices = [get_device(device) for device in get_available_device_names()]
@@ -73,10 +72,6 @@ class Predictor:
         self.devices.sort(
             key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
-
-    def set_classifier(self, clf: RandomForestClassifier) -> None:
-        """Sets the classifier to the given classifier."""
-        self.clf = clf
 
     def compile_all_circuits_devicewise(
         self,
@@ -289,7 +284,6 @@ class Predictor:
         """
         training_data = self.get_prepared_training_data()
         clf = self.train_random_forest_model(training_data, None, self.figure_of_merit, save_classifier)
-        self.set_classifier(clf)
         return clf is not None
 
     @staticmethod
