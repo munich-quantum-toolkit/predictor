@@ -22,10 +22,10 @@ from qiskit.qasm2 import dump
 from mqt.predictor import ml
 
 
-def test_predictor_initialization_with_all_devices() -> None:
+def test_predictor_initialization_without_devices() -> None:
     """Test the predictor initialization for a given figure of merit with all available devices."""
     predictor = ml.Predictor(figure_of_merit="expected_fidelity", devices=None)
-    assert len(predictor.devices) > 0
+    assert predictor.devices is None
 
 
 # create fixture to get the predictor
