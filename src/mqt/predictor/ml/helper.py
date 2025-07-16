@@ -15,31 +15,12 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mqt.predictor import ml, reward, rl
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy._typing import NDArray
     from qiskit import QuantumCircuit
-
-
-def qcompile(
-    qc: QuantumCircuit,
-    figure_of_merit: reward.figure_of_merit = "expected_fidelity",
-) -> tuple[QuantumCircuit, list[str], str]:
-    """Compiles a given quantum circuit to a device with the highest predicted figure of merit.
-
-    Arguments:
-        qc: The quantum circuit to be compiled.
-        figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
-
-    Returns:
-        Returns a tuple containing the compiled quantum circuit, the compilation information and the name of the device used for compilation. If compilation fails, False is returned.
-    """
-    predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
-    res = rl.qcompile(qc, device=predicted_device, figure_of_merit=figure_of_merit)
-    return *res, predicted_device
 
 
 def get_path_training_data() -> Path:

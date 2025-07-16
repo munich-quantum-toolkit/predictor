@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import logging
 
-from mqt.predictor.ml import qcompile
+from mqt.predictor import ml, rl
+from mqt.predictor.qcompile import qcompile
 
 __all__ = [
+    "ml",
     "qcompile",
+    "rl",
 ]
 
 logger = logging.getLogger("mqt-predictor")
