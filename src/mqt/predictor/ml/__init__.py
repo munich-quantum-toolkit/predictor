@@ -11,6 +11,6 @@
 from __future__ import annotations
 
 from mqt.predictor.ml import helper
-from mqt.predictor.ml.predictor import Predictor, predict_device_for_figure_of_merit, train_random_forest_regressor
+from mqt.predictor.ml.predictor import Predictor, predict_device_for_figure_of_merit
 
-__all__ = ["Predictor", "helper", "predict_device_for_figure_of_merit", "train_random_forest_regressor"]
+__all__ = ["Predictor", "helper", "predict_device_for_figure_of_merit"]

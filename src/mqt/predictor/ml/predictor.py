@@ -449,29 +449,3 @@ def predict_device_for_figure_of_merit(
             return dev
     msg = f"No suitable device found for the given quantum circuit with {qc.num_qubits} qubits."
     raise ValueError(msg)
-
-
-def train_random_forest_regressor(
-    x_train: NDArray[np.float64],
-    y_train: NDArray[np.float64],
-    device: Target | None,
-) -> RandomForestRegressor:
-    """Trains a random forest regressor on a Hellinger distance dataset.
-
-    Arguments:
-        x_train: The training data (circuit feature vectors).
-        y_train: The training labels (Hellinger distance values).
-        device: The device to be used for training.
-
-    Returns:
-        Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
-        or a trained RandomForestClassifier to score multiple devices according to a specific figure of merit.
-    """
-    # type cast the data to the expected format
-    train_data = ml.helper.TrainingData(X_train=x_train, y_train=y_train)
-
-    return Predictor.train_random_forest_model(
-        train_data,
-        device,
-        figure_of_merit="hellinger_distance",
-    )

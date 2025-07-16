@@ -172,7 +172,8 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     labels_list = [distance_label] * n_circuits
 
     # 3. Model Training
-    trained_model = ml.train_random_forest_regressor(feature_vector_list, labels_list, device)
+    train_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    trained_model = ml.Predictor.train_random_forest_model(train_data, device, figure_of_merit="hellinger_distance")
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
@@ -277,15 +278,18 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
     """Test the error handling of the device selection predictor when no device is provided for the Hellinger distance model."""
     rng = np.random.default_rng()
-    random_int = rng.integers(0, 10)
+    random_int = rng.integers(1, 10)
 
-    # 1. Random features and labels
     feature_vector = rng.random(random_int)
     feature_vector_list = [feature_vector]
 
     distance_label = rng.random(random_int)
     labels_list = [distance_label]
 
-    # 3. Model Training
+    train_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
     with pytest.raises(ValueError, match=re.escape("A device must be provided for Hellinger distance model training.")):
-        ml.train_random_forest_regressor(feature_vector_list, labels_list, device=None)
+        ml.Predictor.train_random_forest_model(
+            training_data=train_data,
+            device=None,
+            figure_of_merit="hellinger_distance",
+        )
