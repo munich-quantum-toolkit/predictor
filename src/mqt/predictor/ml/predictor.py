@@ -73,6 +73,33 @@ class Predictor:
             key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
+
+    def setup_device_predictor(self) -> bool:
+        """Sets up the device predictor for the given figure of merit."""
+        if self.figure_of_merit not in reward.figure_of_merit:
+            error_msg = f"Figure of merit '{self.figure_of_merit}' is not supported."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        try:
+            logger.info(f"Start the training for the figure of merit: {self.figure_of_merit}")
+            # Step 1: Generate compiled circuits for all devices
+            self.compile_training_circuits(timeout=600)
+            logger.info(f"Generated compiled circuit for {self.figure_of_merit}")
+            # Step 2: Generate training data from the compiled circuits
+            training_data, name_list, scores_list = self.generate_trainingdata_from_qasm_files()
+            logger.info(f"Generated training data for {self.figure_of_merit}")
+            # Step 3: Train the random forest classifier
+            self.train_random_forest_classifier()
+            logger.info(f"Trained random forest classifier for {self.figure_of_merit}")
+
+        except Exception as e:
+            logger.error(f"Error during setup of device predictor: {e}")
+            return False
+
+        return True
+
+
+
     def compile_all_circuits_devicewise(
         self,
         device: Target,
