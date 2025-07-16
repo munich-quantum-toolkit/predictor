@@ -73,32 +73,24 @@ class Predictor:
             key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
-
     def setup_device_predictor(self) -> bool:
         """Sets up the device predictor for the given figure of merit."""
-        if self.figure_of_merit not in reward.figure_of_merit:
-            error_msg = f"Figure of merit '{self.figure_of_merit}' is not supported."
-            logger.error(error_msg)
-            raise ValueError(error_msg)
         try:
             logger.info(f"Start the training for the figure of merit: {self.figure_of_merit}")
             # Step 1: Generate compiled circuits for all devices
             self.compile_training_circuits(timeout=600)
             logger.info(f"Generated compiled circuit for {self.figure_of_merit}")
             # Step 2: Generate training data from the compiled circuits
-            training_data, name_list, scores_list = self.generate_trainingdata_from_qasm_files()
+            _training_data, _name_list, _scores_list = self.generate_training_data()
             logger.info(f"Generated training data for {self.figure_of_merit}")
             # Step 3: Train the random forest classifier
             self.train_random_forest_classifier()
             logger.info(f"Trained random forest classifier for {self.figure_of_merit}")
 
-        except Exception as e:
-            logger.error(f"Error during setup of device predictor: {e}")
+        except Exception:
             return False
 
         return True
-
-
 
     def compile_all_circuits_devicewise(
         self,
@@ -400,21 +392,6 @@ class Predictor:
             names_list,
             scores_list,
         )
-
-    def save_training_data(
-        self,
-        training_data: list[NDArray[np.float64]],
-        names_list: list[str],
-        scores_list: list[NDArray[np.float64]],
-    ) -> None:
-        """Saves the given training data to the training data folder.
-
-        Arguments:
-            training_data: The training data, the names list and the scores list to be saved.
-            names_list: The names list of the training data.
-            scores_list: The scores list of the training data.
-            figure_of_merit: The figure of merit to be used for compilation.
-        """
 
     def load_training_data(self) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
         """Loads and returns the training data from the training data folder."""
