@@ -54,7 +54,7 @@ def test_load_training_data_not_found(predictor: ml.Predictor) -> None:
         predictor.load_training_data()
 
 
-def test_generate_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
+def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the generation of the training data."""
     if not source_path.exists():
         source_path.mkdir()
@@ -81,22 +81,12 @@ def test_generate_training_data(predictor: ml.Predictor, source_path: Path, targ
 
 def test_save_training_data(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
     """Test the saving of the training data."""
-    training_data, names_list, scores_list = predictor.generate_trainingdata_from_qasm_files(
+    training_data, names_list, scores_list = predictor.generate_training_data(
         path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
     )
     assert len(training_data) > 0
     assert len(names_list) > 0
     assert len(scores_list) > 0
-
-    # save the training data and delete it afterwards
-    predictor.save_training_data(training_data, names_list, scores_list)
-    for file in [
-        "training_data_expected_fidelity.npy",
-        "names_list_expected_fidelity.npy",
-        "scores_list_expected_fidelity.npy",
-    ]:
-        path = ml.helper.get_path_training_data() / "training_data_aggregated" / file
-        assert path.exists()
 
 
 def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, source_path: Path) -> None:

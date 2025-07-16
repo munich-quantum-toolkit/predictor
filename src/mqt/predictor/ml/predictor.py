@@ -155,13 +155,13 @@ class Predictor:
             for device in self.devices
         )
 
-    def generate_trainingdata_from_qasm_files(
+    def generate_training_data(
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         num_workers: int = -1,
     ) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
-        """Handles to create training data from all generated training samples.
+        """Creates and saves training data from all generated training samples.
 
         Arguments:
             path_uncompiled_circuits: The path to the directory containing the uncompiled circuits. Defaults to None.
@@ -180,7 +180,7 @@ class Predictor:
 
         # init resulting list (feature vector, name, scores)
         training_data = []
-        name_list = []
+        names_list = []
         scores_list = []
 
         results = Parallel(n_jobs=num_workers, verbose=100)(
@@ -197,10 +197,18 @@ class Predictor:
             if all(score == -1 for score in scores):
                 continue
             training_data.append(training_sample)
-            name_list.append(circuit_name)
+            names_list.append(circuit_name)
             scores_list.append(scores)
 
-        return (training_data, name_list, scores_list)
+        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
+            data = np.asarray(training_data, dtype=object)
+            np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+            data = np.asarray(names_list, dtype=str)
+            np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
+            data = np.asarray(scores_list, dtype=object)
+            np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
+
+        return (training_data, names_list, scores_list)
 
     def generate_training_sample(
         self,
@@ -381,13 +389,6 @@ class Predictor:
             scores_list: The scores list of the training data.
             figure_of_merit: The figure of merit to be used for compilation.
         """
-        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
-            data = np.asarray(training_data, dtype=object)
-            np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
-            data = np.asarray(names_list, dtype=str)
-            np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
-            data = np.asarray(scores_list, dtype=object)
-            np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
 
     def load_training_data(self) -> tuple[list[NDArray[np.float64]], list[str], list[NDArray[np.float64]]]:
         """Loads and returns the training data from the training data folder."""

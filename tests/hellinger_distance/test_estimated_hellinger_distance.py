@@ -223,15 +223,13 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             )
 
         # Generate training data from the compiled circuits
-        training_data, names_list, scores_list = ml_predictor.generate_trainingdata_from_qasm_files(
+        training_data, names_list, scores_list = ml_predictor.generate_training_data(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
         assert len(training_data) > 0
         assert len(names_list) > 0
         assert len(scores_list) > 0
 
-        # Save the training data
-        ml_predictor.save_training_data(training_data, names_list, scores_list)
         for file in [
             "training_data_estimated_hellinger_distance.npy",
             "names_list_estimated_hellinger_distance.npy",
