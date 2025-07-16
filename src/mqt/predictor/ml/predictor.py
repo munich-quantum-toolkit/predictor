@@ -296,7 +296,6 @@ class Predictor:
             logger.warning("no compiled circuits found for:" + str(file))
 
         scores_list = list(scores.values())
-        # target label is the dict key.name with the highest value, dont use max(scores, key=scores.get).name
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
