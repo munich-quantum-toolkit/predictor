@@ -70,11 +70,11 @@ def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, 
     # generate compiled circuits using trained RL model
     if sys.platform == "win32":
         with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-            predictor.generate_compiled_circuits(
+            predictor.compile_training_circuits(
                 timeout=600, target_path=target_path, source_path=source_path, num_workers=1
             )
     else:
-        predictor.generate_compiled_circuits(
+        predictor.compile_training_circuits(
             timeout=600, target_path=target_path, source_path=source_path, num_workers=1
         )
 

@@ -124,7 +124,7 @@ class Predictor:
                 print(e, filename, device.description)
                 raise RuntimeError("Error during compilation: " + str(e)) from e
 
-    def generate_compiled_circuits(
+    def compile_training_circuits(
         self,
         source_path: Path | None = None,
         target_path: Path | None = None,
