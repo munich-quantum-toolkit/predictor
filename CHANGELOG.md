@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices ([#393]) ([**@nquetschlich**])
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
 
 ## [2.2.0] - 2025-02-02
