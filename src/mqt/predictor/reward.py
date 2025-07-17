@@ -30,8 +30,11 @@ figure_of_merit = Literal[
     "expected_fidelity",
     "critical_depth",
     "estimated_success_probability",
+    "hellinger_distance",
     "estimated_hellinger_distance",
 ]
+
+# ml_figures_of_merit = figure_of_merit +  Literal["hellinger_distance"]
 
 
 def crit_depth(qc: QuantumCircuit, precision: int = 10) -> float:
