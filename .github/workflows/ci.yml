@@ -21,7 +21,7 @@ jobs:
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.14
-  
+
   python-tests:
     name: 🐍 Test
     needs: change-detection
@@ -29,12 +29,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on:
-          [ubuntu-24.04, macos-13, macos-14, windows-2022]
+        runs-on: [ubuntu-24.04, macos-13, macos-14, windows-2022]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
-  
+
   python-coverage:
     name: 🐍 Coverage
     needs: [change-detection, python-tests]
