@@ -34,8 +34,6 @@ figure_of_merit = Literal[
     "estimated_hellinger_distance",
 ]
 
-# ml_figures_of_merit = figure_of_merit +  Literal["hellinger_distance"]
-
 
 def crit_depth(qc: QuantumCircuit, precision: int = 10) -> float:
     """Calculates the critical depth of a given quantum circuit."""
