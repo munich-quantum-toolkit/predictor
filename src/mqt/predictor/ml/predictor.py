@@ -84,15 +84,15 @@ class Predictor:
 
     def __init__(
         self,
+        devices: list[Target],
         figure_of_merit: reward.figure_of_merit = "expected_fidelity",
-        devices: list[Target] | None = None,
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
 
         Arguments:
             figure_of_merit: The figure of merit to be used for training.
-            devices: The devices to be used for training. Defaults to None. If None, all available devices from MQT Bench are used.
+            devices: The devices to be used for training.
             logger_level: The level of the logger. Defaults to logging.INFO.
 
         """
@@ -100,36 +100,16 @@ class Predictor:
 
         self.figure_of_merit = figure_of_merit
         self.devices = devices
-        if self.devices is not None:
-            self.devices.sort(
-                key=lambda x: x.description
-            )  # sorting is necessary to determine the ground truth label later on when generating the training data
-
-    def setup_device_predictor(self) -> bool:
-        """Sets up the device predictor for the given figure of merit."""
-        try:
-            logger.info(f"Start the training for the figure of merit: {self.figure_of_merit}")
-            # Step 1: Generate compiled circuits for all devices
-            self.compile_training_circuits(timeout=600)
-            logger.info(f"Generated compiled circuit for {self.figure_of_merit}")
-            # Step 2: Generate training data from the compiled circuits
-            self.generate_training_data()
-            logger.info(f"Generated training data for {self.figure_of_merit}")
-            # Step 3: Train the random forest classifier
-            self.train_random_forest_model()
-            logger.info(f"Trained random forest classifier for {self.figure_of_merit}")
-
-        except Exception:
-            return False
-
-        return True
+        self.devices.sort(
+            key=lambda x: x.description
+        )  # sorting is necessary to determine the ground truth label later on when generating the training data
 
     def _compile_all_circuits_devicewise(
         self,
         device: Target,
         timeout: int,
-        source_path: Path | None = None,
-        target_path: Path | None = None,
+        path_uncompiled_circuits: Path | None = None,
+        path_compiled_circuits: Path | None = None,
         logger_level: int = logging.INFO,
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
@@ -137,8 +117,8 @@ class Predictor:
         Arguments:
             device: The device to be used for compilation.
             timeout: The timeout in seconds for the compilation of a single circuit.
-            source_path: The path to the directory containing the circuits to be compiled. Defaults to None.
-            target_path: The path to the directory where the compiled circuits should be saved. Defaults to None.
+            path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
+            path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
             logger_level: The level of the logger. Defaults to logging.INFO.
         """
         logger.setLevel(logger_level)
@@ -148,13 +128,13 @@ class Predictor:
 
         dev_max_qubits = device.num_qubits
 
-        if source_path is None:
-            source_path = ml.helper.get_path_training_circuits()
+        if path_uncompiled_circuits is None:
+            path_uncompiled_circuits = ml.helper.get_path_training_circuits()
 
-        if target_path is None:
-            target_path = ml.helper.get_path_training_circuits_compiled()
+        if path_compiled_circuits is None:
+            path_compiled_circuits = ml.helper.get_path_training_circuits_compiled()
 
-        for filename in source_path.iterdir():
+        for filename in path_uncompiled_circuits.iterdir():
             if filename.suffix != ".qasm":
                 continue
             qc = QuantumCircuit.from_qasm_file(filename)
@@ -162,13 +142,13 @@ class Predictor:
                 continue
 
             target_filename = Path(filename).stem + "_" + self.figure_of_merit + "-" + device.description
-            if (target_path / (target_filename + ".qasm")).exists():
+            if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
                 res = utils.timeout_watcher(rl.qcompile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
-                    with Path(target_path / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
+                    with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
                         dump(compiled_qc, f)
 
             except Exception as e:
@@ -177,33 +157,34 @@ class Predictor:
 
     def compile_training_circuits(
         self,
-        source_path: Path | None = None,
-        target_path: Path | None = None,
+        path_uncompiled_circuits: Path | None = None,
+        path_compiled_circuits: Path | None = None,
         timeout: int = 600,
         num_workers: int = -1,
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
         Arguments:
-            source_path: The path to the directory containing the circuits to be compiled. Defaults to None.
-            target_path: The path to the directory where the compiled circuits should be saved. Defaults to None.
+            path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
+            path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
             timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
             num_workers: The number of workers to be used for parallelization. Defaults to -1.
         """
-        if source_path is None:
-            source_path = ml.helper.get_path_training_circuits()
+        if path_uncompiled_circuits is None:
+            path_uncompiled_circuits = ml.helper.get_path_training_circuits()
 
-        if target_path is None:
-            target_path = ml.helper.get_path_training_circuits_compiled()
+        if path_compiled_circuits is None:
+            path_compiled_circuits = ml.helper.get_path_training_circuits_compiled()
 
-        path_zip = source_path / "training_data_device_selection.zip"
-        if not any(file.suffix == ".qasm" for file in source_path.iterdir()) and path_zip.exists():
+        path_zip = path_uncompiled_circuits / "training_data_device_selection.zip"
+        if not any(file.suffix == ".qasm" for file in path_uncompiled_circuits.iterdir()) and path_zip.exists():
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
-                zip_ref.extractall(source_path)
+                zip_ref.extractall(path_uncompiled_circuits)
 
-        assert self.devices is not None, "Devices must be provided for compilation."
         Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self._compile_all_circuits_devicewise)(device, timeout, source_path, target_path, logger.level)
+            delayed(self._compile_all_circuits_devicewise)(
+                device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+            )
             for device in self.devices
         )
 
@@ -284,7 +265,6 @@ class Predictor:
             raise RuntimeError("File is not a qasm file: " + str(file))
 
         logger.debug("Checking " + str(file))
-        assert self.devices is not None, "Devices must be provided for training."
         scores = {dev.description: -1.0 for dev in self.devices}
         all_relevant_files = path_compiled_circuits.glob(str(file).split(".")[0] + "*")
 
@@ -307,6 +287,9 @@ class Predictor:
                 score = reward.estimated_success_probability(qc, device)
             elif self.figure_of_merit == "estimated_hellinger_distance":
                 score = reward.estimated_hellinger_distance(qc, device)
+            elif self.figure_of_merit == "hellinger_distance":
+                msg = "Hellinger distance should not be used for training data generation. Use 'estimated_hellinger_distance' instead."
+                raise RuntimeError(msg)
             else:
                 assert_never(self.figure_of_merit)
             scores[dev_name] = score
@@ -328,7 +311,9 @@ class Predictor:
         circuit_name = str(file).split(".")[0]
         return training_sample, circuit_name, scores_list
 
-    def train_random_forest_model(self) -> RandomForestRegressor | RandomForestClassifier:
+    def train_random_forest_model(
+        self, training_data: ml.helper.TrainingData | None = None
+    ) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
 
         Returns:
@@ -346,7 +331,7 @@ class Predictor:
         ]
         # Device-specific regression model for Hellinger distance
         if self.figure_of_merit == "hellinger_distance":
-            if self.devices is None or len(self.devices) != 1:
+            if len(self.devices) != 1:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
 
@@ -357,7 +342,8 @@ class Predictor:
             mdl = RandomForestClassifier(random_state=0)
             save_mdl_path = str(ml.helper.get_path_trained_model(self.figure_of_merit))
 
-        training_data = self._get_prepared_training_data()
+        if not training_data:
+            training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
         mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
 
