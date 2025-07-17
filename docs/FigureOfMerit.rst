@@ -84,7 +84,7 @@ To use this figure of merit, three steps are required:
 
    .. code-block:: python
 
-      from mqt.predictor.ml import train_random_forest_model, Predictor
+      from mqt.predictor.ml import Predictor
 
       pred = Predictor(
           figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27")]
