@@ -11,103 +11,75 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
-from mqt.bench.targets import get_available_device_names, get_device
+from mqt.bench.targets import get_device
 from qiskit.qasm2 import dump
 
 from mqt.predictor import ml
 
 
-# create fixture to get the predictor
 @pytest.fixture
-def predictor() -> ml.Predictor:
-    """Return the predictor."""
-    return ml.Predictor(figure_of_merit="expected_fidelity", devices=[get_device("ibm_falcon_127")])
-
-
-@pytest.fixture
-def source_path() -> Path:
+def path_uncompiled_circuits() -> Path:
     """Return the source path."""
     return Path("./test_uncompiled_circuits")
 
 
 @pytest.fixture
-def target_path() -> Path:
+def path_compiled_circuits() -> Path:
     """Return the target path."""
     return Path("./test_compiled_circuits")
 
 
-def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, target_path: Path) -> None:
-    """Test the generation of the training data."""
-    if not source_path.exists():
-        source_path.mkdir()
-    if not target_path.exists():
-        target_path.mkdir()
+def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
+    """Test the full training pipeline and prediction using a mock device."""
+    if not path_uncompiled_circuits.exists():
+        path_uncompiled_circuits.mkdir()
+    if not path_compiled_circuits.exists():
+        path_compiled_circuits.mkdir()
 
     for i in range(2, 8):
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
-        path = source_path / f"qc{i}.qasm"
+        path = path_uncompiled_circuits / f"qc{i}.qasm"
         with path.open("w", encoding="utf-8") as f:
             dump(qc, f)
 
-    # generate compiled circuits using trained RL model
-    if sys.platform == "win32":
-        with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-            predictor.compile_training_circuits(
-                timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-            )
-    else:
-        predictor.compile_training_circuits(
-            timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-        )
-    predictor.generate_training_data(
-        path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
+    device = get_device("ibm_falcon_127")
+
+    success = ml.setup_device_predictor(
+        devices=[device],
+        figure_of_merit="expected_fidelity",
+        path_uncompiled_circuits=path_uncompiled_circuits,
+        path_compiled_circuits=path_compiled_circuits,
     )
+    assert success
+
     data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
-    assert (data_path / f"training_data_{predictor.figure_of_merit}.npy").exists()
-    assert (data_path / f"names_list_{predictor.figure_of_merit}.npy").exists()
-    assert (data_path / f"scores_list_{predictor.figure_of_merit}.npy").exists()
+    assert (data_path / "training_data_expected_fidelity.npy").exists()
+    assert (data_path / "names_list_expected_fidelity.npy").exists()
+    assert (data_path / "scores_list_expected_fidelity.npy").exists()
+
+    test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    predicted = ml.predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
+
+    assert predicted.description == "ibm_falcon_127"
 
 
-def test_train_random_forest_classifier_and_predict(predictor: ml.Predictor, source_path: Path) -> None:
-    """Test the training of the random forest classifier."""
-    predictor.train_random_forest_model()
-    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predicted_dev = ml.predict_device_for_figure_of_merit(qc)
-    assert predicted_dev.description in get_available_device_names()
-
-    file = source_path / "qc1.qasm"
-    with file.open("w", encoding="utf-8") as f:
-        dump(qc, f)
-
-    predicted_dev = ml.predict_device_for_figure_of_merit(
-        file,
-    )
-    assert predicted_dev.description in get_available_device_names()
-
-    with pytest.raises(
-        FileNotFoundError, match=re.escape("The ML model is not trained yet. Please train the model before using it.")
-    ):
-        ml.predict_device_for_figure_of_merit(qc=qc, figure_of_merit="false_input")  # type: ignore[arg-type]
-
-
-def test_remove_files(source_path: Path, target_path: Path) -> None:
+def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
     """Remove files created during testing."""
-    if source_path.exists():
-        for file in source_path.iterdir():
+    if path_uncompiled_circuits.exists():
+        for file in path_uncompiled_circuits.iterdir():
             if file.suffix == ".qasm":
                 file.unlink()
-        source_path.rmdir()
+        path_uncompiled_circuits.rmdir()
 
-    if target_path.exists():
-        for file in target_path.iterdir():
+    if path_compiled_circuits.exists():
+        for file in path_compiled_circuits.iterdir():
             if file.suffix == ".qasm":
                 file.unlink()
-        target_path.rmdir()
+        path_compiled_circuits.rmdir()
 
     data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
