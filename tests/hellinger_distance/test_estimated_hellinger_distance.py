@@ -283,8 +283,6 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
 
     distance_label = rng.random(random_int)
     labels_list = [distance_label]
-
-    # 3. Construct training data
     training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
     pred = ml.Predictor(
