@@ -276,7 +276,7 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
     """Test the error handling of the device selection predictor when no device is provided for the Hellinger distance model."""
     rng = np.random.default_rng()
-    random_int = rng.integers(1, 10)
+    random_int = rng.integers(0, 10)
 
     feature_vector = rng.random(random_int)
     feature_vector_list = [feature_vector]
