@@ -71,7 +71,7 @@ To use this figure of merit, three steps are required:
    .. code-block:: python
 
       from mqt.predictor.hellinger import hellinger_distance
-      from mqt.predictor.ml import TrainingData
+      from mqt.predictor.ml.helper import TrainingData
 
       labels_list = []
       for noisy, noiseless in zip(noisy_distributions, noiseless_distributions):
