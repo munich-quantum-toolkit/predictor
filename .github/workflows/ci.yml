@@ -21,18 +21,25 @@ jobs:
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.14
-
+  
   python-tests:
     name: 🐍 Test
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.14
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          [ubuntu-24.04, macos-13, macos-14, windows-2022]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@v1.14
     with:
-      enable-ubuntu2404: true
-      enable-ubuntu2404-arm: false # not supported by BQSKit
-      enable-macos13: true
-      enable-macos14: true
-      enable-windows2022: true
+      runs-on: ${{ matrix.runs-on }}
+  
+  python-coverage:
+    name: 🐍 Coverage
+    needs: [change-detection, python-tests]
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && ${{ always() && !failure() && !cancelled() }}
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@v1.14
     permissions:
       contents: read
       id-token: write
@@ -43,13 +50,17 @@ jobs:
     if: fromJSON(needs.change-detection.outputs.run-code-ql)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql-python.yml@v1.14
 
-  cd:
+  build-sdist:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.14
-    with:
-      pure-python: true
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@v1.14
+
+  build-wheel:
+    name: 🚀 CD
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-cd)
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-build.yml@v1.14
 
   required-checks-pass: # This job does nothing and is only used for branch protection
     name: 🚦 Check
@@ -58,8 +69,10 @@ jobs:
       - change-detection
       - python-linter
       - python-tests
-      - cd
+      - python-coverage
       - code-ql
+      - build-sdist
+      - build-wheel
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed
@@ -75,11 +88,15 @@ jobs:
               && '' || 'python-tests,'
             }}
             ${{
+              fromJSON(needs.change-detection.outputs.run-python-tests)
+              && '' || 'python-coverage,'
+            }}
+            ${{
               fromJSON(needs.change-detection.outputs.run-code-ql)
               && '' || 'code-ql,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-cd)
-              && '' || 'cd,'
+              && '' || 'build-sdist,build-wheel,'
             }}
           jobs: ${{ toJSON(needs) }}
