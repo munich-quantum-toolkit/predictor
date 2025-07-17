@@ -96,3 +96,10 @@ def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
         ValueError, match=re.escape(f"No suitable device found for the given quantum circuit with {num_qubits} qubits.")
     ):
         ml.predict_device_for_figure_of_merit(qc)
+
+
+def test_get_prepared_training_data_false_input() -> None:
+    """Test the retrieval of prepared training data."""
+    pred = ml.Predictor(devices=[], figure_of_merit="expected_fidelity")
+    with pytest.raises(FileNotFoundError, match=re.escape("Training data not found.")):
+        pred._get_prepared_training_data()  # noqa: SLF001
