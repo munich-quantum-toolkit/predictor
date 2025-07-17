@@ -42,7 +42,7 @@ Estimated Success Probability
 The ``estimated_success_probability`` (based on :cite:labelpar:`esp-lifetime-min`, :cite:labelpar:`esp-lifetime`, and :cite:labelpar:`esp-idle`) is a figure of merit that is based on the ``expected_fidelity`` but also multiplies it with a factor that considers the decoherence times :math:`T_1, T_2` of a device:
 
 .. math::
-   \prod_{q} \exp{(t_{q}^{\mathrm{idle}}/\min{(T_1, T_2)})}
+   \prod_{q} \exp{-(t_{q}^{\mathrm{idle}}/\min{(T_1, T_2)})}
 
 with :math:`t_{q}^{\mathrm{idle}}` being the sum of each qubit's idle times.
 Therefore, exactly the execution times of all gates and the decoherence times must be available.
@@ -71,19 +71,25 @@ To use this figure of merit, three steps are required:
    .. code-block:: python
 
       from mqt.predictor.hellinger import hellinger_distance
+      from mqt.predictor.ml import TrainingData
 
       labels_list = []
       for noisy, noiseless in zip(noisy_distributions, noiseless_distributions):
           distance_label = hellinger_distance(noisy, noiseless)
           labels_list.append(distance_label)
 
+      training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+
 3. **Model Training:** Train an ML model using the compiled quantum circuit features and the Hellinger distance labels.
 
    .. code-block:: python
 
-      from mqt.predictor.ml import train_random_forest_regressor
+      from mqt.predictor.ml import train_random_forest_model, Predictor
 
-      train_random_forest_regressor(feature_vector_list, labels_list, device, save_model=True)
+      pred = Predictor(
+          figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27")]
+      )
+      pred.train_random_forest_model(training_data)
 
 Once the model has been successfully trained, the ``estimated_hellinger_distance`` figure of merit can serve as a device-specific figure of merit to assess the quality of a compiled quantum circuit (i.e. calculate a Hellinger distance value :math:`\in [0, 1])`).
 
