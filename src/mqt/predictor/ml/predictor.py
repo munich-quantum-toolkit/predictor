@@ -316,6 +316,9 @@ class Predictor:
     ) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
 
+        Arguments:
+            training_data: The training data to be used for training the model. If None, the training data is loaded from the pre-prepared training data files.
+
         Returns:
             Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
             or a trained RandomForestClassifier to score multiple devices according to a specific figure of merit.
