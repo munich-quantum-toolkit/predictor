@@ -29,7 +29,7 @@ def qcompile(
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
 
     Returns:
-        Returns a tuple containing the compiled quantum circuit, the compilation information and the name of the device used for compilation. If compilation fails, False is returned.
+        A tuple containing the compiled quantum circuit, the compilation information, and the name of the device used for compilation.
     """
     predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
     res = rl.qcompile(qc, device=predicted_device, figure_of_merit=figure_of_merit)
