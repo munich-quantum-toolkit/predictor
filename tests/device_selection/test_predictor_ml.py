@@ -22,12 +22,6 @@ from qiskit.qasm2 import dump
 from mqt.predictor import ml
 
 
-def test_predictor_initialization_without_devices() -> None:
-    """Test the predictor initialization for a given figure of merit with all available devices."""
-    predictor = ml.Predictor(figure_of_merit="expected_fidelity", devices=None)
-    assert predictor.devices is None
-
-
 # create fixture to get the predictor
 @pytest.fixture
 def predictor() -> ml.Predictor:
@@ -64,11 +58,11 @@ def test_generate_compiled_circuits(predictor: ml.Predictor, source_path: Path, 
     if sys.platform == "win32":
         with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
             predictor.compile_training_circuits(
-                timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
             )
     else:
         predictor.compile_training_circuits(
-            timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+            timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
         )
     predictor.generate_training_data(
         path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
