@@ -83,7 +83,7 @@ This function will:
 #. Generate training data from the compiled circuits.
 #. Train and save a supervised model for device prediction.
 
-You can optionally specify custom paths for uncompiled and compiled QASM files using the `path_uncompiled_circuits` and `path_compiled_circuits` arguments.
+You can optionally specify custom paths for uncompiled and compiled QASM files using the ``path_uncompiled_circuits`` and ``path_compiled_circuits`` arguments.
 
 Step 4: Compile a Circuit with ``qcompile``
 -------------------------------------------
@@ -97,8 +97,7 @@ After setup, any quantum circuit can be compiled for the most suitable device wi
 
     uncompiled_qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=5)
     compiled_qc, compilation_info, selected_device = qcompile(
-        uncompiled_qc,
-        figure_of_merit="expected_fidelity"
+        uncompiled_qc, figure_of_merit="expected_fidelity"
     )
 
 This returns:
