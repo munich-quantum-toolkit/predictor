@@ -44,6 +44,41 @@ plt.rcParams["font.family"] = "Times New Roman"
 logger = logging.getLogger("mqt-predictor")
 
 
+def setup_device_predictor(
+    devices: list[Target],
+    figure_of_merit: reward.figure_of_merit = "expected_fidelity",
+    path_uncompiled_circuits: Path | None = None,
+    path_compiled_circuits: Path | None = None,
+) -> bool:
+    """Sets up the device predictor for the given figure of merit."""
+    predictor = Predictor(
+        figure_of_merit=figure_of_merit,
+        devices=devices,
+    )
+    try:
+        logger.info(f"Start the training for the figure of merit: {figure_of_merit}")
+        # Step 1: Generate compiled circuits for all devices
+        predictor.compile_training_circuits(
+            path_uncompiled_circuits=path_uncompiled_circuits,
+            path_compiled_circuits=path_compiled_circuits,
+            timeout=600,
+        )
+        logger.info(f"Generated compiled circuit for {figure_of_merit}")
+        # Step 2: Generate training data from the compiled circuits
+        predictor.generate_training_data(
+            path_uncompiled_circuits=path_uncompiled_circuits, path_compiled_circuits=path_compiled_circuits
+        )
+        logger.info(f"Generated training data for {figure_of_merit}")
+        # Step 3: Train the random forest classifier
+        predictor.train_random_forest_model()
+        logger.info(f"Trained random forest classifier for {figure_of_merit}")
+
+    except Exception:
+        return False
+
+    return True
+
+
 class Predictor:
     """The Predictor class is used to predict the most suitable quantum device for a given quantum circuit."""
 
