@@ -25,7 +25,7 @@ jobs:
   python-tests:
     name: 🐍 Test
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
     strategy:
       fail-fast: false
       matrix:
@@ -80,15 +80,7 @@ jobs:
           allowed-skips: >-
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests)
-              && '' || 'python-linter,'
-            }}
-            ${{
-              fromJSON(needs.change-detection.outputs.run-python-tests)
-              && '' || 'python-tests,'
-            }}
-            ${{
-              fromJSON(needs.change-detection.outputs.run-python-tests)
-              && '' || 'python-coverage,'
+              && '' || 'python-linter,python-tests,python-coverage,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-code-ql)
