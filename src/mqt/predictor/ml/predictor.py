@@ -74,7 +74,7 @@ def setup_device_predictor(
         logger.info(f"Trained random forest classifier for {figure_of_merit}")
 
     except (FileNotFoundError, TimeoutError) as e:
-        logger.error(f"An error occurred during setup: {e}")
+        logger.exception(f"An error occurred during setup: {e}")
         return False
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
