@@ -39,6 +39,7 @@ If you are interested in the theory behind MQT Predictor, have a look at the pub
 
     Quickstart
     Usage
+    Setup
     DeviceSelection
     Compilation
     FigureOfMerit

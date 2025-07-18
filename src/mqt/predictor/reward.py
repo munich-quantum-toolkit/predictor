@@ -30,6 +30,7 @@ figure_of_merit = Literal[
     "expected_fidelity",
     "critical_depth",
     "estimated_success_probability",
+    "hellinger_distance",
     "estimated_hellinger_distance",
 ]
 

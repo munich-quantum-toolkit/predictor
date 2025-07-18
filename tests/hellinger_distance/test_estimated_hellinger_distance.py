@@ -170,9 +170,11 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
     labels_list = [distance_label] * n_circuits
+    training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
     # 3. Model Training
-    trained_model = ml.train_random_forest_regressor(feature_vector_list, labels_list, device, save_model=True)
+    pred = ml.Predictor(figure_of_merit="hellinger_distance", devices=[device])
+    trained_model = pred.train_random_forest_model(training_data)
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
@@ -189,7 +191,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
+        rl_predictor = rl.Predictor(device=device, figure_of_merit=figure_of_merit)
 
         rl_predictor.train_model(
             timesteps=5,
@@ -197,7 +199,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml.Predictor(figure_of_merit, devices=[device])
+        ml_predictor = ml.Predictor(devices=[device], figure_of_merit=figure_of_merit)
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -214,24 +216,19 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         # Generate compiled circuits (using trained RL model)
         if sys.platform == "win32":
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.generate_compiled_circuits(
-                    timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+                ml_predictor.compile_training_circuits(
+                    timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
                 )
         else:
-            ml_predictor.generate_compiled_circuits(
-                timeout=600, target_path=target_path, source_path=source_path, num_workers=1
+            ml_predictor.compile_training_circuits(
+                timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
             )
 
         # Generate training data from the compiled circuits
-        training_data, names_list, scores_list = ml_predictor.generate_trainingdata_from_qasm_files(
+        ml_predictor.generate_training_data(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
-        assert len(training_data) > 0
-        assert len(names_list) > 0
-        assert len(scores_list) > 0
 
-        # Save the training data
-        ml_predictor.save_training_data(training_data, names_list, scores_list)
         for file in [
             "training_data_estimated_hellinger_distance.npy",
             "names_list_estimated_hellinger_distance.npy",
@@ -241,7 +238,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_classifier(save_classifier=True)
+        ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
@@ -281,13 +278,17 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
     rng = np.random.default_rng()
     random_int = rng.integers(0, 10)
 
-    # 1. Random features and labels
     feature_vector = rng.random(random_int)
     feature_vector_list = [feature_vector]
 
     distance_label = rng.random(random_int)
     labels_list = [distance_label]
+    training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
-    # 3. Model Training
-    with pytest.raises(ValueError, match=re.escape("A device must be provided for Hellinger distance model training.")):
-        ml.train_random_forest_regressor(feature_vector_list, labels_list, device=None, save_model=True)
+    pred = ml.Predictor(
+        figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27"), get_device("ibm_falcon_127")]
+    )
+    with pytest.raises(
+        ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")
+    ):
+        pred.train_random_forest_model(training_data)
