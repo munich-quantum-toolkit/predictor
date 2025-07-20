@@ -33,11 +33,29 @@ from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, train_test_split
 
-from mqt.predictor import ml, reward, rl, utils
 from mqt.predictor.hellinger import get_hellinger_model_path
+from mqt.predictor.ml.helper import (
+    TrainingData,
+    create_feature_vector,
+    get_path_trained_model,
+    get_path_training_circuits,
+    get_path_training_circuits_compiled,
+    get_path_training_data,
+)
+from mqt.predictor.reward import (
+    crit_depth,
+    estimated_hellinger_distance,
+    estimated_success_probability,
+    expected_fidelity,
+)
+from mqt.predictor.rl import Predictor as rl_Predictor
+from mqt.predictor.rl import rl_compile
+from mqt.predictor.utils import timeout_watcher
 
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
+
+    from mqt.predictor.reward import figure_of_merit
 
 plt.rcParams["font.family"] = "Times New Roman"
 
@@ -46,7 +64,7 @@ logger = logging.getLogger("mqt-predictor")
 
 def setup_device_predictor(
     devices: list[Target],
-    figure_of_merit: reward.figure_of_merit = "expected_fidelity",
+    figure_of_merit: figure_of_merit = "expected_fidelity",
     path_uncompiled_circuits: Path | None = None,
     path_compiled_circuits: Path | None = None,
 ) -> bool:
@@ -94,7 +112,7 @@ class Predictor:
     def __init__(
         self,
         devices: list[Target],
-        figure_of_merit: reward.figure_of_merit = "expected_fidelity",
+        figure_of_merit: figure_of_merit = "expected_fidelity",
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
@@ -133,15 +151,15 @@ class Predictor:
         logger.setLevel(logger_level)
 
         logger.info("Processing: " + device.description + " for " + self.figure_of_merit)
-        rl_pred = rl.Predictor(figure_of_merit=self.figure_of_merit, device=device)
+        rl_pred = rl_Predictor(figure_of_merit=self.figure_of_merit, device=device)
 
         dev_max_qubits = device.num_qubits
 
         if path_uncompiled_circuits is None:
-            path_uncompiled_circuits = ml.helper.get_path_training_circuits()
+            path_uncompiled_circuits = get_path_training_circuits()
 
         if path_compiled_circuits is None:
-            path_compiled_circuits = ml.helper.get_path_training_circuits_compiled()
+            path_compiled_circuits = get_path_training_circuits_compiled()
 
         for filename in path_uncompiled_circuits.iterdir():
             if filename.suffix != ".qasm":
@@ -154,7 +172,7 @@ class Predictor:
             if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = utils.timeout_watcher(rl.qcompile, [qc, device, self.figure_of_merit, rl_pred], timeout)
+                res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
@@ -180,10 +198,10 @@ class Predictor:
             num_workers: The number of workers to be used for parallelization. Defaults to -1.
         """
         if path_uncompiled_circuits is None:
-            path_uncompiled_circuits = ml.helper.get_path_training_circuits()
+            path_uncompiled_circuits = get_path_training_circuits()
 
         if path_compiled_circuits is None:
-            path_compiled_circuits = ml.helper.get_path_training_circuits_compiled()
+            path_compiled_circuits = get_path_training_circuits_compiled()
 
         path_zip = path_uncompiled_circuits / "training_data_device_selection.zip"
         if not any(file.suffix == ".qasm" for file in path_uncompiled_circuits.iterdir()) and path_zip.exists():
@@ -215,10 +233,10 @@ class Predictor:
 
         """
         if not path_uncompiled_circuits:
-            path_uncompiled_circuits = ml.helper.get_path_training_circuits()
+            path_uncompiled_circuits = get_path_training_circuits()
 
         if not path_compiled_circuits:
-            path_compiled_circuits = ml.helper.get_path_training_circuits_compiled()
+            path_compiled_circuits = get_path_training_circuits_compiled()
 
         # init resulting list (feature vector, name, scores)
         training_data = []
@@ -242,7 +260,7 @@ class Predictor:
             names_list.append(circuit_name)
             scores_list.append(scores)
 
-        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
+        with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
             data = np.asarray(training_data, dtype=object)
             np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
             data = np.asarray(names_list, dtype=str)
@@ -289,13 +307,13 @@ class Predictor:
             device = get_device(dev_name)
             qc = QuantumCircuit.from_qasm_file(filename_str)
             if self.figure_of_merit == "critical_depth":
-                score = reward.crit_depth(qc)
+                score = crit_depth(qc)
             elif self.figure_of_merit == "expected_fidelity":
-                score = reward.expected_fidelity(qc, device)
+                score = expected_fidelity(qc, device)
             elif self.figure_of_merit == "estimated_success_probability":
-                score = reward.estimated_success_probability(qc, device)
+                score = estimated_success_probability(qc, device)
             elif self.figure_of_merit == "estimated_hellinger_distance":
-                score = reward.estimated_hellinger_distance(qc, device)
+                score = estimated_hellinger_distance(qc, device)
             elif self.figure_of_merit == "hellinger_distance":
                 msg = "Hellinger distance should not be used for training data generation. Use 'estimated_hellinger_distance' instead."
                 raise RuntimeError(msg)
@@ -315,13 +333,13 @@ class Predictor:
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
-        feature_vec = ml.helper.create_feature_vector(qc)
+        feature_vec = create_feature_vector(qc)
         training_sample = (feature_vec, target_label)
         circuit_name = str(file).split(".")[0]
         return training_sample, circuit_name, scores_list
 
     def train_random_forest_model(
-        self, training_data: ml.helper.TrainingData | None = None
+        self, training_data: TrainingData | None = None
     ) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
 
@@ -352,7 +370,7 @@ class Predictor:
 
         else:  # Default classification model to score all devices
             mdl = RandomForestClassifier(random_state=0)
-            save_mdl_path = str(ml.helper.get_path_trained_model(self.figure_of_merit))
+            save_mdl_path = str(get_path_trained_model(self.figure_of_merit))
 
         if not training_data:
             training_data = self._get_prepared_training_data()
@@ -364,9 +382,9 @@ class Predictor:
 
         return mdl.best_estimator_
 
-    def _get_prepared_training_data(self) -> ml.helper.TrainingData:
+    def _get_prepared_training_data(self) -> TrainingData:
         """Returns the training data for the given figure of merit."""
-        with resources.as_file(ml.helper.get_path_training_data() / "training_data_aggregated") as path:
+        with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
             prefix = f"{self.figure_of_merit}.npy"
             file_data = path / f"training_data_{prefix}"
             file_names = path / f"names_list_{prefix}"
@@ -389,7 +407,7 @@ class Predictor:
             x, y, indices, test_size=0.3, random_state=5
         )
 
-        return ml.helper.TrainingData(
+        return TrainingData(
             X_train=x_train,
             y_train=y_train,
             X_test=x_test,
@@ -402,7 +420,7 @@ class Predictor:
 
 
 def predict_device_for_figure_of_merit(
-    qc: Path | QuantumCircuit, figure_of_merit: reward.figure_of_merit = "expected_fidelity"
+    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity"
 ) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
@@ -417,14 +435,14 @@ def predict_device_for_figure_of_merit(
         qc = QuantumCircuit.from_qasm_file(qc)
     assert isinstance(qc, QuantumCircuit)
 
-    path = ml.helper.get_path_trained_model(figure_of_merit)
+    path = get_path_trained_model(figure_of_merit)
     if not path.exists():
         error_msg = "The ML model is not trained yet. Please train the model before using it."
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
     clf = load(path)
 
-    feature_vector = ml.helper.create_feature_vector(qc)
+    feature_vector = create_feature_vector(qc)
 
     probabilities = clf.predict_proba([feature_vector])[0]
     class_labels = clf.classes_
