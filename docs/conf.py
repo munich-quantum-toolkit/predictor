@@ -72,7 +72,7 @@ myst_enable_extensions = [
     "amsmath",
     "dollarmath",
 ]
-nbsphinx_execute = 'never'
+nb_execution_excludepatterns = ["**/quickstart.ipynb"]
 pygments_style = "colorful"
 
 add_module_names = False

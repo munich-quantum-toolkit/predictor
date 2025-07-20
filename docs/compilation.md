@@ -4,7 +4,7 @@ Once a target device has been selected, the quantum circuit — typically design
 
 Compilation itself is a sequential process consisting of a series of compilation passes that step-by-step transform the original quantum circuit until it conforms to the limitations imposed by the target device. Since many of the underlying problems in compilation are computationally hard, an ever-growing variety of compilation passes is available across several quantum SDKs and software tools—each with their own advantages and disadvantages.
 
-As a result of the sheer number of options, choosing the best sequence of compilation passes for a given application is nearly impossible. Consequently, most quantum SDKs (such as Qiskit and TKET) provide easy-to-use high-level function calls that encapsulate *their* sequence of compilation passes into a single compilation flow. While this allows convenient circuit compilation, it has several drawbacks:
+As a result of the sheer number of options, choosing the best sequence of compilation passes for a given application is nearly impossible. Consequently, most quantum SDKs (such as Qiskit and TKET) provide easy-to-use high-level function calls that encapsulate _their_ sequence of compilation passes into a single compilation flow. While this allows convenient circuit compilation, it has several drawbacks:
 
 - It creates a kind of vendor lock that limits the available compilation passes to those provided by the SDK offering the compilation flow.
 - The respective compilation flows are designed to be broadly applicable and are neither device-specific nor circuit-specific.
@@ -14,9 +14,9 @@ To overcome these limitations, the MQT Predictor framework provides **device-spe
 
 The compilation process is modeled as a **Markov Decision Process** and takes three inputs to train a reinforcement learning (RL) model that acts as a compiler:
 
-1. Training circuits  
-2. The targeted quantum device  
-3. The figure of merit to optimize for  
+1. Training circuits
+2. The targeted quantum device
+3. The figure of merit to optimize for
 
 ![Illustration of the RL model](/_static/rl.png)
 

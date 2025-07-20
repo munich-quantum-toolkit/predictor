@@ -26,7 +26,7 @@ from mqt.predictor.reward import figures_of_merit
 print(figures_of_merit)
 ```
 
-An example of how `qcompile` is used can be found in the [Quickstart](Quickstart) Jupyter notebook.
+An example of how `qcompile` is used can be found in the [Quickstart](quickstart) Jupyter notebook.
 
 ## Usage directly via this repository
 

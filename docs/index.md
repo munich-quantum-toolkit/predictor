@@ -4,7 +4,7 @@ MQT Predictor is a tool for Automatic Device Selection with Device-Specific Circ
 
 From a user's perspective, the framework works as follows:
 
-![Illustration of the MQT Predictor framework](/_static/mqt_predictor.png){ width=100% }
+![Illustration of the MQT Predictor framework](/_static/mqt_predictor.png)
 
 Any uncompiled quantum circuit can be provided together with the desired figure of merit.
 The framework then automatically predicts the most suitable device for the given circuit and figure of merit and compiles the circuit for the predicted device.
