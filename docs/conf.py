@@ -53,6 +53,8 @@ templates_path = ["_templates"]
 html_css_files = ["custom.css"]
 
 extensions = [
+    "myst_nb",
+    "autoapi.extension",
     "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -63,8 +65,12 @@ extensions = [
     "sphinx.ext.githubpages",
     "sphinxcontrib.bibtex",
     "sphinx_copybutton",
-    "nbsphinx",
     "sphinxext.opengraph",
+]
+
+myst_enable_extensions = [
+    "amsmath",
+    "dollarmath",
 ]
 
 pygments_style = "colorful"
@@ -113,7 +119,24 @@ copybutton_line_continuation_character = "\\"
 
 autosummary_generate = True
 
-
+autoapi_dirs = ["../src/mqt"]
+autoapi_python_use_implicit_namespaces = True
+autoapi_root = "api"
+autoapi_add_toctree_entry = False
+autoapi_ignore = [
+    "*/**/_version.py",
+]
+autoapi_options = [
+    "members",
+    "imported-members",
+    "show-inheritance",
+    "special-members",
+    "undoc-members",
+]
+autoapi_keep_files = True
+add_module_names = False
+toc_object_entries_show_parents = "hide"
+python_use_unqualified_type_names = True
 typehints_use_rtype = False
 napoleon_use_rtype = False
 napoleon_google_docstring = True

@@ -6,8 +6,8 @@ From a user's perspective, the framework works as follows:
 
 ![Illustration of the MQT Predictor framework](/_static/mqt_predictor.png){ width=100% }
 
-Any uncompiled quantum circuit can be provided together with the desired figure of merit.  
-The framework then automatically predicts the most suitable device for the given circuit and figure of merit and compiles the circuit for the predicted device.  
+Any uncompiled quantum circuit can be provided together with the desired figure of merit.
+The framework then automatically predicts the most suitable device for the given circuit and figure of merit and compiles the circuit for the predicted device.
 The compiled circuit is returned together with the compilation information and the selected device.
 
 The MQT Predictor framework is based on two main components:
@@ -37,7 +37,7 @@ quickstart
 usage
 device_selection
 compilation
-figure_of_Merit
+figure_of_merit
 references
 ```
 
