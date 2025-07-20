@@ -31,8 +31,7 @@ Custom devices are also supported as long as they are defined as Qiskit `Target`
 
 ## Step 2: Train Reinforcement Learning Models
 
-For each device to be considered, a dedicated reinforcement learning (RL) model must be trained. This is based on a figure of merit and a set of training circuits in QASM format located in
-`mqt/predictor/rl/training_data/training_circuits <https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/training_data/training_circuits>`\_.
+For each device to be considered, a dedicated reinforcement learning (RL) model must be trained. This is based on a figure of merit and a set of training circuits in QASM format.
 
 ```python
 from mqt.predictor.rl import Predictor as RL_Predictor
