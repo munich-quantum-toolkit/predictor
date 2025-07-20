@@ -25,7 +25,7 @@ $\mathit{\mathcal{F}}(g_i)$ being the expected execution fidelity of gate $g_i$ 
 $\mathit{\mathcal{F}_{RO}}(q_j)$ being the expected execution fidelity of a measurement operation $q_j$ on its corresponding qubit, and
 $|G|$ respectively $m$ being the number of gates and measurements in the compiled circuit.
 
-This figure of merit determines an estimate of the probability that a quantum circuit will return the expected result, the so-called `expected fidelity`, which ranges between :math:`0.0` and :math:`1.0` with higher values being better.
+This figure of merit determines an estimate of the probability that a quantum circuit will return the expected result, the so-called `expected fidelity`, which ranges between $0.0$ and $1.0$ with higher values being better.
 
 ## Critical Depth
 
@@ -34,13 +34,13 @@ A respective value close to 1 would indicate a very sequential circuit while a v
 
 ## Estimated Success Probability
 
-The `estimated_success_probability` (based on {cite:labelpar}`esp-lifetime-min`, {cite:labelpar}`esp-lifetime`, and {cite:labelpar}`esp-idle`) is a figure of merit that is based on the `expected_fidelity` but also multiplies it with a factor that considers the decoherence times :math:`T_1, T_2` of a device:
+The `estimated_success_probability` (based on {cite:labelpar}`esp-lifetime-min`, {cite:labelpar}`esp-lifetime`, and {cite:labelpar}`esp-idle`) is a figure of merit that is based on the `expected_fidelity` but also multiplies it with a factor that considers the decoherence times $T_1, T_2$ of a device:
 
 $
 \prod_{q} \exp{-(t_{q}^{\mathrm{idle}}/\min{(T_1, T_2)})}
 $
 
-with :math:`t_{q}^{\mathrm{idle}}` being the sum of each qubit's idle times.
+with $t_{q}^{\mathrm{idle}}$ being the sum of each qubit's idle times.
 Therefore, exactly the execution times of all gates and the decoherence times must be available.
 Note that some variants of this figure of merit do not take the minimum of both decoherence times but create one exponential factor for each decoherence time, others consider the entire qubit lifetime instead of idle times only.
 
