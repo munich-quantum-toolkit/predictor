@@ -18,12 +18,9 @@ The compilation process is modeled as a **Markov Decision Process** and takes th
 2. The targeted quantum device  
 3. The figure of merit to optimize for  
 
-![Illustration of the RL model](/_static/rl.png){ width=100% }
+![Illustration of the RL model](/_static/rl.png)
 
 The trained model can then be used to compile any quantum circuit for the targeted device.
-
-In this implementation, compilation passes from both IBM’s Qiskit and Quantinuum’s TKET are utilized during RL training of the optimized compiler.  
-We trained one RL model for each currently [:ref:`supported quantum device <supported-quantum-devices>`].
 
 ---
 

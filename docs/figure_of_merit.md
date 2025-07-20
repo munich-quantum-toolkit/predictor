@@ -86,7 +86,7 @@ To use this figure of merit, three steps are required:
    pred.train_random_forest_model(training_data)
    ```
 
-Once the model has been successfully trained, the `estimated_hellinger_distance` figure of merit can serve as a device-specific figure of merit to assess the quality of a compiled quantum circuit (i.e., calculate a Hellinger distance value :math:`\in [0, 1]`):
+Once the model has been successfully trained, the `estimated_hellinger_distance` figure of merit can serve as a device-specific figure of merit to assess the quality of a compiled quantum circuit (i.e., calculate a Hellinger distance value $\in [0, 1]$):
 
 ```python
 from mqt.predictor.reward import estimated_hellinger_distance

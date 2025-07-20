@@ -17,7 +17,7 @@ For that, the framework is trained with based on three inputs:
 2. The compilation options for all supported devices  
 3. The figure of merit to optimize for  
 
-![Illustration of the ML model](/_static/ml.png){ width=100% }
+![Illustration of the ML model](/_static/ml.png)
 
 The trained model then acts as a predictor and can be used to predict the most suitable device for a given quantum circuit and figure of merit.
 

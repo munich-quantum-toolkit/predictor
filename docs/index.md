@@ -34,6 +34,7 @@ self
 :maxdepth: 1
 
 quickstart
+setup
 usage
 device_selection
 compilation

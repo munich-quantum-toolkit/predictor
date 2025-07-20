@@ -9,9 +9,9 @@ There are two ways how to use MQT Predictor:
 
 MQT Predictor is available via [PyPI](https://pypi.org/project/mqt.predictor/)
 
-    > ```console
-    > (venv) $ pip install mqt.predictor
-    > ```
+```shell
+(venv) $ pip install mqt.predictor
+```
 
 To compile a quantum circuit, use the `qcompile` method:
 
@@ -32,10 +32,10 @@ An example of how `qcompile` is used can be found in the [Quickstart](Quickstart
 
 For that, the repository must be cloned and installed:
 
-    > ```console
-    > git clone https://github.com/munich-quantum-toolkit/predictor.git
-    > cd mqt-predictor
-    > pip install .
-    > ```
+```shell
+git clone https://github.com/munich-quantum-toolkit/predictor.git
+cd mqt-predictor
+pip install .
+```
 
 Afterwards, the package can be used as described above.
