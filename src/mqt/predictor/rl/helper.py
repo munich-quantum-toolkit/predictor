@@ -33,7 +33,7 @@ from importlib import resources
 logger = logging.getLogger("mqt-predictor")
 
 
-def qcompile(
+def rl_compile(
     qc: QuantumCircuit | str,
     device: Target | None,
     figure_of_merit: reward.figure_of_merit | None = "expected_fidelity",

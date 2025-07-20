@@ -80,14 +80,14 @@ def test_qcompile_with_newly_trained_models() -> None:
                 "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
             ),
         ):
-            rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
+            rl.rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
         timesteps=100,
         test=True,
     )
 
-    qc_compiled, compilation_information = rl.qcompile(qc, device=device, figure_of_merit=figure_of_merit)
+    qc_compiled, compilation_information = rl.rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
     assert qc_compiled.layout is not None
     assert compilation_information is not None
 
@@ -96,9 +96,9 @@ def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
     with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
-        rl.helper.qcompile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
+        rl.helper.rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
     with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
-        rl.helper.qcompile(qc, device=None, figure_of_merit="expected_fidelity")
+        rl.helper.rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
 def test_warning_for_unidirectional_device() -> None:

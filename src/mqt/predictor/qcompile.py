@@ -12,15 +12,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mqt.predictor import ml, reward, rl
+from mqt.predictor.ml import predict_device_for_figure_of_merit
+from mqt.predictor.rl import rl_compile
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
 
+    from mqt.predictor.reward import figure_of_merit
+
 
 def qcompile(
     qc: QuantumCircuit,
-    figure_of_merit: reward.figure_of_merit = "expected_fidelity",
+    figure_of_merit: figure_of_merit = "expected_fidelity",
 ) -> tuple[QuantumCircuit, list[str], str]:
     """Compiles a given quantum circuit to a device with the highest predicted figure of merit.
 
@@ -31,6 +34,6 @@ def qcompile(
     Returns:
         A tuple containing the compiled quantum circuit, the compilation information, and the name of the device used for compilation.
     """
-    predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
-    res = rl.qcompile(qc, device=predicted_device, figure_of_merit=figure_of_merit)
+    predicted_device = predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
+    res = rl_compile(qc, device=predicted_device, figure_of_merit=figure_of_merit)
     return *res, predicted_device
