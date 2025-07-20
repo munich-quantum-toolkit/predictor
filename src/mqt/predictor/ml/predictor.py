@@ -67,8 +67,20 @@ def setup_device_predictor(
     figure_of_merit: figure_of_merit = "expected_fidelity",
     path_uncompiled_circuits: Path | None = None,
     path_compiled_circuits: Path | None = None,
+    timeout: int = 600,
 ) -> bool:
-    """Sets up the device predictor for the given figure of merit."""
+    """Sets up the device predictor for the given figure of merit.
+
+    Arguments:
+        devices: The devices to be used for training.
+        figure_of_merit: The figure of merit to be used for training. Defaults to "expected_fidelity".
+        path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
+        path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
+        timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
+
+    Returns:
+        True if the setup was successful, False otherwise.
+    """
     predictor = Predictor(
         figure_of_merit=figure_of_merit,
         devices=devices,
@@ -79,7 +91,7 @@ def setup_device_predictor(
         predictor.compile_training_circuits(
             path_uncompiled_circuits=path_uncompiled_circuits,
             path_compiled_circuits=path_compiled_circuits,
-            timeout=600,
+            timeout=timeout,
         )
         logger.info(f"Generated compiled circuit for {figure_of_merit}")
         # Step 2: Generate training data from the compiled circuits

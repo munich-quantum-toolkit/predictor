@@ -73,8 +73,7 @@ Once the RL models are trained, generate the training data and train the supervi
         get_device("quantinuum_h2_56"),
     ]
     setup_device_predictor(
-        devices=devices,
-        figure_of_merit="expected_fidelity",
+        devices=devices, figure_of_merit="expected_fidelity", timeout=100
     )
 
 This function will:
