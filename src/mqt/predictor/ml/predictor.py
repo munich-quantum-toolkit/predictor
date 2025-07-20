@@ -231,6 +231,7 @@ class Predictor:
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
+        path_training_data: Path | None = None,
         num_workers: int = -1,
     ) -> None:
         """Creates and saves training data from all generated training samples.
@@ -238,6 +239,7 @@ class Predictor:
         Arguments:
             path_uncompiled_circuits: The path to the directory containing the uncompiled circuits. Defaults to None.
             path_compiled_circuits: The path to the directory containing the compiled circuits. Defaults to None.
+            path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
             num_workers: The number of workers to be used for parallelization. Defaults to -1.
 
         Returns:
@@ -249,6 +251,9 @@ class Predictor:
 
         if not path_compiled_circuits:
             path_compiled_circuits = get_path_training_circuits_compiled()
+
+        if not path_training_data:
+            path_training_data = get_path_training_data() / "training_data_aggregated"
 
         # init resulting list (feature vector, name, scores)
         training_data = []
@@ -272,7 +277,7 @@ class Predictor:
             names_list.append(circuit_name)
             scores_list.append(scores)
 
-        with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
+        with resources.as_file(path_training_data) as path:
             data = np.asarray(training_data, dtype=object)
             np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
             data = np.asarray(names_list, dtype=str)
