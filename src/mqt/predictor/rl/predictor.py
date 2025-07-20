@@ -21,6 +21,8 @@ from stable_baselines3.common.utils import set_random_seed
 from mqt.predictor import reward, rl
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
 
@@ -32,12 +34,18 @@ class Predictor:
     """The Predictor class is used to train a reinforcement learning model for a given figure of merit and device such that it acts as a compiler."""
 
     def __init__(
-        self, figure_of_merit: reward.figure_of_merit, device: Target, logger_level: int = logging.INFO
+        self,
+        figure_of_merit: reward.figure_of_merit,
+        device: Target,
+        path_training_circuits: Path | None = None,
+        logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor object."""
         logger.setLevel(logger_level)
 
-        self.env = rl.PredictorEnv(reward_function=figure_of_merit, device=device)
+        self.env = rl.PredictorEnv(
+            reward_function=figure_of_merit, device=device, path_training_circuits=path_training_circuits
+        )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
 

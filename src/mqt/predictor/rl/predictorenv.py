@@ -61,9 +61,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self,
         device: Target,
         reward_function: reward.figure_of_merit = "expected_fidelity",
+        path_training_circuits: Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object."""
         logger.info("Init env: " + reward_function)
+
+        self.path_training_circuits = path_training_circuits or rl.helper.get_path_training_circuits()
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -216,7 +219,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
         else:
-            self.state, self.filename = rl.helper.get_state_sample(self.device.num_qubits, self.rng)
+            self.state, self.filename = rl.helper.get_state_sample(
+                self.device.num_qubits, self.path_training_circuits, self.rng
+            )
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0

@@ -64,24 +64,25 @@ def rl_compile(
     return predictor.compile_as_predicted(qc)
 
 
-def get_state_sample(max_qubits: int, rng: Generator) -> tuple[QuantumCircuit, str]:
+def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
     Arguments:
         max_qubits: The maximum number of qubits the returned quantum circuit may have. If no limit is set, it defaults to None.
+        path_training_circuits: The path to the training circuits folder.
         rng: A random number generator to select a random quantum circuit.
 
     Returns:
         A tuple containing the random quantum circuit and the path to the file from which it was read.
     """
-    file_list = list(get_path_training_circuits().glob("*.qasm"))
+    file_list = list(path_training_circuits.glob("*.qasm"))
 
-    path_zip = get_path_training_circuits() / "training_data_compilation.zip"
+    path_zip = path_training_circuits / "training_data_compilation.zip"
     if len(file_list) == 0 and path_zip.exists():
         with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
-            zip_ref.extractall(get_path_training_circuits())
+            zip_ref.extractall(path_training_circuits)
 
-        file_list = list(get_path_training_circuits().glob("*.qasm"))
+        file_list = list(path_training_circuits.glob("*.qasm"))
         assert len(file_list) > 0
 
     found_suitable_qc = False
