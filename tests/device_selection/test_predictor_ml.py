@@ -18,7 +18,9 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.qasm2 import dump
 
-from mqt.predictor import ml
+from mqt.predictor.ml import predict_device_for_figure_of_merit, setup_device_predictor
+from mqt.predictor.ml.helper import get_path_training_data
+from mqt.predictor.ml.predictor import Predictor
 
 
 @pytest.fixture
@@ -48,7 +50,7 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
 
     device = get_device("ibm_falcon_127")
 
-    success = ml.setup_device_predictor(
+    success = setup_device_predictor(
         devices=[device],
         figure_of_merit="expected_fidelity",
         path_uncompiled_circuits=path_uncompiled_circuits,
@@ -56,13 +58,13 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
     )
     assert success
 
-    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    data_path = get_path_training_data() / "training_data_aggregated"
     assert (data_path / "training_data_expected_fidelity.npy").exists()
     assert (data_path / "names_list_expected_fidelity.npy").exists()
     assert (data_path / "scores_list_expected_fidelity.npy").exists()
 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predicted = ml.predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
 
     assert predicted.description == "ibm_falcon_127"
 
@@ -81,7 +83,7 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
                 file.unlink()
         path_compiled_circuits.rmdir()
 
-    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
         for file in data_path.iterdir():
             if file.suffix == ".npy":
@@ -95,11 +97,11 @@ def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
     with pytest.raises(
         ValueError, match=re.escape(f"No suitable device found for the given quantum circuit with {num_qubits} qubits.")
     ):
-        ml.predict_device_for_figure_of_merit(qc)
+        predict_device_for_figure_of_merit(qc)
 
 
 def test_get_prepared_training_data_false_input() -> None:
     """Test the retrieval of prepared training data."""
-    pred = ml.Predictor(devices=[], figure_of_merit="expected_fidelity")
+    pred = Predictor(devices=[], figure_of_merit="expected_fidelity")
     with pytest.raises(FileNotFoundError, match=re.escape("Training data not found.")):
         pred._get_prepared_training_data()  # noqa: SLF001

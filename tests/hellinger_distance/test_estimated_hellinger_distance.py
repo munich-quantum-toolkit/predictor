@@ -23,8 +23,11 @@ from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 
-from mqt.predictor import ml, rl
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
+from mqt.predictor.ml import Predictor as ml_Predictor
+from mqt.predictor.ml import predict_device_for_figure_of_merit
+from mqt.predictor.ml.helper import TrainingData, get_path_training_data
+from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
@@ -170,10 +173,10 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
     labels_list = [distance_label] * n_circuits
-    training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
     # 3. Model Training
-    pred = ml.Predictor(figure_of_merit="hellinger_distance", devices=[device])
+    pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device])
     trained_model = pred.train_random_forest_model(training_data)
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
@@ -191,7 +194,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl.Predictor(device=device, figure_of_merit=figure_of_merit)
+        rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
 
         rl_predictor.train_model(
             timesteps=5,
@@ -199,7 +202,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml.Predictor(devices=[device], figure_of_merit=figure_of_merit)
+        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit)
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -234,7 +237,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             "names_list_estimated_hellinger_distance.npy",
             "scores_list_estimated_hellinger_distance.npy",
         ]:
-            path = ml.helper.get_path_training_data() / "training_data_aggregated" / file
+            path = get_path_training_data() / "training_data_aggregated" / file
             assert path.exists()
 
         # Train the ML model
@@ -242,7 +245,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
-        predicted_dev = ml.predict_device_for_figure_of_merit(qc, figure_of_merit)
+        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit)
         assert predicted_dev.description in get_available_device_names()
 
 
@@ -260,13 +263,13 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
                 file.unlink()
         target_path.rmdir()
 
-    data_path = ml.helper.get_path_training_data() / "training_data_aggregated"
+    data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
         for file in data_path.iterdir():
             if file.suffix == ".npy":
                 file.unlink()
 
-    model_path = ml.helper.get_path_training_data() / "trained_model"
+    model_path = get_path_training_data() / "trained_model"
     if model_path.exists():
         for file in model_path.iterdir():
             if file.suffix == ".joblib":
@@ -283,9 +286,9 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
 
     distance_label = rng.random(random_int)
     labels_list = [distance_label]
-    training_data = ml.helper.TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
-    pred = ml.Predictor(
+    pred = ml_Predictor(
         figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27"), get_device("ibm_falcon_127")]
     )
     with pytest.raises(

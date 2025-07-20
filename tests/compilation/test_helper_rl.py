@@ -19,29 +19,29 @@ from qiskit import transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
-from mqt.predictor import rl
 from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
+from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 from mqt.predictor.rl.parsing import postprocess_vf2postlayout
 
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
-    features = rl.helper.create_feature_dict(qc)
+    features = create_feature_dict(qc)
     for feature in features.values():
         assert isinstance(feature, np.ndarray | int)
 
 
 def test_get_path_trained_model() -> None:
     """Test the retrieval of the path to the trained model."""
-    path = rl.helper.get_path_trained_model()
+    path = get_path_trained_model()
     assert path.exists()
     assert isinstance(path, Path)
 
 
 def test_get_path_training_circuits() -> None:
     """Test the retrieval of the path to the training circuits."""
-    path = rl.helper.get_path_training_circuits()
+    path = get_path_training_circuits()
     assert path.exists()
     assert isinstance(path, Path)
 

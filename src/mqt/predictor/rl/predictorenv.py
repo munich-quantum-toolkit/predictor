@@ -14,9 +14,6 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-import mqt.predictor.rl.actions
-import mqt.predictor.rl.parsing
-
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
     from typing import assert_never
 else:
@@ -47,9 +44,22 @@ from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
-from mqt.predictor import reward, rl
 from mqt.predictor.hellinger import get_hellinger_model_path
+from mqt.predictor.reward import (
+    crit_depth,
+    esp_data_available,
+    estimated_hellinger_distance,
+    estimated_success_probability,
+    expected_fidelity,
+    figure_of_merit,
+)
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
+from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
+from mqt.predictor.rl.parsing import (
+    final_layout_bqskit_to_qiskit,
+    final_layout_pytket_to_qiskit,
+    postprocess_vf2postlayout,
+)
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -60,13 +70,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
     def __init__(
         self,
         device: Target,
-        reward_function: reward.figure_of_merit = "expected_fidelity",
+        reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object."""
         logger.info("Init env: " + reward_function)
 
-        self.path_training_circuits = path_training_circuits or rl.helper.get_path_training_circuits()
+        self.path_training_circuits = path_training_circuits or get_path_training_circuits()
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -115,7 +125,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.action_set[index] = action_dict[PassType.TERMINATE][0]
         self.action_terminate_index = index
 
-        if reward_function == "estimated_success_probability" and not reward.esp_data_available(self.device):
+        if reward_function == "estimated_success_probability" and not esp_data_available(self.device):
             msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
         if reward_function == "estimated_hellinger_distance":
@@ -151,7 +161,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         altered_qc = self.apply_action(action)
         if not altered_qc:
             return (
-                rl.helper.create_feature_dict(self.state),
+                create_feature_dict(self.state),
                 0,
                 True,
                 False,
@@ -178,19 +188,19 @@ class PredictorEnv(Env):  # type: ignore[misc]
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
-        obs = rl.helper.create_feature_dict(self.state)
+        obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
         if self.reward_function == "expected_fidelity":
-            return reward.expected_fidelity(self.state, self.device)
+            return expected_fidelity(self.state, self.device)
         if self.reward_function == "estimated_success_probability":
-            return reward.estimated_success_probability(self.state, self.device)
+            return estimated_success_probability(self.state, self.device)
         if self.reward_function == "estimated_hellinger_distance":
-            return reward.estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
+            return estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
         if self.reward_function == "critical_depth":
-            return reward.crit_depth(self.state)
+            return crit_depth(self.state)
         assert_never(self.state)
 
     def render(self) -> None:
@@ -219,9 +229,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
         else:
-            self.state, self.filename = rl.helper.get_state_sample(
-                self.device.num_qubits, self.path_training_circuits, self.rng
-            )
+            self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
@@ -235,7 +243,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
-        return rl.helper.create_feature_dict(self.state), {}
+        return create_feature_dict(self.state), {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""
@@ -313,7 +321,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert pm.property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm.property_set["post_layout"]
             if post_layout:
-                altered_qc, _ = mqt.predictor.rl.parsing.postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+                altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
             assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
             assert pm.property_set["layout"]
@@ -345,7 +353,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
-            self.layout.final_layout = mqt.predictor.rl.parsing.final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+            self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
 
         return altered_qc
 
@@ -365,9 +373,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             )
             bqskit_compiled_qc, initial, final = factory(self.device)(bqskit_qc)
             compiled_qiskit_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-            self.layout = mqt.predictor.rl.parsing.final_layout_bqskit_to_qiskit(
-                initial, final, compiled_qiskit_qc, self.state
-            )
+            self.layout = final_layout_bqskit_to_qiskit(initial, final, compiled_qiskit_qc, self.state)
             return compiled_qiskit_qc
         else:
             msg = f"Unhandled BQSKit action index: {action_index}"
