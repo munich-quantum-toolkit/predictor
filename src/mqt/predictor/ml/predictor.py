@@ -67,6 +67,7 @@ def setup_device_predictor(
     figure_of_merit: figure_of_merit = "expected_fidelity",
     path_uncompiled_circuits: Path | None = None,
     path_compiled_circuits: Path | None = None,
+    path_training_data: Path | None = None,
     timeout: int = 600,
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
@@ -76,6 +77,7 @@ def setup_device_predictor(
         figure_of_merit: The figure of merit to be used for training. Defaults to "expected_fidelity".
         path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
         path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
+        path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
         timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
 
     Returns:
@@ -96,7 +98,9 @@ def setup_device_predictor(
         logger.info(f"Generated compiled circuit for {figure_of_merit}")
         # Step 2: Generate training data from the compiled circuits
         predictor.generate_training_data(
-            path_uncompiled_circuits=path_uncompiled_circuits, path_compiled_circuits=path_compiled_circuits
+            path_uncompiled_circuits=path_uncompiled_circuits,
+            path_compiled_circuits=path_compiled_circuits,
+            path_training_data=path_training_data,
         )
         logger.info(f"Generated training data for {figure_of_merit}")
         # Step 3: Train the random forest classifier
