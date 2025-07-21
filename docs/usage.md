@@ -13,21 +13,6 @@ MQT Predictor is available via [PyPI](https://pypi.org/project/mqt.predictor/)
 (venv) $ pip install mqt.predictor
 ```
 
-To compile a quantum circuit, use the `qcompile` method:
-
-.. automodule:: mqt.predictor
-:members: qcompile
-
-Currently available figures of merit are:
-
-```{code-cell} ipython3
-:tags: [hide-input]
-from mqt.predictor.reward import figures_of_merit
-print(figures_of_merit)
-```
-
-An example of how `qcompile` is used can be found in the [Quickstart](quickstart) Jupyter notebook.
-
 ## Usage directly via this repository
 
 For that, the repository must be cloned and installed:

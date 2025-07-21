@@ -17,14 +17,14 @@ To use the MQT Predictor framework, you must first configure the devices and tra
 
 ## Step 1: Add Devices
 
-All devices supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are natively supported. You can retrieve and inspect available devices as follows:
+All devices supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are natively supported. Currently, the following devices are available:
 
-```python
+```{code-cell} ipython3
+:tags: [hide-input]
 from mqt.bench.targets import get_device, get_available_device_names
 
-for name in get_available_device_names():
-    dev = get_device(name)
-    print(f"{name}: {dev.num_qubits} qubits")
+for num, device_name in enumerate(get_available_device_names()):
+    print(f"{num+1}: {device_name} with {get_device(device_name).num_qubits} qubits")
 ```
 
 Custom devices are also supported as long as they are defined as Qiskit `Target` objects.
@@ -95,9 +95,9 @@ setup_device_predictor(
 
 This function will:
 
-#. Compile all uncompiled training circuits using the RL models.
-#. Generate training data from the compiled circuits.
-#. Train and save a supervised model for device prediction.
+- Compile all uncompiled training circuits using the RL models.
+- Generate training data from the compiled circuits.
+- Train and save a supervised model for device prediction.
 
 You can optionally specify custom paths for uncompiled and compiled QASM files using the `path_uncompiled_circuits` and `path_compiled_circuits` arguments.
 

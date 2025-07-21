@@ -21,9 +21,3 @@ The compilation process is modeled as a **Markov Decision Process** and takes th
 ![Illustration of the RL model](/_static/rl.png)
 
 The trained model can then be used to compile any quantum circuit for the targeted device.
-
----
-
-## Training Data
-
-To train the model, sufficient training data must be provided as QASM files in the [respective directory](https://github.com/munich-quantum-toolkit/predictor/tree/main/src/mqt/predictor/rl/training_data/training_circuits).
