@@ -37,7 +37,20 @@ def timeout_watcher(
     args: list[QuantumCircuit | figure_of_merit | str | RL_Predictor],
     timeout: int,
 ) -> tuple[QuantumCircuit, list[str]] | bool:
-    """Method that stops a function call after a given timeout limit."""
+    """Method that stops a function call after a given timeout limit.
+
+    Arguments:
+        func: The function to be called.
+        args: The arguments to be passed to the function.
+        timeout: The timeout limit in seconds.
+
+    Returns:
+        The result of the function call if it finishes within the timeout limit, otherwise False.
+
+    Raises:
+        RuntimeWarning: If the timeout is not supported on the current platform (e.g., Windows).
+        TimeoutExceptionError: If the function call exceeds the timeout limit.
+    """
     if sys.platform == "win32":
         warn("Timeout is not supported on Windows.", category=RuntimeWarning, stacklevel=2)
         return func(*args) if isinstance(args, tuple | list) else func(args)

@@ -188,7 +188,18 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 
 
 def esp_data_available(device: Target) -> bool:
-    """Check if calibration data to calculate ESP is available for the device."""
+    """Check if calibration data to calculate ESP is available for the device.
+
+    Arguments:
+        device: The device to be checked for calibration data.
+
+    Returns:
+        True if all required calibration data is available, False otherwise.
+
+    Raises:
+        ValueError: If any required calibration data is missing or invalid.
+
+    """
     single_qubit_gates = set()
     two_qubit_gates = set()
 

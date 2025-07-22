@@ -151,7 +151,11 @@ _ACTIONS: dict[str, Action] = {}
 
 
 def register_action(action: Action) -> Action:
-    """Registers a new action in the global actions registry."""
+    """Registers a new action in the global actions registry.
+
+    Raises:
+        ValueError: If an action with the same name is already registered.
+    """
     if action.name in _ACTIONS:
         msg = f"Action with name {action.name} already registered."
         raise ValueError(msg)
@@ -160,7 +164,11 @@ def register_action(action: Action) -> Action:
 
 
 def remove_action(name: str) -> None:
-    """Removes an action from the global actions registry by name."""
+    """Removes an action from the global actions registry by name.
+
+    Raises:
+        ValueError: If no action with the given name is registered.
+    """
     if name not in _ACTIONS:
         msg = f"No action with name {name} is registered."
         raise KeyError(msg)
