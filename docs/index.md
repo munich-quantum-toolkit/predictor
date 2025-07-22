@@ -33,9 +33,9 @@ self
 :glob: true
 :maxdepth: 1
 
+installation
 quickstart
 setup
-usage
 device_selection
 compilation
 figure_of_merit
