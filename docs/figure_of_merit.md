@@ -1,3 +1,16 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
+```{code-cell} ipython3
+:tags: [remove-cell]
+%config InlineBackend.figure_formats = ['svg']
+```
+
 # Figure of Merit
 
 The figure of merit determines the optimization criteria for both the ML and RL model and, thus, is a crucial part of the MQT Predictor framework.
@@ -52,43 +65,43 @@ To use this figure of merit, three steps are required:
 
 1. **Feature Extraction:** Prepare a set of compiled quantum circuits (e.g., from `MQT Bench`) for execution on a target device and extract corresponding feature vectors.
 
-   ```python
-   from mqt.predictor.hellinger import calc_device_specific_features
+```{code-cell} ipython3
+from mqt.predictor.hellinger import calc_device_specific_features
 
-   feature_vector_list = []
-   for qc in quantum_circuits:
-       feature_vector = calc_device_specific_features(qc, device)
-       feature_vector_list.append(feature_vector)
-   ```
+feature_vector_list = []
+for qc in quantum_circuits:
+    feature_vector = calc_device_specific_features(qc, device)
+    feature_vector_list.append(feature_vector)
+```
 
 2. **Label Generation:** Compute the Hellinger distance between the noisy probability distribution (obtained from executing on a quantum device) and the noiseless distribution (from simulation, e.g., using `MQT DDSIM`).
 
-   ```python
-   from mqt.predictor.hellinger import hellinger_distance
-   from mqt.predictor.ml.helper import TrainingData
+```{code-cell} ipython3
+from mqt.predictor.hellinger import hellinger_distance
+from mqt.predictor.ml.helper import TrainingData
 
-   labels_list = []
-   for noisy, noiseless in zip(noisy_distributions, noiseless_distributions):
-       distance_label = hellinger_distance(noisy, noiseless)
-       labels_list.append(distance_label)
+labels_list = []
+for noisy, noiseless in zip(noisy_distributions, noiseless_distributions):
+    distance_label = hellinger_distance(noisy, noiseless)
+    labels_list.append(distance_label)
 
-   training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
-   ```
+training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+```
 
 3. **Model Training:** Train an ML model using the compiled quantum circuit features and the Hellinger distance labels.
 
-   ```python
-   from mqt.predictor.ml import Predictor
+```{code-cell} ipython3
+from mqt.predictor.ml import Predictor
 
-   pred = Predictor(
-       figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27")]
-   )
-   pred.train_random_forest_model(training_data)
-   ```
+pred = Predictor(
+    figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27")]
+)
+pred.train_random_forest_model(training_data)
+```
 
 Once the model has been successfully trained, the `estimated_hellinger_distance` figure of merit can serve as a device-specific figure of merit to assess the quality of a compiled quantum circuit (i.e., calculate a Hellinger distance value $\in [0, 1]$):
 
-```python
+```{code-cell} ipython3
 from mqt.predictor.reward import estimated_hellinger_distance
 
 print(estimated_hellinger_distance(quantum_circuits[0], device, trained_model))
