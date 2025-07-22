@@ -12,7 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ✨ Improved the ML part and its usability ([#403]) ([**@nquetschlich**])
-- ✨ Migrated the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
+- 📝 Migrated the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
 - ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices ([#393]) ([**@nquetschlich**])
 
