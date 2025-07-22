@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from mqt.predictor.ml import qcompile
+from mqt.predictor.qcompile import qcompile
 
 __all__ = [
     "qcompile",

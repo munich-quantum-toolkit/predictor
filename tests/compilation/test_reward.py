@@ -24,8 +24,7 @@ if TYPE_CHECKING:
 from qiskit.circuit.library import CXGate, Measure, XGate
 from qiskit.transpiler import InstructionProperties, Target
 
-from mqt.predictor import reward
-from mqt.predictor.reward import esp_data_available
+from mqt.predictor.reward import crit_depth, esp_data_available, estimated_success_probability, expected_fidelity
 
 
 @pytest.fixture
@@ -43,12 +42,12 @@ def compiled_qc(device: Target) -> QuantumCircuit:
 
 def test_rewards_functions(compiled_qc: QuantumCircuit, device: Target) -> None:
     """Test all reward function."""
-    reward_expected_fidelity = reward.expected_fidelity(compiled_qc, device)
+    reward_expected_fidelity = expected_fidelity(compiled_qc, device)
     assert 0 <= reward_expected_fidelity <= 1
-    reward_critical_depth = reward.crit_depth(compiled_qc)
+    reward_critical_depth = crit_depth(compiled_qc)
     assert 0 <= reward_critical_depth <= 1
-    assert reward.esp_data_available(device)
-    reward_estimated_success_probability = reward.estimated_success_probability(compiled_qc, device)
+    assert esp_data_available(device)
+    reward_estimated_success_probability = estimated_success_probability(compiled_qc, device)
     assert 0 <= reward_estimated_success_probability <= 1
 
 

@@ -16,16 +16,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit import QuantumCircuit
-from sb3_contrib import MaskablePPO
 
-from mqt.predictor import reward, rl
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from numpy.random import Generator
     from numpy.typing import NDArray
-    from qiskit.transpiler import Target
-
 
 import zipfile
 from importlib import resources
@@ -33,55 +29,25 @@ from importlib import resources
 logger = logging.getLogger("mqt-predictor")
 
 
-def qcompile(
-    qc: QuantumCircuit | str,
-    device: Target | None,
-    figure_of_merit: reward.figure_of_merit | None = "expected_fidelity",
-    predictor_singleton: rl.Predictor | None = None,
-) -> tuple[QuantumCircuit, list[str]]:
-    """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
-
-    Arguments:
-        qc: The quantum circuit to be compiled. If a string is given, it is assumed to be a path to a qasm file.
-        device: The device to compile to.
-        figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
-        predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
-
-    Returns:
-        A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
-    """
-    if predictor_singleton is None:
-        if figure_of_merit is None:
-            msg = "figure_of_merit must not be None if predictor_singleton is None."
-            raise ValueError(msg)
-        if device is None:
-            msg = "device must not be None if predictor_singleton is None."
-            raise ValueError(msg)
-        predictor = rl.Predictor(figure_of_merit=figure_of_merit, device=device)
-    else:
-        predictor = predictor_singleton
-
-    return predictor.compile_as_predicted(qc)
-
-
-def get_state_sample(max_qubits: int, rng: Generator) -> tuple[QuantumCircuit, str]:
+def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
     Arguments:
         max_qubits: The maximum number of qubits the returned quantum circuit may have. If no limit is set, it defaults to None.
+        path_training_circuits: The path to the training circuits folder.
         rng: A random number generator to select a random quantum circuit.
 
     Returns:
         A tuple containing the random quantum circuit and the path to the file from which it was read.
     """
-    file_list = list(get_path_training_circuits().glob("*.qasm"))
+    file_list = list(path_training_circuits.glob("*.qasm"))
 
-    path_zip = get_path_training_circuits() / "training_data_compilation.zip"
+    path_zip = path_training_circuits / "training_data_compilation.zip"
     if len(file_list) == 0 and path_zip.exists():
         with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
-            zip_ref.extractall(get_path_training_circuits())
+            zip_ref.extractall(path_training_circuits)
 
-        file_list = list(get_path_training_circuits().glob("*.qasm"))
+        file_list = list(path_training_circuits.glob("*.qasm"))
         assert len(file_list) > 0
 
     found_suitable_qc = False
@@ -138,21 +104,3 @@ def get_path_trained_model() -> Path:
 def get_path_training_circuits() -> Path:
     """Returns the path to the training circuits folder used for RL training."""
     return get_path_training_data() / "training_circuits"
-
-
-def load_model(model_name: str) -> MaskablePPO:
-    """Loads a trained model from the trained model folder.
-
-    Arguments:
-        model_name: The name of the model to be loaded.
-
-    Returns:
-        The loaded model.
-    """
-    path = get_path_trained_model()
-    if Path(path / (model_name + ".zip")).is_file():
-        return MaskablePPO.load(path / (model_name + ".zip"))
-
-    error_msg = f"The RL model '{model_name}' is not trained yet. Please train the model before using it."
-    logger.error(error_msg)
-    raise FileNotFoundError(error_msg)
