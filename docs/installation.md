@@ -1,6 +1,6 @@
 # Installation
 
-The MQT Bench Python package is available on [PyPI](https://pypi.org/project/mqt.bench/) and can be installed on all major operating systems using all modern Python versions.
+The MQT Predictor Python package is available on [PyPI](https://pypi.org/project/mqt.predictor/) and can be installed on all major operating systems using all modern Python versions.
 
 :::::{tip}
 We highly recommend using [`uv`](https://docs.astral.sh/uv/) for working with Python projects.
