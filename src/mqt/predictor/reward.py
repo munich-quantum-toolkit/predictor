@@ -73,7 +73,19 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
 
 
 def calc_qubit_index(qargs: list[Qubit], qregs: list[QuantumRegister], index: int) -> int:
-    """Calculates the global qubit index for a given quantum circuit and qubit index."""
+    """Calculates the global qubit index for a given quantum circuit and qubit index.
+
+    Arguments:
+        qargs: The qubits of the quantum circuit.
+        qregs: The quantum registers of the quantum circuit.
+        index: The index of the qubit in the qargs list.
+
+    Returns:
+        The global qubit index of the given qubit in the quantum circuit.
+
+    Raises:
+        ValueError: If the qubit index is not found in the quantum registers.
+    """
     offset = 0
     for reg in qregs:
         if qargs[index] not in reg:
