@@ -198,7 +198,6 @@ def esp_data_available(device: Target) -> bool:
 
     Raises:
         ValueError: If any required calibration data is missing or invalid.
-
     """
     single_qubit_gates = set()
     two_qubit_gates = set()
