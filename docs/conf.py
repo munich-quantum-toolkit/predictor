@@ -65,12 +65,16 @@ extensions = [
     "sphinx.ext.githubpages",
     "sphinxcontrib.bibtex",
     "sphinx_copybutton",
+    "sphinx_design",
     "sphinxext.opengraph",
 ]
 
 myst_enable_extensions = [
     "amsmath",
     "dollarmath",
+    "colon_fence",
+    "substitution",
+    "deflist",
 ]
 nb_execution_excludepatterns = ["**/quickstart.md", "**/figure_of_merit.md"]
 pygments_style = "colorful"
@@ -82,7 +86,12 @@ modindex_common_prefix = ["mqt.predictor."]
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "typing_extensions": ("https://typing-extensions.readthedocs.io/en/latest/", None),
-    "qiskit": ("https://qiskit.org/documentation/", None),
+    "qiskit": ("https://docs.quantum.ibm.com/api/qiskit/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "gymnasium": ("https://gymnasium.farama.org/", None),
+    "pytket": ("https://docs.quantinuum.com/tket/api-docs/", None),
+    "bqskit": ("https://bqskit.readthedocs.io/en/latest/", None),
     "mqt": ("https://mqt.readthedocs.io/en/latest/", None),
 }
 

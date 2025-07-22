@@ -16,7 +16,7 @@ The MQT Predictor framework is based on two main components:
 - A [Device-Specific Circuit Compilation](compilation.md) component that compiles a given quantum circuit for a given device.
 
 Combining these two components, the framework can be used to automatically compile a given quantum circuit for the most suitable device optimizing a [customizable figure of merit](figure_of_merit.md).
-How to use the framework is described in the [usage](usage.md) section.
+How to install the framework is described in the [installation](installation.md) section, how to set it up in the [setup](setup.md) section, and how to use it in the [quickstart](quickstart.md) section.
 
 If you are interested in the theory behind MQT Predictor, have a look at the publications in the [references list](references.md).
 
