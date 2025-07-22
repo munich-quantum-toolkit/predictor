@@ -72,7 +72,7 @@ myst_enable_extensions = [
     "amsmath",
     "dollarmath",
 ]
-nb_execution_excludepatterns = ["**/quickstart.ipynb"]
+nb_execution_excludepatterns = ["**/quickstart.md", "**/figure_of_merit.md"]
 pygments_style = "colorful"
 
 add_module_names = False
