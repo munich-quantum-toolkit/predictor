@@ -94,6 +94,9 @@ def get_bqskit_native_gates(device: Target) -> list[gates.Gate]:
 
     Returns:
         The native gates of the given device as BQSKit gates.
+
+    Raises:
+        ValueError: If a gate in the device is not supported in BQSKit.
     """
     gate_map = {
         # --- 1-qubit gates ---

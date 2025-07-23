@@ -163,6 +163,9 @@ class Predictor:
             path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
             path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
             logger_level: The level of the logger. Defaults to logging.INFO.
+
+        Raises:
+            RuntimeError: If an error occurs during compilation.
         """
         logger.setLevel(logger_level)
 
@@ -306,6 +309,9 @@ class Predictor:
 
         Returns:
             Training_sample, circuit_name, scores
+
+        Raises:
+            RuntimeError: If the file is not a qasm file or if no compiled circuits are found for the given file.
         """
         logger.setLevel(logger_level)
 
@@ -370,6 +376,9 @@ class Predictor:
         Returns:
             Either a trained RandomForestRegressor to estimate the Hellinger distance for a single device,
             or a trained RandomForestClassifier to score multiple devices according to a specific figure of merit.
+
+        Raises:
+            ValueError: If the figure of merit is 'hellinger_distance' and more than one device is provided.
         """
         tree_param = [
             {
@@ -404,7 +413,11 @@ class Predictor:
         return mdl.best_estimator_
 
     def _get_prepared_training_data(self) -> TrainingData:
-        """Returns the training data for the given figure of merit."""
+        """Returns the training data for the given figure of merit.
+
+        Raises:
+            FileNotFoundError: If the training data files are not found.
+        """
         with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
             prefix = f"{self.figure_of_merit}.npy"
             file_data = path / f"training_data_{prefix}"
@@ -451,6 +464,10 @@ def predict_device_for_figure_of_merit(
 
     Returns:
         The probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
+
+    Raises:
+        FileNotFoundError: If the ML model is not trained yet.
+        ValueError: If no suitable device is found for the given quantum circuit.
     """
     if isinstance(qc, Path) and qc.exists():
         qc = QuantumCircuit.from_qasm_file(qc)

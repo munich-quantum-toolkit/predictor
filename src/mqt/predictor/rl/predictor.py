@@ -59,6 +59,9 @@ class Predictor:
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
+
+        Raises:
+            RuntimeError: If an error occurs during compilation.
         """
         trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
 
@@ -134,6 +137,9 @@ def load_model(model_name: str) -> MaskablePPO:
 
     Returns:
         The loaded model.
+
+    Raises:
+        FileNotFoundError: If the model file does not exist.
     """
     path = get_path_trained_model()
     if Path(path / (model_name + ".zip")).is_file():
@@ -160,6 +166,9 @@ def rl_compile(
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
+
+    Raises:
+        ValueError: If figure_of_merit or device is None and predictor_singleton is also None.
     """
     if predictor_singleton is None:
         if figure_of_merit is None:

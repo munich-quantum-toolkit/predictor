@@ -39,6 +39,9 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
 
     Returns:
         A tuple containing the random quantum circuit and the path to the file from which it was read.
+
+    Raises:
+        RuntimeError: If no quantum circuit could be read from the training circuits folder.
     """
     file_list = list(path_training_circuits.glob("*.qasm"))
 

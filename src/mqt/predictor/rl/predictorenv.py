@@ -73,7 +73,16 @@ class PredictorEnv(Env):  # type: ignore[misc]
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
     ) -> None:
-        """Initializes the PredictorEnv object."""
+        """Initializes the PredictorEnv object.
+
+        Arguments:
+            device: The target device to be used for compilation.
+            reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
+            path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
+
+        Raises:
+            ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
+        """
         logger.info("Init env: " + reward_function)
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
@@ -156,7 +165,17 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.filename = ""
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
-        """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information."""
+        """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
+
+        Arguments:
+            action: The action to be executed, represented by its index in the action set.
+
+        Returns:
+            A tuple containing the new state as a feature dictionary, the reward value, whether the episode is done, whether the episode is truncated, and additional information.
+
+        Raises:
+            RuntimeError: If no valid actions are left.
+        """
         self.used_actions.append(str(self.action_set[action].name))
         altered_qc = self.apply_action(action)
         if not altered_qc:
@@ -271,7 +290,17 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return action_mask
 
     def apply_action(self, action_index: int) -> QuantumCircuit | None:
-        """Applies the given action to the current state and returns the altered state."""
+        """Applies the given action to the current state and returns the altered state.
+
+        Arguments:
+            action_index: The index of the action to be applied, which must be in the action set.
+
+        Returns:
+            The altered quantum circuit after applying the action, or None if the action is to terminate the compilation.
+
+        Raises:
+            ValueError: If the action index is not in the action set or if the action origin is not supported.
+        """
         if action_index not in self.action_set:
             msg = f"Action {action_index} not supported."
             raise ValueError(msg)
@@ -358,6 +387,18 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return altered_qc
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
+        """Applies the given BQSKit action to the current state and returns the altered state.
+
+        Arguments:
+            action: The BQSKit action to be applied.
+            action_index: The index of the action in the action set.
+
+        Returns:
+            The altered quantum circuit after applying the action.
+
+        Raises:
+            ValueError: If the action index is not in the action set or if the action origin is not supported.
+        """
         bqskit_qc = qiskit_to_bqskit(self.state)
         assert callable(action.transpile_pass)
         if action_index in self.actions_opt_indices:
