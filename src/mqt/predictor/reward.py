@@ -196,7 +196,9 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             if gate_type == "measure":
                 res *= 1 - device[gate_type][first_qubit_idx,].error
                 continue
-            if qiskit_version < "2.0.0" and gate_type == "delay":
+            if gate_type == "delay":
+                if qiskit_version < "2.0.0":
+                    continue
                 # only consider active qubits
                 if first_qubit_idx not in active_qubits:
                     continue
