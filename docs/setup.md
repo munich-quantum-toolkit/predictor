@@ -35,9 +35,9 @@ For each device to be considered, a dedicated reinforcement learning (RL) model 
 
 ```python
 from mqt.predictor.rl import Predictor as RL_Predictor
-from mqt.bench.targets import get_target
+from mqt.bench.targets import get_device
 
-device = get_target("ibm_falcon_27")
+device = get_device("ibm_falcon_27")
 rl_pred = RL_Predictor(device=device, figure_of_merit="expected_fidelity")
 rl_pred.train_model(timesteps=100000, model_name="ibm_falcon_27_model")
 ```
