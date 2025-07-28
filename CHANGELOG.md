@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-07-29
+
 ### Added
 
 - 📝 Added docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
@@ -26,7 +28,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/munich-quantum-toolkit/predictor/releases/tag/v2.2.0
 
 <!-- PR links -->
