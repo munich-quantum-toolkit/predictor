@@ -172,7 +172,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
         scheduled_circ = transpile(
             qc,
             target=device,
-            scheduling_method="alap",
+            scheduling_method="asap",
             optimization_level=0,
             initial_layout=None,
             routing_method=None,
