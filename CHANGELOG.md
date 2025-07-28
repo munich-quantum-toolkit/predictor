@@ -13,14 +13,16 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- 📝 Added docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
+- 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
+- ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360]) ([**@flowerthrower**])
 
 ### Changed
 
-- ✨ Improved the ML part and its usability ([#403]) ([**@nquetschlich**])
-- 📝 Migrated the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
+- ✨ Improve the ML part and its usability ([#403]) ([**@nquetschlich**])
+- 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
 - ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices ([#393]) ([**@nquetschlich**])
+- 🚚 Move to MQT organization ([#385]) ([**@flowerthrower**])
 
 ## [2.2.0] - 2025-02-02
 
@@ -38,11 +40,14 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#403]: https://github.com/munich-quantum-toolkit/predictor/pull/403
 [#401]: https://github.com/munich-quantum-toolkit/predictor/pull/401
 [#393]: https://github.com/munich-quantum-toolkit/predictor/pull/393
+[#385]: https://github.com/munich-quantum-toolkit/predictor/pull/385
+[#360]: https://github.com/munich-quantum-toolkit/predictor/pull/360
 
 <!-- Contributor -->
 
 [**@burgholzer**]: https://github.com/burgholzer
 [**@nquetschlich**]: https://github.com/nquetschlich
+[**@flowerthrower**]: https://github.com/flowerthrower
 
 <!-- General links -->
 
