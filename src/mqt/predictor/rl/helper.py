@@ -17,10 +17,10 @@ from typing import TYPE_CHECKING, Optional, Callable, List, Tuple, Dict, Any
 import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.circuit import ClassicalRegister, QuantumRegister, Instruction
+from qiskit.circuit import ClassicalRegister, QuantumRegister, Instruction, Qubit
 from qiskit.transpiler import PassManager, Target
 from qiskit.dagcircuit import DAGCircuit
-from qiskit_ibm_transpiler.ai.routing import AIRouting
+from qiskit_ibm_transpiler.ai.routing import AIRouting 
 
 from mqt.predictor.utils import calc_supermarq_features
 from mqt.predictor.rl.actions import Action
@@ -34,7 +34,7 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
-def extract_cregs_and_measurements(qc: QuantumCircuit) -> Tuple[List[ClassicalRegister], List[tuple[Instruction, List, List]]]:
+def extract_cregs_and_measurements(qc: QuantumCircuit) -> Tuple[List[ClassicalRegister], List[tuple[Instruction, List[Any], List[Any]]]]:
     """
     Extracts classical registers and measurement operations from a quantum circuit.
 
@@ -78,8 +78,8 @@ def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
 def add_cregs_and_measurements(
     qc: QuantumCircuit,
     cregs: List[ClassicalRegister],
-    measurements: List[Tuple[Instruction, List, List]],
-    qubit_map: Optional[Dict] = None,
+    measurements: List[Tuple[Instruction, List[Any], List[Any]]],
+    qubit_map: Optional[Dict[Qubit,Qubit]] = None,
 ) -> QuantumCircuit:
     """
     Adds classical registers and measurement operations back to the quantum circuit.
