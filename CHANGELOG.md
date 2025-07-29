@@ -9,9 +9,14 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-07-29
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
+
 ### Added
 
-- 📝 Added docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
+- 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
+- ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360]) ([**@flowerthrower**])
 
 ### Changed
 
@@ -20,6 +25,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
 - ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices ([#393]) ([**@nquetschlich**])
+- 🚚 Move to MQT organization ([#385]) ([**@flowerthrower**])
 
 ## [2.2.0] - 2025-02-02
 
@@ -27,7 +33,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/munich-quantum-toolkit/predictor/releases/tag/v2.2.0
 
 <!-- PR links -->
@@ -37,11 +44,14 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#403]: https://github.com/munich-quantum-toolkit/predictor/pull/403
 [#401]: https://github.com/munich-quantum-toolkit/predictor/pull/401
 [#393]: https://github.com/munich-quantum-toolkit/predictor/pull/393
+[#385]: https://github.com/munich-quantum-toolkit/predictor/pull/385
+[#360]: https://github.com/munich-quantum-toolkit/predictor/pull/360
 
 <!-- Contributor -->
 
 [**@burgholzer**]: https://github.com/burgholzer
 [**@nquetschlich**]: https://github.com/nquetschlich
+[**@flowerthrower**]: https://github.com/flowerthrower
 
 <!-- General links -->
 
