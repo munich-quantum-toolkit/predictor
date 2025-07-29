@@ -12,16 +12,18 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Callable
 
 import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.circuit import ClassicalRegister, QuantumRegister
-from qiskit.transpiler import PassManager
+from qiskit.circuit import ClassicalRegister, QuantumRegister, Instruction
+from qiskit.transpiler import PassManager, Target
+from qiskit.dagcircuit import DAGCircuit
 from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.rl.actions import Action
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -32,7 +34,16 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
-def extract_cregs_and_measurements(qc):
+def extract_cregs_and_measurements(qc: QuantumCircuit) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list, list]]]:
+    """
+    Extracts classical registers and measurement operations from a quantum circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A tuple containing a list of classical registers and a list of measurement operations.
+    """
     cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
     measurements = [
         (item.operation, item.qubits, item.clbits)
@@ -41,7 +52,16 @@ def extract_cregs_and_measurements(qc):
     ]
     return cregs, measurements
 
-def remove_cregs(qc):
+def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
+    """
+    Removes classical registers and measurement operations from the circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A new QuantumCircuit with only quantum operations (no cregs or measurements).
+    """
     qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
     new_qc = QuantumCircuit(*qregs)
     old_to_new = {}
@@ -55,7 +75,24 @@ def remove_cregs(qc):
             new_qc.append(instr, qargs)
     return new_qc
 
-def add_cregs_and_measurements(qc, cregs, measurements, qubit_map=None):
+def add_cregs_and_measurements(
+    qc: QuantumCircuit,
+    cregs: list[ClassicalRegister],
+    measurements: list[tuple[Instruction, list, list]],
+    qubit_map: Optional[dict] = None,
+) -> QuantumCircuit:
+    """
+    Adds classical registers and measurement operations back to the quantum circuit.
+
+    Args:
+        qc: The quantum circuit to which cregs and measurements are added.
+        cregs: List of ClassicalRegister to add.
+        measurements: List of measurement instructions as tuples (Instruction, qubits, clbits).
+        qubit_map: Optional dictionary mapping original qubits to new qubits.
+
+    Returns:
+        The modified QuantumCircuit with cregs and measurements added.
+    """
     for cr in cregs:
         qc.add_register(cr)
     for instr, qargs, cargs in measurements:
@@ -68,10 +105,13 @@ def add_cregs_and_measurements(qc, cregs, measurements, qubit_map=None):
 
 class SafeAIRouting(AIRouting):
     """
-    Remove cregs before AIRouting and add them back afterwards
-    Necessary because there are cases AIRouting can't handle
+    Custom AIRouting wrapper that removes classical registers before routing
+    and restores them afterward. This prevents failures in AIRouting when
+    classical bits are present.
     """
-    def run(self, dag):
+    def run(self, dag) -> DAGCircuit:
+        """Run the routing pass on a DAGCircuit."""
+
         # 1. Convert input dag to circuit
         qc_orig = dag_to_circuit(dag)
 
@@ -110,8 +150,11 @@ class SafeAIRouting(AIRouting):
         return circuit_to_dag(qc_final)
 
 def best_of_n_passmanager(
-    action, device, qc, max_iteration=(20,20),
-    metric_fn=None, 
+    action: Action,
+    device: Target,
+    qc: QuantumCircuit,
+    max_iteration: tuple[int, int] = (20, 20),
+    metric_fn: Optional[Callable[[QuantumCircuit], float]] = None,
 ):
     """
     Runs the given transpile_pass multiple times and keeps the best result.
