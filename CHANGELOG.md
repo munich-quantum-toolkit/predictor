@@ -18,7 +18,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-
 - 🎨 Adjust the ESP reward calculation to become Qiskit v2 compatible ([#406]) ([**@nquetschlich**])
 - ✨ Improve the ML part and its usability ([#403]) ([**@nquetschlich**])
 - 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
