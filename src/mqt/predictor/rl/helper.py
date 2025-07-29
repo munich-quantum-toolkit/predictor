@@ -105,11 +105,13 @@ def add_cregs_and_measurements(
 
 class SafeAIRouting(AIRouting):
     """
-    Custom AIRouting wrapper that removes classical registers before routing
-    and restores them afterward. This prevents failures in AIRouting when
-    classical bits are present.
+    Custom AIRouting wrapper that removes classical registers before routing.
+
+    This prevents failures in AIRouting when classical bits are present by
+    temporarily removing classical registers and measurements and restoring
+    them after routing is completed.
     """
-    def run(self, dag) -> DAGCircuit:
+    def run(self, dag: DAGCircuit) -> DAGCircuit:
         """Run the routing pass on a DAGCircuit."""
 
         # 1. Convert input dag to circuit
@@ -141,8 +143,8 @@ class SafeAIRouting(AIRouting):
             else:
                 try:
                     idx = qc_routed.qubits.index(phys)
-                except ValueError:
-                    raise RuntimeError(f"Physical qubit {phys} not found in output circuit!")
+                except ValueError as err:
+                    raise RuntimeError(f"Physical qubit {phys} not found in output circuit!") from err
                 qubit_map[virt] = qc_routed.qubits[idx]
                 # 7. Restore classical registers and measurement instructions
         qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
@@ -155,15 +157,22 @@ def best_of_n_passmanager(
     qc: QuantumCircuit,
     max_iteration: tuple[int, int] = (20, 20),
     metric_fn: Optional[Callable[[QuantumCircuit], float]] = None,
-):
+)-> tuple[QuantumCircuit, dict[str, any]]:
     """
     Runs the given transpile_pass multiple times and keeps the best result.
-    action: the action dict with a 'transpile_pass' key (lambda/device->[passes])
-    device: the backend or device
-    qc: input circuit
-    max_iteration: number of times to try
-    metric_fn: function(circ) -> float for scoring
-    require_layout: skip outputs with missing layouts
+
+    Args:
+        action: The action dictionary with a 'transpile_pass' key
+            (lambda device -> [passes]).
+        device: The target backend or device.
+        qc: The input quantum circuit.
+        max_iteration: A tuple (layout_trials, routing_trials) specifying
+            how many times to try.
+        metric_fn: Optional function to score circuits; defaults to circuit depth.
+
+    Returns:
+        A tuple containing the best transpiled circuit and its corresponding
+        property set.
     """
     best_val = None
     best_result = None
@@ -292,7 +301,7 @@ def get_openqasm_gates() -> list[str]:
         "rccx",
     ]
 
-def create_feature_dict(qc: QuantumCircuit, basis_gates: list[str], coupling_map) -> dict[str, int | NDArray[np.float64]]:
+def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float64]]:
     """Creates a feature dictionary for a given quantum circuit.
 
     Arguments:
