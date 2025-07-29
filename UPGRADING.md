@@ -24,4 +24,3 @@ All links in the documentation have been updated accordingly.
 
 [unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.3.0...HEAD
 [2.3.0]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...v2.3.0
-[2.2.0]: https://github.com/munich-quantum-toolkit/predictor/releases/tag/v2.2.0
