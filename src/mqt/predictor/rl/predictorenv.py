@@ -38,7 +38,8 @@ from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, transpile
+from qiskit.circuit.library import RCCXGate
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
@@ -54,7 +55,7 @@ from mqt.predictor.reward import (
     figure_of_merit,
 )
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
-from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
+from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample, get_openqasm_gates, best_of_n_passmanager
 from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
@@ -89,8 +90,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         self.action_set = {}
         self.actions_synthesis_indices = []
-        self.actions_layout_indices = []
-        self.actions_routing_indices = []
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
@@ -109,14 +108,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         for elem in action_dict[PassType.SYNTHESIS]:
             self.action_set[index] = elem
             self.actions_synthesis_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.LAYOUT]:
-            self.action_set[index] = elem
-            self.actions_layout_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.ROUTING]:
-            self.action_set[index] = elem
-            self.actions_routing_indices.append(index)
             index += 1
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
@@ -163,6 +154,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
+        self.max_iter = (20,20) # (layout_trials, routing _trials)
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
@@ -202,9 +194,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
+        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
         if self.state.count_ops().get("unitary"):
-            self.state = self.state.decompose(gates_to_decompose="unitary")
+            temp_circ = self.state.decompose(gates_to_decompose="unitary")
+            # qiskit fallback to ['id', 'u1', 'u2', 'u3', 'cx'] by default according to https://quantum.cloud.ibm.com/docs/en/api/qiskit/0.24/transpiler
+            self.state = transpile(temp_circ, basis_gates=get_openqasm_gates(), optimization_level=0)
+        elif self.state.count_ops().get("clifford"):
+            temp_circ = self.state.decompose(gates_to_decompose="clifford")
+            self.state = transpile(temp_circ, basis_gates=get_openqasm_gates(), optimization_level=0)
 
         self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
@@ -319,55 +316,76 @@ class PredictorEnv(Env):  # type: ignore[misc]
         raise ValueError(msg)
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
-        if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-            passes = action.transpile_pass(
-                self.device.operation_names,
-                CouplingMap(self.device.build_coupling_map()) if self.layout else None,
-            )
-            pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
+        if action.get("stochastic", False):
+            metric_fn = lambda circ: circ.count_ops().get("swap", 0)
+            # for stochastic actions, pass the layout/routing trials parameter
+            max_iteration = self.max_iter
+            if "Sabre" in action["name"] and "AIRouting" not in action["name"]:
+                # Internal trials for Sabre
+                transpile_pass = action.transpile_pass(self.device, max_iteration)
+                pm = PassManager(transpile_pass)
+                altered_qc = pm.run(self.state)
+                pm_property_set = dict(pm.property_set)
+            elif "AIRouting" in action["name"]:
+                # Run AIRouting in custom loop
+                altered_qc, pm_property_set = best_of_n_passmanager(
+                    action, 
+                    self.device,
+                    self.state, 
+                    max_iteration=max_iteration,
+                    metric_fn=metric_fn,
+                )
         else:
-            transpile_pass = (
-                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-            )
-            pm = PassManager(transpile_pass)
-
-        altered_qc = pm.run(self.state)
-
-        if action_index in (
-            self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
-        ):
-            altered_qc = self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
-
-        elif action_index in self.actions_routing_indices and self.layout:
-            self.layout.final_layout = pm.property_set["final_layout"]
-
+            if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+                passes = action.transpile_pass(
+                    self.device.operation_names,
+                    CouplingMap(self.device.build_coupling_map()) if self.layout else None,
+                )
+                pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
+                altered_qc = pm.run(self.state)
+                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+            else:
+                transpile_pass = (
+                    action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+                )
+                pm = PassManager(transpile_pass)
+                altered_qc = pm.run(self.state)
+                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+                if action_index in (
+                    self.actions_mapping_indices + self.actions_final_optimization_indices
+                ):
+                    pm_property_set = dict(pm.property_set)
+                    altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
+        
         return altered_qc
-
+    
     def _handle_qiskit_layout_postprocessing(
-        self, action: Action, pm: PassManager, altered_qc: QuantumCircuit
+        self, action: Action, pm_property_set: dict, altered_qc: QuantumCircuit, 
     ) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
-            assert pm.property_set["VF2PostLayout_stop_reason"] is not None
-            post_layout = pm.property_set["post_layout"]
+            assert pm_property_set["VF2PostLayout_stop_reason"] is not None
+            post_layout = pm_property_set["post_layout"]
             if post_layout:
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
-        elif action.name == "VF2Layout":
-            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
-            assert pm.property_set["layout"]
         else:
-            assert pm.property_set["layout"]
+            assert pm_property_set["layout"]
 
-        if pm.property_set["layout"]:
+        if pm_property_set["layout"]:
             self.layout = TranspileLayout(
-                initial_layout=pm.property_set["layout"],
-                input_qubit_mapping=pm.property_set["original_qubit_indices"],
-                final_layout=pm.property_set["final_layout"],
+                initial_layout=pm_property_set["layout"],
+                input_qubit_mapping=pm_property_set["original_qubit_indices"],
+                final_layout=pm_property_set["final_layout"],
                 _output_qubit_list=altered_qc.qubits,
                 _input_qubit_count=self.num_qubits_uncompiled_circuit,
             )
+        if pm_property_set["final_layout"]:
+            self.layout.final_layout = pm_property_set["final_layout"]
         return altered_qc
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
+        if any(isinstance(gate[0], RCCXGate) for gate in self.state.data):
+            # RCCX could cause error
+            self.state = transpile(self.state, basis_gates=get_openqasm_gates()[:-1], optimization_level=0)
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
         transpile_pass = (
             action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
@@ -383,7 +401,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
             self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
-
+        # Decompose to the allowed gates (by default generic u gates are used)
+        altered_qc = transpile(altered_qc, basis_gates=get_openqasm_gates(), optimization_level=0)
         return altered_qc
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
@@ -424,25 +443,22 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
-        check_nat_gates = GatesInBasis(target=self.device)
+        check_nat_gates = GatesInBasis(basis_gates=self.device.basis_gates)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
-        if not only_nat_gates:
-            actions = self.actions_synthesis_indices + self.actions_opt_indices
-            if self.layout is not None:
-                actions += self.actions_routing_indices
-            return actions
-
-        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
+        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.coupling_map))
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
+        if not only_nat_gates: # not native gates yet
+            actions = self.actions_synthesis_indices + self.actions_opt_indices
+            return actions
+
         if mapped and self.layout is not None:  # The circuit is correctly mapped.
-            return [self.action_terminate_index, *self.actions_opt_indices]
-
-        if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
-            return self.actions_routing_indices
-
-        # No layout applied yet
-        return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
+            return [self.action_terminate_index, *self.actions_opt_indices, *self.actions_final_optimization_indices]
+        else: 
+            # The circuit is not mapped yet
+            # Or the circuit was mapped but some optimization actions change its structure and the circuit is again unmapped
+            # In this case, re-do mapping completely as the previous layout is not optimal on the new structure
+            return self.actions_mapping_indices + self.actions_opt_indices 
