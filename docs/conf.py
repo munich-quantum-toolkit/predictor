@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 """Sphinx configuration file."""
 
 from __future__ import annotations
@@ -45,6 +53,8 @@ templates_path = ["_templates"]
 html_css_files = ["custom.css"]
 
 extensions = [
+    "myst_nb",
+    "autoapi.extension",
     "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -55,11 +65,18 @@ extensions = [
     "sphinx.ext.githubpages",
     "sphinxcontrib.bibtex",
     "sphinx_copybutton",
-    "nbsphinx",
+    "sphinx_design",
     "sphinxext.opengraph",
-    "sphinx_autodoc_typehints",
 ]
 
+myst_enable_extensions = [
+    "amsmath",
+    "dollarmath",
+    "colon_fence",
+    "substitution",
+    "deflist",
+]
+nb_execution_excludepatterns = ["**/quickstart.md", "**/figure_of_merit.md"]
 pygments_style = "colorful"
 
 add_module_names = False
@@ -69,7 +86,12 @@ modindex_common_prefix = ["mqt.predictor."]
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "typing_extensions": ("https://typing-extensions.readthedocs.io/en/latest/", None),
-    "qiskit": ("https://qiskit.org/documentation/", None),
+    "qiskit": ("https://docs.quantum.ibm.com/api/qiskit/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "gymnasium": ("https://gymnasium.farama.org/", None),
+    "pytket": ("https://docs.quantinuum.com/tket/api-docs/", None),
+    "bqskit": ("https://bqskit.readthedocs.io/en/latest/", None),
     "mqt": ("https://mqt.readthedocs.io/en/latest/", None),
 }
 
@@ -106,7 +128,24 @@ copybutton_line_continuation_character = "\\"
 
 autosummary_generate = True
 
-
+autoapi_dirs = ["../src/mqt"]
+autoapi_python_use_implicit_namespaces = True
+autoapi_root = "api"
+autoapi_add_toctree_entry = False
+autoapi_ignore = [
+    "*/**/_version.py",
+]
+autoapi_options = [
+    "members",
+    "imported-members",
+    "show-inheritance",
+    "special-members",
+    "undoc-members",
+]
+autoapi_keep_files = True
+add_module_names = False
+toc_object_entries_show_parents = "hide"
+python_use_unqualified_type_names = True
 typehints_use_rtype = False
 napoleon_use_rtype = False
 napoleon_google_docstring = True
@@ -118,7 +157,7 @@ html_static_path = ["_static"]
 html_theme_options = {
     "light_logo": "mqt_dark.png",
     "dark_logo": "mqt_light.png",
-    "source_repository": "https://github.com/cda-tum/mqt-predictor/",
+    "source_repository": "https://github.com/munich-quantum-toolkit/predictor/",
     "source_branch": "main",
     "source_directory": "docs/",
     "navigation_with_keys": True,

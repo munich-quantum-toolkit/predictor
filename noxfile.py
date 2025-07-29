@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 """Nox sessions."""
 
 from __future__ import annotations
@@ -14,16 +22,11 @@ if TYPE_CHECKING:
 
 
 nox.needs_version = ">=2024.3.2"
-nox.options.default_venv_backend = "uv|virtualenv"
+nox.options.default_venv_backend = "uv"
 
+nox.options.sessions = ["lint", "tests", "minimums"]
 
 PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12"]
-
-BUILD_REQUIREMENTS = [
-    "setuptools>=66.1",
-    "setuptools_scm>=8.1",
-    "wheel>=0.40",
-]
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
@@ -42,23 +45,29 @@ def _run_tests(
     session: nox.Session,
     *,
     install_args: Sequence[str] = (),
-    run_args: Sequence[str] = (),
-    extras: Sequence[str] = (),
+    extra_command: Sequence[str] = (),
+    pytest_run_args: Sequence[str] = (),
 ) -> None:
-    posargs = list(session.posargs)
-    env = {"PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
 
-    extras_ = ["test", *extras]
-    if "--cov" in posargs:
-        extras_.append("coverage")
-        posargs.append("--cov-config=pyproject.toml")
-
-    # install_args = ["--exclude-newer", "2024-09-14", *install_args]
-
-    session.install(*BUILD_REQUIREMENTS, *install_args, env=env)
-    install_arg = f"-ve.[{','.join(extras_)}]"
-    session.install("--no-build-isolation", install_arg, *install_args, env=env)
-    session.run("pytest", *run_args, *posargs, env=env)
+    if extra_command:
+        session.run(*extra_command, env=env)
+    if "--cov" in session.posargs:
+        # Try to use the lighter-weight `sys.monitoring` coverage core available in Python 3.12+ to speed up coverage collection.
+        env["COVERAGE_CORE"] = "sysmon"
+    session.run(
+        "uv",
+        "run",
+        "--no-dev",
+        "--group",
+        "test",
+        *install_args,
+        "pytest",
+        *pytest_run_args,
+        *session.posargs,
+        "--cov-config=pyproject.toml",
+        env=env,
+    )
 
 
 @nox.session(reuse_venv=True, python=PYTHON_ALL_VERSIONS)
@@ -73,9 +82,22 @@ def minimums(session: nox.Session) -> None:
     _run_tests(
         session,
         install_args=["--resolution=lowest-direct"],
-        run_args=["-Wdefault"],
+        pytest_run_args=["-Wdefault"],
     )
-    session.run("uv", "pip", "list")
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    session.run("uv", "tree", "--frozen", env=env)
+    session.run("uv", "lock", "--refresh", env=env)
+
+
+@nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
+def qiskit(session: nox.Session) -> None:
+    """Tests against the latest version of Qiskit."""
+    _run_tests(
+        session,
+        extra_command=["uv", "pip", "install", "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git"],
+    )
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    session.run("uv", "pip", "show", "qiskit", env=env)
 
 
 @nox.session(reuse_venv=True)
@@ -86,25 +108,27 @@ def docs(session: nox.Session) -> None:
     args, posargs = parser.parse_known_args(session.posargs)
 
     serve = args.builder == "html" and session.interactive
-    extra_installs = ["sphinx-autobuild"] if serve else []
-    session.install(*BUILD_REQUIREMENTS, *extra_installs)
-    session.install("--no-build-isolation", "-ve.[docs]")
-    session.chdir("docs")
+    if serve:
+        session.install("sphinx-autobuild")
 
-    if args.builder == "linkcheck":
-        session.run("sphinx-build", "-b", "linkcheck", ".", "_build/linkcheck", *posargs)
-        return
-
-    shared_args = (
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    shared_args = [
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
         f"-b={args.builder}",
-        ".",
-        f"_build/{args.builder}",
+        "docs",
+        f"docs/_build/{args.builder}",
         *posargs,
-    )
+    ]
 
-    if serve:
-        session.run("sphinx-autobuild", "--ignore", "**jupyter**", *shared_args)
-    else:
-        session.run("sphinx-build", "--keep-going", *shared_args)
+    session.run(
+        "uv",
+        "run",
+        "--no-dev",
+        "--group",
+        "docs",
+        "--frozen",
+        "sphinx-autobuild" if serve else "sphinx-build",
+        *shared_args,
+        env=env,
+    )

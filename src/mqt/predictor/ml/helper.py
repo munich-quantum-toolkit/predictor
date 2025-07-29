@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 """Helper functions for the machine learning device selection predictor."""
 
 from __future__ import annotations
@@ -7,31 +15,12 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mqt.bench.utils import calc_supermarq_features
-from mqt.predictor import ml, reward, rl
+from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy._typing import NDArray
     from qiskit import QuantumCircuit
-
-
-def qcompile(
-    qc: QuantumCircuit,
-    figure_of_merit: reward.figure_of_merit = "expected_fidelity",
-) -> tuple[QuantumCircuit, list[str], str]:
-    """Compiles a given quantum circuit to a device with the highest predicted figure of merit.
-
-    Arguments:
-        qc: The quantum circuit to be compiled.
-        figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
-
-    Returns:
-        Returns a tuple containing the compiled quantum circuit, the compilation information and the name of the device used for compilation. If compilation fails, False is returned.
-    """
-    predicted_device = ml.predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
-    res = rl.qcompile(qc, figure_of_merit=figure_of_merit, device_name=predicted_device.name)
-    return *res, predicted_device
 
 
 def get_path_training_data() -> Path:
@@ -118,9 +107,6 @@ def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, int]:
             res_dct[key] = val
 
     return res_dct
-
-
-PATH_LENGTH = 260
 
 
 def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
