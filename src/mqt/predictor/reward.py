@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from joblib import load
+from qiskit import __version__ as qiskit_version
+from qiskit import transpile
 
 from mqt.predictor.hellinger import calc_device_specific_features, get_hellinger_model_path
 from mqt.predictor.utils import calc_supermarq_features
@@ -111,11 +113,8 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
     Returns:
         The expected success probability of the given quantum circuit on the given device.
     """
-    # lazy import of qiskit transpiler
-    from qiskit.transpiler import InstructionDurations, Layout, PassManager, passes  # noqa: PLC0415
-    from qiskit.transpiler.passes import ApplyLayout, SetLayout  # noqa: PLC0415
+    exec_time_per_qubit = dict.fromkeys(range(device.num_qubits), 0.0)
 
-    # collect gate and measurement durations for active qubits
     op_times, active_qubits = [], set()
     for instr in qc.data:
         instruction = instr.operation
@@ -138,30 +137,48 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 duration,
                 "s",
             ))
+            exec_time_per_qubit[first_qubit_idx] += duration
         else:  # multi-qubit gate
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
             active_qubits.add(second_qubit_idx)
             duration = device[gate_type][first_qubit_idx, second_qubit_idx].duration
             op_times.append((gate_type, [first_qubit_idx, second_qubit_idx], duration, "s"))
+            exec_time_per_qubit[first_qubit_idx] += duration
+            exec_time_per_qubit[second_qubit_idx] += duration
 
-    # check whether the circuit was transformed by tket (i.e. changed register name)
-    # qiskit ASAPScheduleAnalysis expects all qubit registers to be named 'q'
-    if qc.qregs[0].name != "q":
-        # create a layout that maps the (tket) 'node' registers to the (qiskit) 'q' registers
-        layouts = [SetLayout(Layout({node_qubit: i for i, node_qubit in enumerate(node_reg)})) for node_reg in qc.qregs]
-        # create a pass manager with the SetLayout and ApplyLayout passes
-        pm = PassManager(list(layouts))
-        pm.append(ApplyLayout())
+    if qiskit_version < "2.0.0":
+        from qiskit.transpiler import InstructionDurations, Layout, PassManager, passes  # noqa: PLC0415
+        from qiskit.transpiler.passes import ApplyLayout, SetLayout  # noqa: PLC0415
 
-        # replace the 'node' register with the 'q' register in the circuit
-        qc = pm.run(qc)
-        assert qc.qregs[0].name == "q"
+        if qc.qregs[0].name != "q":
+            # create a layout that maps the (tket) 'node' registers to the (qiskit) 'q' registers
+            layouts = [
+                SetLayout(Layout({node_qubit: i for i, node_qubit in enumerate(node_reg)})) for node_reg in qc.qregs
+            ]
+            # create a pass manager with the SetLayout and ApplyLayout passes
+            pm = PassManager(list(layouts))
+            pm.append(ApplyLayout())
 
-    # associate gate and idle (delay) times for each qubit through asap scheduling
-    sched_pass = passes.ASAPScheduleAnalysis(InstructionDurations(op_times))
-    delay_pass = passes.PadDelay()
-    pm = PassManager([sched_pass, delay_pass])
-    scheduled_circ = pm.run(qc)
+            # replace the 'node' register with the 'q' register in the circuit
+            qc = pm.run(qc)
+            assert qc.qregs[0].name == "q"
+
+        sched_pass = passes.ASAPScheduleAnalysis(InstructionDurations(op_times))
+        delay_pass = passes.PadDelay()
+        pm = PassManager([sched_pass, delay_pass])
+        scheduled_circ = pm.run(qc)
+
+    else:
+        scheduled_circ = transpile(
+            qc,
+            target=device,
+            scheduling_method="asap",
+            optimization_level=0,
+            initial_layout=None,
+            routing_method=None,
+            layout_method=None,
+        )
+        overall_estimated_duration = scheduled_circ.estimate_duration(target=device)
 
     res = 1.0
     for instr in scheduled_circ.data:
@@ -179,8 +196,9 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             if gate_type == "measure":
                 res *= 1 - device[gate_type][first_qubit_idx,].error
                 continue
-
             if gate_type == "delay":
+                if qiskit_version < "2.0.0":
+                    continue
                 # only consider active qubits
                 if first_qubit_idx not in active_qubits:
                     continue
@@ -190,12 +208,18 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
                 )
                 continue
-
             res *= 1 - device[gate_type][first_qubit_idx,].error
         else:
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
             res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
 
+    if qiskit_version >= "2.0.0":
+        for i in range(device.num_qubits):
+            qubit_execution_time = exec_time_per_qubit[i]
+            if qubit_execution_time == 0:
+                continue
+            idle_time = overall_estimated_duration - qubit_execution_time
+            res *= np.exp(-idle_time / min(device.qubit_properties[i].t1, device.qubit_properties[i].t2))
     return float(np.round(res, precision).item())
 
 
