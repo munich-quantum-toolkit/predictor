@@ -18,6 +18,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+
+- 🎨 Adjust the ESP reward calculation to become Qiskit v2 compatible ([#406]) ([**@nquetschlich**])
 - ✨ Improve the ML part and its usability ([#403]) ([**@nquetschlich**])
 - 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
 - ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
@@ -36,6 +38,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
 [#403]: https://github.com/munich-quantum-toolkit/predictor/pull/403
 [#401]: https://github.com/munich-quantum-toolkit/predictor/pull/401
