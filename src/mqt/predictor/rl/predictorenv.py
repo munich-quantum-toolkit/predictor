@@ -316,17 +316,18 @@ class PredictorEnv(Env):  # type: ignore[misc]
         raise ValueError(msg)
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
-        if action.get("stochastic", False):
-            metric_fn = lambda circ: circ.count_ops().get("swap", 0)
+        if getattr(action, "stochastic", False):
+            def metric_fn(circ: QuantumCircuit) -> float:
+                return float(circ.count_ops().get("swap", 0))
             # for stochastic actions, pass the layout/routing trials parameter
             max_iteration = self.max_iter
-            if "Sabre" in action["name"] and "AIRouting" not in action["name"]:
+            if "Sabre" in action.name and "AIRouting" not in action.name:
                 # Internal trials for Sabre
                 transpile_pass = action.transpile_pass(self.device, max_iteration)
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set)
-            elif "AIRouting" in action["name"]:
+            elif "AIRouting" in action.name:
                 # Run AIRouting in custom loop
                 altered_qc, pm_property_set = best_of_n_passmanager(
                     action, 

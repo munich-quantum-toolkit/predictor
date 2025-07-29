@@ -12,16 +12,18 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Callable, List, Tuple, Dict, Any
 
 import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.circuit import ClassicalRegister, QuantumRegister
-from qiskit.transpiler import PassManager
+from qiskit.circuit import ClassicalRegister, QuantumRegister, Instruction
+from qiskit.transpiler import PassManager, Target
+from qiskit.dagcircuit import DAGCircuit
 from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.rl.actions import Action
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -32,7 +34,16 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
-def extract_cregs_and_measurements(qc):
+def extract_cregs_and_measurements(qc: QuantumCircuit) -> Tuple[List[ClassicalRegister], List[tuple[Instruction, List, List]]]:
+    """
+    Extracts classical registers and measurement operations from a quantum circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A tuple containing a list of classical registers and a list of measurement operations.
+    """
     cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
     measurements = [
         (item.operation, item.qubits, item.clbits)
@@ -41,7 +52,16 @@ def extract_cregs_and_measurements(qc):
     ]
     return cregs, measurements
 
-def remove_cregs(qc):
+def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
+    """
+    Removes classical registers and measurement operations from the circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A new QuantumCircuit with only quantum operations (no cregs or measurements).
+    """
     qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
     new_qc = QuantumCircuit(*qregs)
     old_to_new = {}
@@ -55,7 +75,24 @@ def remove_cregs(qc):
             new_qc.append(instr, qargs)
     return new_qc
 
-def add_cregs_and_measurements(qc, cregs, measurements, qubit_map=None):
+def add_cregs_and_measurements(
+    qc: QuantumCircuit,
+    cregs: List[ClassicalRegister],
+    measurements: List[Tuple[Instruction, List, List]],
+    qubit_map: Optional[Dict] = None,
+) -> QuantumCircuit:
+    """
+    Adds classical registers and measurement operations back to the quantum circuit.
+
+    Args:
+        qc: The quantum circuit to which cregs and measurements are added.
+        cregs: List of ClassicalRegister to add.
+        measurements: List of measurement instructions as tuples (Instruction, qubits, clbits).
+        qubit_map: Optional dictionary mapping original qubits to new qubits.
+
+    Returns:
+        The modified QuantumCircuit with cregs and measurements added.
+    """
     for cr in cregs:
         qc.add_register(cr)
     for instr, qargs, cargs in measurements:
@@ -68,10 +105,15 @@ def add_cregs_and_measurements(qc, cregs, measurements, qubit_map=None):
 
 class SafeAIRouting(AIRouting):
     """
-    Remove cregs before AIRouting and add them back afterwards
-    Necessary because there are cases AIRouting can't handle
+    Custom AIRouting wrapper that removes classical registers before routing.
+
+    This prevents failures in AIRouting when classical bits are present by
+    temporarily removing classical registers and measurements and restoring
+    them after routing is completed.
     """
-    def run(self, dag):
+    def run(self, dag: DAGCircuit) -> DAGCircuit:
+        """Run the routing pass on a DAGCircuit."""
+
         # 1. Convert input dag to circuit
         qc_orig = dag_to_circuit(dag)
 
@@ -101,8 +143,8 @@ class SafeAIRouting(AIRouting):
             else:
                 try:
                     idx = qc_routed.qubits.index(phys)
-                except ValueError:
-                    raise RuntimeError(f"Physical qubit {phys} not found in output circuit!")
+                except ValueError as err:
+                    raise RuntimeError(f"Physical qubit {phys} not found in output circuit!") from err
                 qubit_map[virt] = qc_routed.qubits[idx]
                 # 7. Restore classical registers and measurement instructions
         qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
@@ -110,17 +152,27 @@ class SafeAIRouting(AIRouting):
         return circuit_to_dag(qc_final)
 
 def best_of_n_passmanager(
-    action, device, qc, max_iteration=(20,20),
-    metric_fn=None, 
-):
+    action: Action,
+    device: Target,
+    qc: QuantumCircuit,
+    max_iteration: Tuple[int, int] = (20, 20),
+    metric_fn: Optional[Callable[[QuantumCircuit], float]] = None,
+)-> tuple[QuantumCircuit, Dict[str, Any]]:
     """
     Runs the given transpile_pass multiple times and keeps the best result.
-    action: the action dict with a 'transpile_pass' key (lambda/device->[passes])
-    device: the backend or device
-    qc: input circuit
-    max_iteration: number of times to try
-    metric_fn: function(circ) -> float for scoring
-    require_layout: skip outputs with missing layouts
+
+    Args:
+        action: The action dictionary with a 'transpile_pass' key
+            (lambda device -> [passes]).
+        device: The target backend or device.
+        qc: The input quantum circuit.
+        max_iteration: A tuple (layout_trials, routing_trials) specifying
+            how many times to try.
+        metric_fn: Optional function to score circuits; defaults to circuit depth.
+
+    Returns:
+        A tuple containing the best transpiled circuit and its corresponding
+        property set.
     """
     best_val = None
     best_result = None
@@ -249,7 +301,7 @@ def get_openqasm_gates() -> list[str]:
         "rccx",
     ]
 
-def create_feature_dict(qc: QuantumCircuit, basis_gates: list[str], coupling_map) -> dict[str, int | NDArray[np.float64]]:
+def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float64]]:
     """Creates a feature dictionary for a given quantum circuit.
 
     Arguments:
