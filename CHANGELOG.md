@@ -11,6 +11,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [2.3.0] - 2025-07-29
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
+
 ### Added
 
 - 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
