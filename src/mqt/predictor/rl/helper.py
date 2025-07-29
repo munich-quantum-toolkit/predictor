@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.circuit import ClassicalRegister, QuantumRegister
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import PassManager
 from qiskit_ibm_transpiler.ai.routing import AIRouting
 
@@ -32,20 +32,18 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
+
 def extract_cregs_and_measurements(qc):
     cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
-    measurements = [
-        (item.operation, item.qubits, item.clbits)
-        for item in qc.data
-        if item.operation.name == "measure"
-    ]
+    measurements = [(item.operation, item.qubits, item.clbits) for item in qc.data if item.operation.name == "measure"]
     return cregs, measurements
+
 
 def remove_cregs(qc):
     qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
     new_qc = QuantumCircuit(*qregs)
     old_to_new = {}
-    for orig_qr, new_qr in zip(qc.qregs, new_qc.qregs):
+    for orig_qr, new_qr in zip(qc.qregs, new_qc.qregs, strict=False):
         for idx in range(orig_qr.size):
             old_to_new[orig_qr[idx]] = new_qr[idx]
     for item in qc.data:
@@ -55,22 +53,21 @@ def remove_cregs(qc):
             new_qc.append(instr, qargs)
     return new_qc
 
+
 def add_cregs_and_measurements(qc, cregs, measurements, qubit_map=None):
     for cr in cregs:
         qc.add_register(cr)
     for instr, qargs, cargs in measurements:
-        if qubit_map:
-            new_qargs = [qubit_map[q] for q in qargs]
-        else:
-            new_qargs = qargs
+        new_qargs = [qubit_map[q] for q in qargs] if qubit_map else qargs
         qc.append(instr, new_qargs, cargs)
     return qc
 
+
 class SafeAIRouting(AIRouting):
+    """Remove cregs before AIRouting and add them back afterwards
+    Necessary because there are cases AIRouting can't handle.
     """
-    Remove cregs before AIRouting and add them back afterwards
-    Necessary because there are cases AIRouting can't handle
-    """
+
     def run(self, dag):
         # 1. Convert input dag to circuit
         qc_orig = dag_to_circuit(dag)
@@ -102,25 +99,29 @@ class SafeAIRouting(AIRouting):
                 try:
                     idx = qc_routed.qubits.index(phys)
                 except ValueError:
-                    raise RuntimeError(f"Physical qubit {phys} not found in output circuit!")
+                    msg = f"Physical qubit {phys} not found in output circuit!"
+                    raise RuntimeError(msg)
                 qubit_map[virt] = qc_routed.qubits[idx]
                 # 7. Restore classical registers and measurement instructions
         qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
         # 8. Return as dag
         return circuit_to_dag(qc_final)
 
+
 def best_of_n_passmanager(
-    action, device, qc, max_iteration=(20,20),
-    metric_fn=None, 
+    action,
+    device,
+    qc,
+    max_iteration=(20, 20),
+    metric_fn=None,
 ):
-    """
-    Runs the given transpile_pass multiple times and keeps the best result.
+    """Runs the given transpile_pass multiple times and keeps the best result.
     action: the action dict with a 'transpile_pass' key (lambda/device->[passes])
     device: the backend or device
     qc: input circuit
     max_iteration: number of times to try
     metric_fn: function(circ) -> float for scoring
-    require_layout: skip outputs with missing layouts
+    require_layout: skip outputs with missing layouts.
     """
     best_val = None
     best_result = None
@@ -139,7 +140,7 @@ def best_of_n_passmanager(
     try:
         layouted_qc = layout_pm.run(qc)
         layout_props = dict(layout_pm.property_set)
-    except Exception as e:
+    except Exception:
         return qc, {}
 
     # Run routing multiple times and optimize for the given metric
@@ -158,14 +159,14 @@ def best_of_n_passmanager(
                 if best_val == 0:
                     break
         except Exception as e:
-            print(f"[Routing] Trial {i+1} failed: {e}")
+            print(f"[Routing] Trial {i + 1} failed: {e}")
             continue
     if best_result is not None:
         return best_result, best_property_set
-    else:
-        print("All mapping attempts failed; returning original circuit.")
-        return qc, {}
-    
+    print("All mapping attempts failed; returning original circuit.")
+    return qc, {}
+
+
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
@@ -205,9 +206,10 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
 
     return qc, str(file_list[random_index])
 
+
 def get_openqasm_gates() -> list[str]:
-    """ Returns a list of all quantum gates within the openQASM 2.0 standard header.
-    
+    """Returns a list of all quantum gates within the openQASM 2.0 standard header.
+
     According to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
     Removes generic single qubit gates u1, u2, u3 since they are no meaningful features for RL
 
@@ -249,7 +251,10 @@ def get_openqasm_gates() -> list[str]:
         "rccx",
     ]
 
-def create_feature_dict(qc: QuantumCircuit, basis_gates: list[str], coupling_map) -> dict[str, int | NDArray[np.float64]]:
+
+def create_feature_dict(
+    qc: QuantumCircuit, basis_gates: list[str], coupling_map
+) -> dict[str, int | NDArray[np.float64]]:
     """Creates a feature dictionary for a given quantum circuit.
 
     Arguments:
