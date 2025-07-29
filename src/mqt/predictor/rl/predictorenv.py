@@ -317,7 +317,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         if action.get("stochastic", False):
-            metric_fn = lambda circ: circ.count_ops().get("swap", 0)
+            def metric_fn(circ: QuantumCircuit) -> float:
+                return circ.count_ops().get("swap", 0)
             # for stochastic actions, pass the layout/routing trials parameter
             max_iteration = self.max_iter
             if "Sabre" in action["name"] and "AIRouting" not in action["name"]:
