@@ -43,7 +43,6 @@ from qiskit.circuit.library import RCCXGate
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
-from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
@@ -55,7 +54,13 @@ from mqt.predictor.reward import (
     figure_of_merit,
 )
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
-from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample, get_openqasm_gates, best_of_n_passmanager
+from mqt.predictor.rl.helper import (
+    best_of_n_passmanager,
+    create_feature_dict,
+    get_openqasm_gates,
+    get_path_training_circuits,
+    get_state_sample,
+)
 from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
@@ -154,7 +159,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.max_iter = (20,20) # (layout_trials, routing _trials)
+        self.max_iter = (20, 20)  # (layout_trials, routing _trials)
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
@@ -317,7 +322,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         if action.get("stochastic", False):
-            metric_fn = lambda circ: circ.count_ops().get("swap", 0)
+
+            def metric_fn(circ):
+                return circ.count_ops().get("swap", 0)
+
             # for stochastic actions, pass the layout/routing trials parameter
             max_iteration = self.max_iter
             if "Sabre" in action["name"] and "AIRouting" not in action["name"]:
@@ -329,9 +337,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
             elif "AIRouting" in action["name"]:
                 # Run AIRouting in custom loop
                 altered_qc, pm_property_set = best_of_n_passmanager(
-                    action, 
+                    action,
                     self.device,
-                    self.state, 
+                    self.state,
                     max_iteration=max_iteration,
                     metric_fn=metric_fn,
                 )
@@ -351,16 +359,17 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
-                if action_index in (
-                    self.actions_mapping_indices + self.actions_final_optimization_indices
-                ):
+                if action_index in (self.actions_mapping_indices + self.actions_final_optimization_indices):
                     pm_property_set = dict(pm.property_set)
                     altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
-        
+
         return altered_qc
-    
+
     def _handle_qiskit_layout_postprocessing(
-        self, action: Action, pm_property_set: dict, altered_qc: QuantumCircuit, 
+        self,
+        action: Action,
+        pm_property_set: dict,
+        altered_qc: QuantumCircuit,
     ) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
@@ -402,8 +411,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert self.layout is not None
             self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
         # Decompose to the allowed gates (by default generic u gates are used)
-        altered_qc = transpile(altered_qc, basis_gates=get_openqasm_gates(), optimization_level=0)
-        return altered_qc
+        return transpile(altered_qc, basis_gates=get_openqasm_gates(), optimization_level=0)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         """Applies the given BQSKit action to the current state and returns the altered state.
@@ -451,14 +459,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
-        if not only_nat_gates: # not native gates yet
-            actions = self.actions_synthesis_indices + self.actions_opt_indices
-            return actions
+        if not only_nat_gates:  # not native gates yet
+            return self.actions_synthesis_indices + self.actions_opt_indices
 
         if mapped and self.layout is not None:  # The circuit is correctly mapped.
             return [self.action_terminate_index, *self.actions_opt_indices, *self.actions_final_optimization_indices]
-        else: 
-            # The circuit is not mapped yet
-            # Or the circuit was mapped but some optimization actions change its structure and the circuit is again unmapped
-            # In this case, re-do mapping completely as the previous layout is not optimal on the new structure
-            return self.actions_mapping_indices + self.actions_opt_indices 
+        # The circuit is not mapped yet
+        # Or the circuit was mapped but some optimization actions change its structure and the circuit is again unmapped
+        # In this case, re-do mapping completely as the previous layout is not optimal on the new structure
+        return self.actions_mapping_indices + self.actions_opt_indices
