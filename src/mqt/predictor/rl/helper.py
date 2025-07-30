@@ -20,7 +20,6 @@ from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.circuit import ClassicalRegister, QuantumRegister, Instruction, Qubit
 from qiskit.transpiler import PassManager, Target
 from qiskit.dagcircuit import DAGCircuit
-from qiskit_ibm_transpiler.ai.routing import AIRouting 
 
 from mqt.predictor.utils import calc_supermarq_features
 from mqt.predictor.rl.actions import Action
@@ -28,6 +27,9 @@ from mqt.predictor.rl.actions import Action
 if TYPE_CHECKING:
     from numpy.random import Generator
     from numpy.typing import NDArray
+    from qiskit_ibm_transpiler.ai.routing import AIRouting
+else:
+    AIRouting = object # type: ignore[misc]
 
 import zipfile
 from importlib import resources
@@ -103,7 +105,7 @@ def add_cregs_and_measurements(
         qc.append(instr, new_qargs, cargs)
     return qc
 
-class SafeAIRouting(AIRouting):
+class SafeAIRouting(AIRouting): # type: ignore[misc]
     """
     Custom AIRouting wrapper that removes classical registers before routing.
 
@@ -137,9 +139,15 @@ class SafeAIRouting(AIRouting):
 
         qubit_map = {}
         for virt in qc_orig.qubits:
-            phys = final_layout[virt]
+            try:
+                phys = final_layout[virt]  # This is now safe due to above check
+            except KeyError as err:
+                raise RuntimeError(f"Virtual qubit {virt} not found in final layout!") from err
             if isinstance(phys, int):
-                qubit_map[virt] = qc_routed.qubits[phys]
+                try:
+                    qubit_map[virt] = qc_routed.qubits[phys]
+                except IndexError as err:
+                    raise RuntimeError(f"Physical index {phys} is out of range in routed circuit!") from err
             else:
                 try:
                     idx = qc_routed.qubits.index(phys)
@@ -182,6 +190,8 @@ def best_of_n_passmanager(
         all_passes = action.transpile_pass(device, max_iteration)
     else:
         all_passes = action.transpile_pass(device)
+
+    assert isinstance(all_passes, list)
 
     layout_passes = all_passes[:-1]
     routing_pass = all_passes[-1:]

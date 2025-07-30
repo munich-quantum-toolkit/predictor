@@ -46,7 +46,7 @@ from qiskit.circuit.library import (
 )
 from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import (
-    CouplingMap,
+    CouplingMap, Target
 )
 from qiskit.transpiler.passes import (
     ApplyLayout,
@@ -126,6 +126,7 @@ class Action:
     transpile_pass: (
         list[qiskit_BasePass | tket_BasePass]
         | Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        | Callable[[Target, tuple[int, int]], list[qiskit_BasePass | tket_BasePass]]
         | Callable[
             ...,
             Callable[..., tuple[Any, ...] | Circuit],

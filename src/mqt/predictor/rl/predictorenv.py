@@ -361,7 +361,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return altered_qc
     
     def _handle_qiskit_layout_postprocessing(
-        self, action: Action, pm_property_set: dict, altered_qc: QuantumCircuit, 
+        self, action: Action, pm_property_set: dict[str, any], altered_qc: QuantumCircuit, 
     ) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
@@ -379,7 +379,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 _output_qubit_list=altered_qc.qubits,
                 _input_qubit_count=self.num_qubits_uncompiled_circuit,
             )
-        if pm_property_set["final_layout"]:
+        if self.layout is not None and pm_property_set["final_layout"]:
             self.layout.final_layout = pm_property_set["final_layout"]
         return altered_qc
 
