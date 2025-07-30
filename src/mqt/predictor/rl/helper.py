@@ -178,7 +178,7 @@ def best_of_n_passmanager(
     best_result = None
     best_property_set = None
 
-    if action["name"] == "SabreLayout+AIRouting":
+    if action.name == "SabreLayout+AIRouting":
         all_passes = action.transpile_pass(device, max_iteration)
     else:
         all_passes = action.transpile_pass(device)
