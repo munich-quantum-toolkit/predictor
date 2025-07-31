@@ -29,7 +29,7 @@ nox.options.sessions = ["lint", "tests", "minimums"]
 
 # TODO(denialhaag): Add 3.14 when all dependencies support it
 #   https://github.com/munich-quantum-toolkit/predictor/issues/420
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13"]
+PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12"]
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
