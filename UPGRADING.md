@@ -4,7 +4,7 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
-With this relase, `mqt-predictor` no longer supports the x86 architecture on macOS.
+With this release, `mqt-predictor` no longer supports the x86 architecture on macOS.
 This step was necessary to ensure compatibility with PyTorch.
 
 ## [2.3.0] - 2025-07-29
