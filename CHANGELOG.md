@@ -54,6 +54,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@burgholzer**]: https://github.com/burgholzer
 [**@nquetschlich**]: https://github.com/nquetschlich
 [**@flowerthrower**]: https://github.com/flowerthrower
+[**@denialhaag**]: https://github.com/denialhaag
 
 <!-- General links -->
 
