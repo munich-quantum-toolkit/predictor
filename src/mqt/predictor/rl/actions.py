@@ -14,7 +14,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bqskit import MachineModel
 from bqskit import compile as bqskit_compile
@@ -26,7 +26,8 @@ from pytket.passes import (
     RemoveRedundancies,
     RoutingPass,
 )
-from qiskit.circuit import StandardEquivalenceLibrary
+from qiskit import QuantumCircuit
+from qiskit.circuit import ClassicalRegister, Instruction, QuantumRegister, Qubit, StandardEquivalenceLibrary
 from qiskit.circuit.library import (
     CXGate,
     CYGate,
@@ -44,14 +45,13 @@ from qiskit.circuit.library import (
     YGate,
     ZGate,
 )
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.passmanager import ConditionalController
-from qiskit.transpiler import (
-    CouplingMap, Target
-)
+from qiskit.transpiler import CouplingMap
 from qiskit.transpiler.passes import (
     ApplyLayout,
-    BasisTranslator,
     BasicSwap,
+    BasisTranslator,
     Collect2qBlocks,
     CollectCliffords,
     CommutativeCancellation,
@@ -78,13 +78,12 @@ from qiskit.transpiler.passes import (
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
+from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
     get_bqskit_native_gates,
 )
-
-from mqt.predictor.rl.helper import SafeAIRouting, get_openqasm_gates
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -92,6 +91,7 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
+    from qiskit.dagcircuit import DAGCircuit
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
 
@@ -126,13 +126,12 @@ class Action:
     transpile_pass: (
         list[qiskit_BasePass | tket_BasePass]
         | Callable[..., list[qiskit_BasePass | tket_BasePass]]
-        | Callable[[Target, tuple[int, int]], list[qiskit_BasePass | tket_BasePass]]
         | Callable[
             ...,
             Callable[..., tuple[Any, ...] | Circuit],
         ]
     )
-    stochastic: bool = False
+    stochastic: bool | None = False
 
 
 @dataclass
@@ -181,6 +180,51 @@ def remove_action(name: str) -> None:
         msg = f"No action with name {name} is registered."
         raise KeyError(msg)
     del _ACTIONS[name]
+
+
+def get_openqasm_gates() -> list[str]:
+    """Returns a list of all quantum gates within the openQASM 2.0 standard header.
+
+    According to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
+    Removes generic single qubit gates u1, u2, u3 since they are no meaningful features for RL
+
+    """
+    return [
+        "cx",
+        "id",
+        "u",
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "r",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "rx",
+        "ry",
+        "rz",
+        "sx",
+        "sxdg",
+        "cz",
+        "cy",
+        "swap",
+        "ch",
+        "ccx",
+        "cswap",
+        "crx",
+        "cry",
+        "crz",
+        "cu1",
+        "cp",
+        "csx",
+        "cu",
+        "rxx",
+        "rzz",
+        "rccx",
+    ]
 
 
 register_action(
@@ -257,9 +301,11 @@ register_action(
         "Opt2qBlocks",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        transpile_pass=lambda device: [Collect2qBlocks(), 
-                              ConsolidateBlocks(basis_gates=device.operation_names), 
-                              UnitarySynthesis(basis_gates=device.operation_names, coupling_map=device.build_coupling_map())],
+        transpile_pass=lambda native_gate, coupling_map: [
+            Collect2qBlocks(),
+            ConsolidateBlocks(basis_gates=native_gate),
+            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+        ],
     )
 )
 
@@ -405,16 +451,16 @@ register_action(
         PassType.MAPPING,
         stochastic=True,
         # Qiskit O3 by default uses (max_iterations, layout_trials, swap_trials) = (4, 20, 20)
-        transpile_pass=lambda device, max_iteration=(20,20): [  
-                SabreLayout(
-                    coupling_map=CouplingMap(device.build_coupling_map()), 
-                    skip_routing=False,
-                    layout_trials=max_iteration[0],
-                    swap_trials=max_iteration[1],
-                    max_iterations=4,
-                    seed=None
-                ),
-            ],
+        transpile_pass=lambda device, max_iteration=(20, 20): [
+            SabreLayout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                skip_routing=False,
+                layout_trials=max_iteration[0],
+                swap_trials=max_iteration[1],
+                max_iterations=4,
+                seed=None,
+            ),
+        ],
     )
 )
 
@@ -424,20 +470,20 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20,20): [
-                SabreLayout(
-                    coupling_map=CouplingMap(device.build_coupling_map()), 
-                    skip_routing=True,
-                    layout_trials=max_iteration[0],
-                    swap_trials=max_iteration[1],
-                    max_iterations=4,
-                    seed=None
-                ),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-                BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
-            ],
+        transpile_pass=lambda device, max_iteration=(20, 20): [
+            SabreLayout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                skip_routing=True,
+                layout_trials=max_iteration[0],
+                swap_trials=max_iteration[1],
+                max_iterations=4,
+                seed=None,
+            ),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
+        ],
     )
 )
 
@@ -447,25 +493,20 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20,20): [
-                SabreLayout(
-                    coupling_map=CouplingMap(device.build_coupling_map()), 
-                    skip_routing=True,
-                    layout_trials=max_iteration[0],
-                    swap_trials=max_iteration[1],
-                    max_iterations=4,
-                    seed=None
-                ),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-                SafeAIRouting(
-                    coupling_map=device.build_coupling_map(),
-                    optimization_level=3,
-                    layout_mode="optimize",
-                    local_mode=True
-                ),
-            ],
+        transpile_pass=lambda device, max_iteration=(20, 20): [
+            SabreLayout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                skip_routing=True,
+                layout_trials=max_iteration[0],
+                swap_trials=max_iteration[1],
+                max_iterations=4,
+                seed=None,
+            ),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+        ],
     )
 )
 
@@ -495,14 +536,14 @@ register_action(
     DeviceDependentAction(
         name="DenseLayout+BasicSwap",
         origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,  
+        pass_type=PassType.MAPPING,
         transpile_pass=lambda device: [
-                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-                BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
-            ],
+            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
+        ],
     )
 )
 
@@ -511,14 +552,19 @@ register_action(
         name="DenseLayout+SabreSwap",
         origin=CompilationOrigin.QISKIT,
         pass_type=PassType.MAPPING,
-        stochastic=True, 
-        transpile_pass=lambda device, max_iteration=(20,20): [
-                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-                SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay", trials=max_iteration[1], seed=None),
-            ],
+        stochastic=True,
+        transpile_pass=lambda device, max_iteration=(20, 20): [
+            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+            SabreSwap(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                heuristic="decay",
+                trials=max_iteration[1],
+                seed=None,
+            ),
+        ],
     )
 )
 
@@ -526,20 +572,15 @@ register_action(
     DeviceDependentAction(
         name="DenseLayout+AIRouting",
         origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING, 
+        pass_type=PassType.MAPPING,
         stochastic=True,
         transpile_pass=lambda device: [
-                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                EnlargeWithAncilla(),
-                ApplyLayout(),
-                SafeAIRouting(
-                    coupling_map=device.build_coupling_map(),
-                    optimization_level=3,
-                    layout_mode="optimize",
-                    local_mode=True
-                ),
-            ],
+            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+        ],
     )
 )
 
@@ -547,33 +588,34 @@ register_action(
     DeviceDependentAction(
         name="VF2Layout+BasicSwap",
         origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,  
+        pass_type=PassType.MAPPING,
         transpile_pass=lambda device: [
-                VF2Layout(
-                    coupling_map=CouplingMap(device.build_coupling_map()),
-                    target=device,
-                ),
-                ConditionalController(
-                    [
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                    == VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                ConditionalController(
-                    [
-                        TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    # Run if VF2Layout did not find a solution
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
-            ],
+            VF2Layout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                target=device,
+            ),
+            ConditionalController(
+                [
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                == VF2LayoutStopReason.SOLUTION_FOUND,
+            ),
+            ConditionalController(
+                [
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                # Run if VF2Layout did not find a solution
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                != VF2LayoutStopReason.SOLUTION_FOUND,
+            ),
+            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
+        ],
     )
 )
 
@@ -581,34 +623,40 @@ register_action(
     DeviceDependentAction(
         name="VF2Layout+SabreSwap",
         origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,  
+        pass_type=PassType.MAPPING,
         stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20,20): [
-                VF2Layout(
-                    coupling_map=CouplingMap(device.build_coupling_map()),
-                    target=device,
-                ),
-                ConditionalController(
-                    [
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                    == VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                ConditionalController(
-                    [
-                        TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    # Run if VF2Layout did not find a solution
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay", trials=max_iteration[1], seed=None),
-            ],
+        transpile_pass=lambda device, max_iteration=(20, 20): [
+            VF2Layout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                target=device,
+            ),
+            ConditionalController(
+                [
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                == VF2LayoutStopReason.SOLUTION_FOUND,
+            ),
+            ConditionalController(
+                [
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                # Run if VF2Layout did not find a solution
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                != VF2LayoutStopReason.SOLUTION_FOUND,
+            ),
+            SabreSwap(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                heuristic="decay",
+                trials=max_iteration[1],
+                seed=None,
+            ),
+        ],
     )
 )
 
@@ -616,65 +664,34 @@ register_action(
     DeviceDependentAction(
         name="VF2Layout+AIRouting",
         origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,  
+        pass_type=PassType.MAPPING,
         stochastic=True,
-        transpile_pass=lambda device:[
-                VF2Layout(
-                    coupling_map=CouplingMap(device.build_coupling_map()),
-                    target=device,
-                ),
-                ConditionalController(
-                    [
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                    == VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                ConditionalController(
-                    [
-                        TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                        EnlargeWithAncilla(),
-                        ApplyLayout(),
-                    ],
-                    # Run if VF2Layout did not find a solution
-                    condition=lambda property_set: property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND,
-                ),
-                SafeAIRouting(
-                    coupling_map=device.build_coupling_map(),
-                    optimization_level=3,
-                    layout_mode="optimize",
-                    local_mode=True
-                ),
-            ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        name="SabreLayout+AIRouting",
-        origin=CompilationOrigin.QISKIT,
-        stochastic=True,
-        pass_type=PassType.MAPPING,  
-        transpile_pass=lambda device, max_iteration=(20, 20): [
-            SabreLayout(
-                coupling_map=CouplingMap(device.build_coupling_map()), 
-                skip_routing=True,
-                layout_trials=max_iteration[0],
-                swap_trials=1,
-                max_iterations=4,
+        transpile_pass=lambda device: [
+            VF2Layout(
+                coupling_map=CouplingMap(device.build_coupling_map()),
+                target=device,
             ),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SafeAIRouting(
-                coupling_map=device.build_coupling_map(),
-                optimization_level=3,
-                layout_mode="optimize",
-                local_mode=True,
+            ConditionalController(
+                [
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                == VF2LayoutStopReason.SOLUTION_FOUND,
             ),
+            ConditionalController(
+                [
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+                # Run if VF2Layout did not find a solution
+                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
+                != VF2LayoutStopReason.SOLUTION_FOUND,
+            ),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
         ],
     )
 )
@@ -723,3 +740,125 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
     for action in _ACTIONS.values():
         result[action.pass_type].append(action)
     return result
+
+
+def extract_cregs_and_measurements(
+    qc: QuantumCircuit,
+) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Any], list[Any]]]]:
+    """Extracts classical registers and measurement operations from a quantum circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A tuple containing a list of classical registers and a list of measurement operations.
+    """
+    cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
+    measurements = [(item.operation, item.qubits, item.clbits) for item in qc.data if item.operation.name == "measure"]
+    return cregs, measurements
+
+
+def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
+    """Removes classical registers and measurement operations from the circuit.
+
+    Args:
+        qc: The input QuantumCircuit.
+
+    Returns:
+        A new QuantumCircuit with only quantum operations (no cregs or measurements).
+    """
+    qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
+    new_qc = QuantumCircuit(*qregs)
+    old_to_new = {}
+    for orig_qr, new_qr in zip(qc.qregs, new_qc.qregs, strict=False):
+        for idx in range(orig_qr.size):
+            old_to_new[orig_qr[idx]] = new_qr[idx]
+    for item in qc.data:
+        instr = item.operation
+        qargs = [old_to_new[q] for q in item.qubits]
+        if instr.name not in ("measure", "barrier"):
+            new_qc.append(instr, qargs)
+    return new_qc
+
+
+def add_cregs_and_measurements(
+    qc: QuantumCircuit,
+    cregs: list[ClassicalRegister],
+    measurements: list[tuple[Instruction, list[Any], list[Any]]],
+    qubit_map: dict[Qubit, Qubit] | None = None,
+) -> QuantumCircuit:
+    """Adds classical registers and measurement operations back to the quantum circuit.
+
+    Args:
+        qc: The quantum circuit to which cregs and measurements are added.
+        cregs: List of ClassicalRegister to add.
+        measurements: List of measurement instructions as tuples (Instruction, qubits, clbits).
+        qubit_map: Optional dictionary mapping original qubits to new qubits.
+
+    Returns:
+        The modified QuantumCircuit with cregs and measurements added.
+    """
+    for cr in cregs:
+        qc.add_register(cr)
+    for instr, qargs, cargs in measurements:
+        new_qargs = [qubit_map[q] for q in qargs] if qubit_map else qargs
+        qc.append(instr, new_qargs, cargs)
+    return qc
+
+
+class SafeAIRouting(AIRouting):  # type: ignore[misc]
+    """Custom AIRouting wrapper that removes classical registers before routing.
+
+    This prevents failures in AIRouting when classical bits are present by
+    temporarily removing classical registers and measurements and restoring
+    them after routing is completed.
+    """
+
+    def run(self, dag: DAGCircuit) -> DAGCircuit:
+        """Run the routing pass on a DAGCircuit."""
+        # 1. Convert input dag to circuit
+        qc_orig = dag_to_circuit(dag)
+
+        # 2. Extract classical registers and measurement instructions
+        cregs, measurements = extract_cregs_and_measurements(qc_orig)
+
+        # 3. Remove cregs and measurements
+        qc_noclassical = remove_cregs(qc_orig)
+
+        # 4. Convert back to dag and run routing (AIRouting)
+        dag_noclassical = circuit_to_dag(qc_noclassical)
+        dag_routed = super().run(dag_noclassical)
+
+        # 5. Convert routed dag to circuit for restoration
+        qc_routed = dag_to_circuit(dag_routed)
+
+        # 6. Build mapping from original qubits to qubits in routed circuit
+        final_layout = getattr(self, "property_set", {}).get("final_layout", None)
+        if final_layout is None and hasattr(dag_routed, "property_set"):
+            final_layout = dag_routed.property_set.get("final_layout", None)
+
+        assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
+        qubit_map = {}
+        for virt in qc_orig.qubits:
+            try:
+                phys = final_layout[virt]
+            except KeyError as err:
+                msg = f"Virtual qubit {virt} not found in final layout!"
+                raise RuntimeError(msg) from err
+            if isinstance(phys, int):
+                try:
+                    qubit_map[virt] = qc_routed.qubits[phys]
+                except IndexError as err:
+                    msg = f"Physical index {phys} is out of range in routed circuit!"
+                    raise RuntimeError(msg) from err
+            else:
+                try:
+                    idx = qc_routed.qubits.index(phys)
+                except ValueError as err:
+                    msg = f"Physical qubit {phys} not found in output circuit!"
+                    raise RuntimeError(msg) from err
+                qubit_map[virt] = qc_routed.qubits[idx]
+                # 7. Restore classical registers and measurement instructions
+        qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
+        # 8. Return as dag
+        return circuit_to_dag(qc_final)
