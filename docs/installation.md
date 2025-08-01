@@ -61,6 +61,12 @@ Once installed, you can check if the installation was successful by running:
 
 which should print the installed version of the library.
 
+:::{attention}
+As of version 2.4.0, {code}`mqt-predictor`mqt-predictor` no longer supports the x86 architecture on macOS.
+This step was necessary to ensure compatibility with PyTorch.
+Thank you for your understanding.
+:::
+
 ## Integrating MQT Predictor into your project
 
 If you want to use the MQT Predictor Python package in your own project, you can simply add it as a dependency in your `pyproject.toml` or `setup.py` file.
