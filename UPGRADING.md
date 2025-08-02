@@ -4,6 +4,9 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+With this release, `mqt-predictor` no longer supports the x86 architecture on macOS.
+This step was necessary to ensure compatibility with PyTorch.
+
 ## [2.3.0] - 2025-07-29
 
 In this release, we have migrated to using Qiskit's `Target` class to represent quantum devices.
