@@ -62,7 +62,7 @@ Once installed, you can check if the installation was successful by running:
 which should print the installed version of the library.
 
 :::{attention}
-As of version 2.4.0, {code}`mqt-predictor`mqt-predictor` no longer supports the x86 architecture on macOS.
+As of version 2.4.0, {code}`mqt-predictor` no longer supports the x86 architecture on macOS.
 This step was necessary to ensure compatibility with PyTorch.
 Thank you for your understanding.
 :::
