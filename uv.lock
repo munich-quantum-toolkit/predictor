@@ -1562,7 +1562,7 @@ dependencies = [
     { name = "sb3-contrib", version = "2.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
     { name = "scikit-learn" },
     { name = "tensorboard" },
-    { name = "torch", marker = "python_full_version < '3.13' and sys_platform == 'darwin'" },
+    { name = "torch", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
@@ -1619,7 +1619,7 @@ requires-dist = [
     { name = "sb3-contrib", specifier = ">=2.0.0" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "tensorboard", specifier = ">=2.17.0" },
-    { name = "torch", marker = "python_full_version < '3.13' and sys_platform == 'darwin'", specifier = ">=2.7.1,<2.8.0" },
+    { name = "torch", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'", specifier = ">=2.7.1,<2.8.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "typing-extensions", specifier = ">=4.1" },
 ]
