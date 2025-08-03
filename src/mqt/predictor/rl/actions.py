@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""This modules provides the actions that can be used in the reinforcement learning environment."""
+"""This module provides the actions that can be used in the reinforcement learning environment."""
 
 from __future__ import annotations
 
