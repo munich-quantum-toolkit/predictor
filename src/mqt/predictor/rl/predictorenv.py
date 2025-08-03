@@ -391,21 +391,21 @@ class PredictorEnv(Env):  # type: ignore[misc]
     ) -> QuantumCircuit:
         if action.name == "VF2PostLayout":
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
-            post_layout = pm_property_set["post_layout"]
+            post_layout = pm_property_set.get("post_layout")
             if post_layout:
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
-        else:
-            assert pm_property_set["layout"]
 
-        if pm_property_set["layout"]:
+        layout = pm_property_set.get("layout")
+        if layout:
             self.layout = TranspileLayout(
-                initial_layout=pm_property_set["layout"],
+                initial_layout=layout,
                 input_qubit_mapping=pm_property_set["original_qubit_indices"],
                 final_layout=pm_property_set["final_layout"],
                 _output_qubit_list=altered_qc.qubits,
                 _input_qubit_count=self.num_qubits_uncompiled_circuit,
             )
-        if self.layout is not None and pm_property_set["final_layout"]:
+
+        if self.layout is not None and pm_property_set.get("final_layout"):
             self.layout.final_layout = pm_property_set["final_layout"]
         return altered_qc
 
