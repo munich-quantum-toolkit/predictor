@@ -46,7 +46,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
                                           0  1  2
 
         Applying the trivial layout, we get the same qubit order as in the original circuit and can be respectively
-        routed. This results int:
+        routed. This results in:
                 ┌───┐           ░       ┌─┐
            q_0: ┤ H ├──■────────░───────┤M├
                 └───┘┌─┴─┐      ░    ┌─┐└╥┘
@@ -62,7 +62,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
                                    0  1  2
 
 
-        If we would not apply the trivial layout, no layout would be considered resulting, e.g., in the followiong circuit:
+        If we would not apply the trivial layout, no layout would be considered resulting, e.g., in the following circuit:
                  ┌───┐         ░    ┌─┐
        q_0: ─────┤ X ├─────■───░────┤M├───
             ┌───┐└─┬─┘   ┌─┴─┐ ░ ┌─┐└╥┘
