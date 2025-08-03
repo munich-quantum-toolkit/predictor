@@ -1555,7 +1555,7 @@ dependencies = [
     { name = "pytket" },
     { name = "pytket-qiskit" },
     { name = "qiskit" },
-    { name = "qiskit-ibm-ai-local-transpiler" },
+    { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'" },
     { name = "qiskit-ibm-transpiler" },
     { name = "rich" },
     { name = "sb3-contrib", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
@@ -1613,7 +1613,7 @@ requires-dist = [
     { name = "pytket", specifier = ">=1.29.0" },
     { name = "pytket-qiskit", specifier = ">=0.71.0" },
     { name = "qiskit", specifier = "!=1.3.2" },
-    { name = "qiskit-ibm-ai-local-transpiler", specifier = ">=0.3.2" },
+    { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'", specifier = ">=0.3.2" },
     { name = "qiskit-ibm-transpiler", specifier = ">=0.11.1" },
     { name = "rich", specifier = ">=12.6.0" },
     { name = "sb3-contrib", specifier = ">=2.0.0" },
@@ -2796,10 +2796,10 @@ name = "qiskit-ibm-ai-local-transpiler"
 version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jsonschema" },
-    { name = "networkx" },
-    { name = "qiskit" },
-    { name = "qiskit-ibm-runtime" },
+    { name = "jsonschema", marker = "python_full_version < '3.13'" },
+    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "qiskit", marker = "python_full_version < '3.13'" },
+    { name = "qiskit-ibm-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/2b/d4a31925f23a4614587bd256f1a5b46d53f667971243df2bff62ceb1286e/qiskit_ibm_ai_local_transpiler-0.4.2-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:6b13b0978b0bb906c1175a63b1c2c00070ed7f3ff9c302d9b8a8e104f5a8ec39", size = 97513406, upload-time = "2025-07-02T15:25:39.934Z" },
