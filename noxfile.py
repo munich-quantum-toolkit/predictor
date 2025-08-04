@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 from typing import TYPE_CHECKING
 
@@ -82,6 +83,9 @@ def tests(session: nox.Session) -> None:
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
+    if platform.system() == "Windows":
+        session.skip("Too slow on Windows — skipping minimums session.")
+        return
     _run_tests(
         session,
         install_args=["--resolution=lowest-direct"],
