@@ -341,7 +341,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             def metric_fn(circ: QuantumCircuit) -> float:
                 return float(circ.count_ops().get("swap", 0))
 
-            # for stochastic actions, pass the layout/routing trials parameter
             max_iteration = self.max_iter
             if "Sabre" in action.name and "AIRouting" not in action.name:
                 # Internal trials for Sabre
@@ -359,6 +358,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     max_iteration=max_iteration,
                     metric_fn=metric_fn,
                 )
+            else:
+                msg = f"Unknown stochastic action: {action.name}"
+                raise ValueError(msg)
+
         else:
             if action.name in ["QiskitO3", "Opt2qBlocks"] and isinstance(action, DeviceDependentAction):
                 passes = action.transpile_pass(
@@ -378,8 +381,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+
         if action_index in (self.actions_mapping_indices + self.actions_final_optimization_indices):
-            pm_property_set = dict(pm.property_set)
             altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
 
         return altered_qc

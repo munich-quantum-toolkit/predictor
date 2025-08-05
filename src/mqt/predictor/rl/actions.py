@@ -495,6 +495,7 @@ register_action(
         PassType.MAPPING,
         stochastic=True,
         transpile_pass=lambda device: [
+            ### Requires a initial layout, but "optimize" mode overwrites it
             TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
             EnlargeWithAncilla(),

@@ -205,8 +205,7 @@ class Predictor:
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
-        timeout: int = 600,
-        num_workers: int = -1,
+        timeout: int = 6000,
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
@@ -227,7 +226,7 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(path_uncompiled_circuits)
 
-        Parallel(n_jobs=num_workers, verbose=100)(
+        Parallel(n_jobs=1, verbose=100)(
             delayed(self._compile_all_circuits_devicewise)(
                 device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
             )
@@ -239,7 +238,6 @@ class Predictor:
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         path_training_data: Path | None = None,
-        num_workers: int = -1,
     ) -> None:
         """Creates and saves training data from all generated training samples.
 
@@ -267,7 +265,7 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=num_workers, verbose=100)(
+        results = Parallel(n_jobs=1, verbose=100)(
             delayed(self._generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
