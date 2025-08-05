@@ -188,6 +188,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             RuntimeError: If no valid actions are left.
         """
         self.used_actions.append(str(self.action_set[action].name))
+        logger.info(f"Applying: {self.action_set[action].name!s}")
         altered_qc = self.apply_action(action)
         if not altered_qc:
             return (
@@ -377,9 +378,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
-                if action_index in (self.actions_mapping_indices + self.actions_final_optimization_indices):
-                    pm_property_set = dict(pm.property_set)
-                    altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
+        if action_index in (self.actions_mapping_indices + self.actions_final_optimization_indices):
+            pm_property_set = dict(pm.property_set)
+            altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
 
         return altered_qc
 
@@ -466,7 +467,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
-        check_nat_gates = GatesInBasis(target=self.device)
+        check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
@@ -477,7 +478,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if not only_nat_gates:  # not native gates yet
             return self.actions_synthesis_indices + self.actions_opt_indices
 
-        if mapped and self.layout is not None:  # The circuit is correctly mapped.
+        if mapped and self.layout is not None:  # The circuit is correctly mapped
             return [self.action_terminate_index, *self.actions_opt_indices, *self.actions_final_optimization_indices]
         # The circuit is not mapped yet
         # Or the circuit was mapped but some optimization actions change its structure and the circuit is again unmapped

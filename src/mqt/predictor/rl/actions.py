@@ -50,7 +50,6 @@ from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import CouplingMap
 from qiskit.transpiler.passes import (
     ApplyLayout,
-    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
     CollectCliffords,
@@ -125,6 +124,7 @@ class Action:
     pass_type: PassType
     transpile_pass: (
         list[qiskit_BasePass | tket_BasePass]
+        | Callable[..., list[Any]]
         | Callable[..., list[qiskit_BasePass | tket_BasePass]]
         | Callable[
             ...,
@@ -144,7 +144,8 @@ class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
     transpile_pass: (
-        Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        Callable[..., list[Any]]
+        | Callable[..., list[qiskit_BasePass | tket_BasePass]]
         | Callable[
             ...,
             Callable[..., tuple[Any, ...] | Circuit],
@@ -466,7 +467,7 @@ register_action(
 
 register_action(
     DeviceDependentAction(
-        "SabreLayout+BasicSwap",
+        "SabreLayout+AIRouting",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
@@ -482,26 +483,19 @@ register_action(
             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
             EnlargeWithAncilla(),
             ApplyLayout(),
-            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
         ],
     )
 )
 
 register_action(
     DeviceDependentAction(
-        "SabreLayout+AIRouting",
+        "AIRouting",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20, 20): [
-            SabreLayout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                skip_routing=True,
-                layout_trials=max_iteration[0],
-                swap_trials=max_iteration[1],
-                max_iterations=4,
-                seed=None,
-            ),
+        transpile_pass=lambda device: [
+            TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
             EnlargeWithAncilla(),
             ApplyLayout(),
@@ -532,20 +526,6 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        name="DenseLayout+BasicSwap",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        transpile_pass=lambda device: [
-            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
-        ],
-    )
-)
 
 register_action(
     DeviceDependentAction(
@@ -579,45 +559,11 @@ register_action(
             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
             EnlargeWithAncilla(),
             ApplyLayout(),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
         ],
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        name="VF2Layout+BasicSwap",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        transpile_pass=lambda device: [
-            VF2Layout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                target=device,
-            ),
-            ConditionalController(
-                [
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                == VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            ConditionalController(
-                [
-                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                # Run if VF2Layout did not find a solution
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                != VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            BasicSwap(coupling_map=CouplingMap(device.build_coupling_map())),
-        ],
-    )
-)
 
 register_action(
     DeviceDependentAction(
@@ -691,7 +637,7 @@ register_action(
                 condition=lambda property_set: property_set["VF2Layout_stop_reason"]
                 != VF2LayoutStopReason.SOLUTION_FOUND,
             ),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
         ],
     )
 )

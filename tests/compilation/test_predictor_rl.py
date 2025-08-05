@@ -37,7 +37,7 @@ def test_predictor_env_reset_from_string() -> None:
     device = get_device("ibm_eagle_127")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
     assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
@@ -69,7 +69,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     """
     figure_of_merit = "expected_fidelity"
     device = get_device("ibm_falcon_127")
-    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
     model_name = "model_" + figure_of_merit + "_" + device.description
@@ -95,7 +95,7 @@ def test_qcompile_with_newly_trained_models() -> None:
 
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 5)
     with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
         rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
     with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
