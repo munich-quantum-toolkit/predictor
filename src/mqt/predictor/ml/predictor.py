@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import sys
-import warnings
 import zipfile
 from importlib import resources
 from pathlib import Path
@@ -192,13 +191,7 @@ class Predictor:
             if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
-                if sys.platform == "win32":
-                    warnings.warn(
-                        "Timeout is not supported on Windows. Running without timeout.", RuntimeWarning, stacklevel=2
-                    )
-                    res = rl_compile(qc, device, self.figure_of_merit, rl_pred)
-                else:
-                    res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
+                res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
@@ -233,12 +226,18 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(path_uncompiled_circuits)
 
-        Parallel(n_jobs=1, verbose=100)(
-            delayed(self._compile_all_circuits_devicewise)(
-                device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+        if sys.platform != "win32":
+            Parallel(n_jobs=1, verbose=100)(
+                delayed(self._compile_all_circuits_devicewise)(
+                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+                )
+                for device in self.devices
             )
-            for device in self.devices
-        )
+        else:
+            for device in self.devices:
+                self._compile_all_circuits_devicewise(
+                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+                )
 
     def generate_training_data(
         self,
