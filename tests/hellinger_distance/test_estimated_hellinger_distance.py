@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import re
-import sys
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -217,15 +216,9 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
                 dump(qc, f)
 
         # Generate compiled circuits (using trained RL model)
-        if sys.platform == "win32":
-            with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.compile_training_circuits(
-                    timeout=6000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
-                )
-        else:
-            ml_predictor.compile_training_circuits(
-                timeout=6000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
-            )
+        ml_predictor.compile_training_circuits(
+            timeout=6000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
+        )
 
         # Generate training data from the compiled circuits
         ml_predictor.generate_training_data(path_uncompiled_circuits=source_path, path_compiled_circuits=target_path)

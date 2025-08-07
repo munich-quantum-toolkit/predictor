@@ -191,7 +191,10 @@ class Predictor:
             if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
+                if sys.platform == "win32":
+                    res = rl_compile(qc, device, self.figure_of_merit, rl_pred)
+                else:
+                    res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
