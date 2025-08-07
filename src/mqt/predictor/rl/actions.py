@@ -395,7 +395,7 @@ register_action(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
-        transpile_pass=lambda device: VF2PostLayout(target=device),
+        transpile_pass=lambda device: VF2PostLayout(target=device, time_limit=100),
     )
 )
 
