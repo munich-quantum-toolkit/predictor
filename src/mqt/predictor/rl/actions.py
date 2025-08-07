@@ -576,6 +576,8 @@ register_action(
             VF2Layout(
                 coupling_map=CouplingMap(device.build_coupling_map()),
                 target=device,
+                call_limit=30000000,
+                max_trials=250000,
             ),
             ConditionalController(
                 [
@@ -617,6 +619,8 @@ register_action(
             VF2Layout(
                 coupling_map=CouplingMap(device.build_coupling_map()),
                 target=device,
+                call_limit=30000000,
+                max_trials=250000,
             ),
             ConditionalController(
                 [
