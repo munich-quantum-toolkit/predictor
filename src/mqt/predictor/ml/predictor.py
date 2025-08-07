@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import warnings
 import zipfile
 from importlib import resources
 from pathlib import Path
@@ -191,7 +192,13 @@ class Predictor:
             if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
-                res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
+                if sys.platform == "win32":
+                    warnings.warn(
+                        "Timeout is not supported on Windows. Running without timeout.", RuntimeWarning, stacklevel=2
+                    )
+                    res = rl_compile(qc, device, self.figure_of_merit, rl_pred)
+                else:
+                    res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
@@ -205,7 +212,7 @@ class Predictor:
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
-        timeout: int = 6000,
+        timeout: int = 600,
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
