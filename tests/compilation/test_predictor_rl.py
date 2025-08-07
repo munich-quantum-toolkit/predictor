@@ -19,6 +19,7 @@ from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
+from qiskit.transpiler.passes import GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -89,8 +90,14 @@ def test_qcompile_with_newly_trained_models() -> None:
     )
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+
+    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
+    check_nat_gates(qc_compiled)
+    only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+
     assert qc_compiled.layout is not None
     assert compilation_information is not None
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
 
 
 def test_qcompile_with_false_input() -> None:
