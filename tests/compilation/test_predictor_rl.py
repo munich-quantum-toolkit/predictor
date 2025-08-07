@@ -97,7 +97,7 @@ def test_qcompile_with_newly_trained_models() -> None:
 
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates"
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
 
 
 def test_qcompile_with_false_input() -> None:
