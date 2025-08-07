@@ -69,7 +69,6 @@ def _run_tests(
         "pytest",
         "-v",
         *pytest_run_args,
-        "--disable-warnings",
         "--log-cli-level=INFO",
         *session.posargs,
         "--cov-config=pyproject.toml",
@@ -141,6 +140,6 @@ def docs(session: nox.Session) -> None:
         "sphinx-autobuild" if serve else "sphinx-build",
         *shared_args,
         "-v",
-        "--log-cli-level=INFO--disable-warnings",
+        "--log-cli-level=INFO",
         env=env,
     )
