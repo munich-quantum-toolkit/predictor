@@ -13,6 +13,7 @@ from __future__ import annotations
 from mqt.bench import BenchmarkLevel, get_benchmark
 
 from mqt.predictor.ml.helper import (
+    create_dag,
     create_feature_vector,
     get_openqasm_gates,
     get_path_training_circuits,
@@ -26,6 +27,13 @@ def test_create_feature_vector() -> None:
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     feature_vector = create_feature_vector(qc)
     assert feature_vector is not None
+
+
+def test_create_dag() -> None:
+    """Test the creation of a DAG."""
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    dag = create_dag(qc)
+    assert dag is not None
 
 
 def test_get_openqasm_gates() -> None:

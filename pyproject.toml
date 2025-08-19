@@ -44,6 +44,8 @@ dependencies = [
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
     "numpy>=1.22,<2; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict numpy v2 for macOS x86 since it is not supported anymore since torch v2.3.0
+    "torch>=2.8.0",
+    "torch-geometric>=2.6.1",
     "torch>=2.7.1,<2.8.0; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict torch v2.3.0 for macOS x86 since it is not supported anymore.
     "typing-extensions>=4.1",  # for `assert_never`
 ]
@@ -166,6 +168,17 @@ implicit_reexport = true
 # the other libraries do not have type stubs.
 module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*"]
 ignore_missing_imports = true
+
+
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "torch_geometric", "torch_geometric.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["mqt.predictor.ml.*"]
+disallow_subclassing_any = false
+
+
 
 [tool.ruff]
 line-length = 120
