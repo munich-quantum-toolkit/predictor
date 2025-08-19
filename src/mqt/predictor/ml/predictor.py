@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from joblib import Parallel, delayed, load
 from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device
@@ -27,10 +28,13 @@ from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, train_test_split
+from torch import nn
+from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.ml.helper import (
     TrainingData,
+    create_dag,
     create_feature_vector,
     get_path_trained_model,
     get_path_training_circuits,
@@ -102,9 +106,14 @@ def setup_device_predictor(
             path_training_data=path_training_data,
         )
         logger.info(f"Generated training data for {figure_of_merit}")
+
         # Step 3: Train the random forest classifier
-        predictor.train_random_forest_model()
-        logger.info(f"Trained random forest classifier for {figure_of_merit}")
+        if not predictor.gnn:
+            predictor.train_random_forest_model()
+            logger.info(f"Trained random forest classifier for {figure_of_merit}")
+        else:
+            predictor.train_gnn_model()
+            logger.info(f"Trained random GNN for {figure_of_merit}")
 
     except FileNotFoundError:
         logger.exception("File not found during setup.")
@@ -128,6 +137,7 @@ class Predictor:
         self,
         devices: list[Target],
         figure_of_merit: figure_of_merit = "expected_fidelity",
+        gnn: bool = False,
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
@@ -136,12 +146,13 @@ class Predictor:
             figure_of_merit: The figure of merit to be used for training.
             devices: The devices to be used for training.
             logger_level: The level of the logger. Defaults to logging.INFO.
-
+            gnn: Decide if using GNN or other models
         """
         logger.setLevel(logger_level)
 
         self.figure_of_merit = figure_of_merit
         self.devices = devices
+        self.gnn = gnn
         self.devices.sort(
             key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
@@ -277,22 +288,30 @@ class Predictor:
             )
             for filename in path_uncompiled_circuits.glob("*.qasm")
         )
+        if not self.gnn:
+            for sample in results:
+                training_sample, circuit_name, scores = sample
+                if all(score == -1 for score in scores):
+                    continue
+                training_data.append(training_sample)
+                names_list.append(circuit_name)
+                scores_list.append(scores)
 
-        for sample in results:
-            training_sample, circuit_name, scores = sample
-            if all(score == -1 for score in scores):
-                continue
-            training_data.append(training_sample)
-            names_list.append(circuit_name)
-            scores_list.append(scores)
-
-        with resources.as_file(path_training_data) as path:
-            data = np.asarray(training_data, dtype=object)
-            np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
-            data = np.asarray(names_list, dtype=str)
-            np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
-            data = np.asarray(scores_list, dtype=object)
-            np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
+            with resources.as_file(path_training_data) as path:
+                data = np.asarray(training_data, dtype=object)
+                np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+                data = np.asarray(names_list, dtype=str)
+                np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
+                data = np.asarray(scores_list, dtype=object)
+                np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
+        else:
+            dataset = []
+            for sample in results:
+                if all(score == -1 for score in sample.scores):
+                    continue
+                dataset.append(sample)
+            with resources.as_file(path_training_data) as path:
+                torch.save(dataset, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
 
     def _generate_training_sample(
         self,
@@ -300,7 +319,7 @@ class Predictor:
         path_uncompiled_circuit: Path,
         path_compiled_circuits: Path,
         logger_level: int = logging.INFO,
-    ) -> tuple[tuple[list[Any], Any], str, list[float]]:
+    ) -> tuple[tuple[list[Any], Any], str, list[float]] | Data:
         """Handles to create a training sample from a given file.
 
         Arguments:
@@ -362,11 +381,29 @@ class Predictor:
         scores_list = list(scores.values())
         target_label = max(scores, key=lambda k: scores[k])
 
-        qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)  # ty: ignore[invalid-argument-type]
         feature_vec = create_feature_vector(qc)
-        training_sample = (feature_vec, target_label)
-        circuit_name = str(file).split(".")[0]
-        return training_sample, circuit_name, scores_list
+        if not self.gnn:
+            qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)  # ty: ignore[invalid-argument-type]
+        
+            training_sample = (feature_vec, target_label)
+            circuit_name = str(file).split(".")[0]
+            return training_sample, circuit_name, scores_list
+        x, edge_index, number_of_gates = create_dag(qc)
+        return Data(
+            x=x,
+            circuit_name=circuit_name,
+            edge_index=edge_index,
+            target_label=torch.tensor([target_label], dtype=torch.float),
+            scores_list=scores_list,
+            num_nodes=number_of_gates,
+        )
+
+    def train_gnn_model(
+        self,
+    ) -> nn.Module:
+        """Train the GNN models."""
+        {"hidden_dim": [32, 64, 128, 256], "num_resnet_layers": range(1, 10)}
+        return
 
     def train_random_forest_model(
         self, training_data: TrainingData | None = None
