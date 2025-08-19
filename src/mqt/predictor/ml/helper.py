@@ -34,6 +34,10 @@ from sklearn.metrics import (
 )
 from torch import nn
 
+from qiskit.transpiler import PassManager
+from qiskit.transpiler.passes import RemoveBarriers
+from mqt.predictor.utils import calc_supermarq_features
+
 if TYPE_CHECKING:
     import torch_geometric
     from numpy._typing import NDArray
@@ -121,6 +125,9 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     """
     # Get the number of qubits
     num_qubits = qc.num_qubits
+    # remove barriers
+    pm = PassManager(RemoveBarriers())
+    qc = pm.run(qc)
     # Transform the circuit into a DAG
     dag = circuit_to_dag(qc)
 
