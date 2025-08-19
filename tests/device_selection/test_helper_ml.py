@@ -31,7 +31,7 @@ def test_create_feature_vector() -> None:
 
 def test_create_dag() -> None:
     """Test the creation of a DAG."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3).decompose()
     dag = create_dag(qc)
     assert dag is not None
 
@@ -57,3 +57,6 @@ def test_get_path_training_data() -> None:
     """Test the retrieval of the path to the training data."""
     path = get_path_training_data()
     assert path.exists()
+
+
+test_create_dag()
