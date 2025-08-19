@@ -24,7 +24,10 @@ from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
     f1_score,
+    mean_absolute_error,
+    mean_squared_error,
     precision_score,
+    r2_score,
     recall_score,
     roc_auc_score,
 )
@@ -177,7 +180,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     def qubit_vector(node: DAGOpNode) -> list[int]:
         """Return [target, ctrl1, ctrl2], fill -1 if missing."""
-        qinds = [q.index for q in node.qargs]
+        qinds = [qc.find_bit(q).index for q in node.qargs]
         # from the node get the number of control qubits (if field missing, set 0)
         n_ctrl = getattr(node.op, "num_ctrl_qubits", 0)
         # assume controls appear first, then target:
@@ -230,7 +233,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     return node_vector, edge_index, number_of_gates
 
 
-def evaluate_model(
+def evaluate_classification_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
@@ -328,7 +331,7 @@ def evaluate_model(
     return avg_loss, metrics, None
 
 
-def train_model(
+def train_classification_model(
     model: nn.Module,
     train_loader: torch_geometric.loader.DataLoader,
     optimizer: torch.optim.Optimizer,
@@ -405,7 +408,9 @@ def train_model(
             scheduler.step()
 
         if val_loader is not None:
-            val_loss, val_metrics, _ = evaluate_model(model, val_loader, loss_fn, task=task, device=str(device))
+            val_loss, val_metrics, _ = evaluate_classification_model(
+                model, val_loader, loss_fn, task=task, device=str(device)
+            )
 
             improved = (best_metric - val_loss) > min_delta
             if improved:
@@ -451,14 +456,195 @@ def train_model(
         model.load_state_dict(best_state)
 
 
+def evaluate_regression_model(
+    model: nn.Module,
+    loader: torch_geometric.loader.DataLoader,
+    loss_fn: nn.Module,
+    *,
+    device: str | None = None,
+    return_arrays: bool = False,
+    verbose: bool = False,
+) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
+    """Evaluate a regression model (logits = scalar predictions).
+
+    Arguments:
+        model: regression model to be evaluated
+        loader: data loader for the evaluation dataset
+        loss_fn: loss function for evaluation
+        device: device to be used for evaluation (gpu or cpu)
+        return_arrays: whether to return prediction and target arrays
+        verbose: whether to print the metrics results.
+
+    Returns:
+        avg_loss: average loss over the loader
+        metrics:  {"rmse": ..., "mae": ..., "r2": ...}
+        arrays:   (preds, y_true) if return_arrays=True, else None
+    """
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device)
+
+    model.eval()
+    total_loss, total = 0.0, 0
+    all_preds, all_targets = [], []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch_device = batch.to(device)
+            logits = model(batch_device)
+            y = batch_device.y.float().view_as(logits)
+
+            loss = loss_fn(logits, y)
+            bs = y.numel()
+            total_loss += loss.item() * bs
+            total += bs
+
+            # porta a 1D per metriche
+            preds_1d = logits.view(-1).detach().cpu().numpy()
+            y_1d = y.view(-1).detach().cpu().numpy()
+            all_preds.append(preds_1d)
+            all_targets.append(y_1d)
+
+    avg_loss = total_loss / max(1, total)
+    preds = np.concatenate(all_preds, axis=0) if all_preds else np.array([])
+    y_true = np.concatenate(all_targets, axis=0) if all_targets else np.array([])
+
+    metrics: dict[str, float] = {"loss": float(avg_loss)}
+    if preds.size > 0:
+        rmse = float(math.sqrt(mean_squared_error(y_true, preds)))
+        mae = float(mean_absolute_error(y_true, preds))
+        r2 = float(r2_score(y_true, preds)) if np.var(y_true) > 0 else float("nan")
+        metrics.update({"rmse": rmse, "mae": mae, "r2": r2})
+
+        if verbose:
+            print(f"[Eval] loss={avg_loss:.6f} | rmse={rmse:.6f} | mae={mae:.6f} | r2={metrics['r2']:.6f}")
+
+    arrays = (preds, y_true) if return_arrays else None
+    return avg_loss, metrics, arrays
+
+
+def train_regression_model(
+    model: nn.Module,
+    train_loader: torch_geometric.loader.DataLoader,
+    optimizer: torch.optim.Optimizer,
+    loss_fn: nn.Module,
+    num_epochs: int,
+    *,
+    device: str | None = None,
+    verbose: bool = True,
+    val_loader: torch_geometric.loader.DataLoader | None = None,
+    patience: int = 10,
+    min_delta: float = 0.0,
+    restore_best: bool = True,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
+) -> None:
+    """Train a regression model with optional early stopping on validation loss.
+
+    Arguments:
+        model: regression model to be trained
+        train_loader: training set split into mini-batch
+        optimizer: optimizer for model training
+        loss_fn: loss function for training
+        num_epochs: number of training epochs
+        device: device to be used for training (gpu or cpu)
+        verbose: whether to print progress messages
+        val_loader: validation set split into mini-batch (optional)
+        patience: number of epochs with no improvement after which training will be stopped
+        min_delta: minimum change in the monitored quantity to qualify as an improvement
+        restore_best: whether to restore model weights from the epoch with the best validation loss
+        scheduler: learning rate scheduler (optional)
+    """
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device)
+    model.to(device)
+
+    best_state = None
+    best_metric = float("inf")
+    best_metrics_dict: dict[str, float] = {}
+    epochs_no_improve = 0
+
+    for epoch in range(1, num_epochs + 1):
+        model.train()
+        running_loss, total = 0.0, 0
+
+        for batch in train_loader:
+            batch_device = batch.to(device)
+            preds = model(batch_device)  # [B] o [B,1]
+            # align y
+            y = batch_device.y.float().view_as(preds)
+
+            loss = loss_fn(preds, y)
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            running_loss += loss.item() * y.numel()
+            total += y.numel()
+
+        train_loss = running_loss / max(1, total)
+        if scheduler is not None:
+            scheduler.step()
+
+        if val_loader is not None:
+            val_loss, val_metrics, _ = evaluate_regression_model(
+                model, val_loader, loss_fn, device=str(device), return_arrays=False, verbose=False
+            )
+
+            improved = (best_metric - val_loss) > min_delta
+            if improved:
+                best_metric = val_loss
+                best_state = deepcopy(model.state_dict())
+                best_metrics_dict = {"val_" + k: float(v) for k, v in val_metrics.items()}
+                best_metrics_dict["train_loss_at_best"] = float(train_loss)
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+
+            if verbose:
+                msg_metrics = " | ".join(f"{k}={v:.6f}" for k, v in val_metrics.items())
+                print(
+                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | {msg_metrics} | "
+                    f"no_improve={epochs_no_improve}/{patience}"
+                )
+
+            if epochs_no_improve >= patience:
+                if verbose:
+                    print(f"Early stopping at epoch {epoch} (best val_loss={best_metric:.6f}).")
+                break
+        else:
+            # early stopping opzionale on training loss
+            improved = (best_metric - train_loss) > min_delta
+            if improved:
+                best_metric = train_loss
+                best_state = deepcopy(model.state_dict())
+                best_metrics_dict = {"train_loss_at_best": float(train_loss)}
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+            if verbose:
+                print(
+                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
+                    f"no_improve={epochs_no_improve}/{patience}"
+                )
+            if epochs_no_improve >= patience:
+                if verbose:
+                    print(f"Early stopping on training loss at epoch {epoch} (best train_loss={best_metric:.6f}).")
+                break
+
+    if restore_best and best_state is not None:
+        model.load_state_dict(best_state)
+
+
 @dataclass
 class TrainingData:
     """Dataclass for the training data."""
 
-    X_train: NDArray[np.float64]
-    y_train: NDArray[np.float64]
-    X_test: NDArray[np.float64] | None = None
-    y_test: NDArray[np.float64] | None = None
+    X_train: NDArray[np.float64] | list[torch_geometric.data.Data]
+    y_train: NDArray[np.float64] | torch.Tensor
+    X_test: NDArray[np.float64] | list[torch_geometric.data.Data] | None = None
+    y_test: NDArray[np.float64] | torch.Tensor | None = None
     indices_train: list[int] | None = None
     indices_test: list[int] | None = None
     names_list: list[str] | None = None

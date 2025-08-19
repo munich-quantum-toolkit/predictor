@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from joblib import dump as joblib_dump
+from torch import nn
+from torch_geometric.loader import DataLoader
+
+from mqt.predictor.ml.gnn import GNN
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
     from typing import assert_never
@@ -33,7 +37,6 @@ from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, train_test_split
-from torch import nn
 from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path
@@ -41,10 +44,13 @@ from mqt.predictor.ml.helper import (
     TrainingData,
     create_dag,
     create_feature_vector,
+    get_openqasm_gates,
     get_path_trained_model,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
+    train_classification_model,
+    train_regression_model,
 )
 from mqt.predictor.reward import (
     crit_depth,
@@ -395,12 +401,87 @@ class Predictor:
             num_nodes=number_of_gates,
         )
 
-    def train_gnn_model(
-        self,
-    ) -> nn.Module:
-        """Train the GNN models."""
-        {"hidden_dim": [32, 64, 128, 256], "num_resnet_layers": range(1, 10)}
-        return
+    def train_gnn_model(self, training_data: TrainingData | None = None) -> nn.Module:
+        """Train the GNN model(s) and return the trained model."""
+        # Figure out outputs and save path
+        if self.figure_of_merit == "hellinger_distance":
+            if len(self.devices) != 1:
+                msg = "A single device must be provided for Hellinger distance model training."
+                raise ValueError(msg)
+            num_outputs = 1
+            save_mdl_path = str(get_hellinger_model_path(self.devices[0])) + ".pth"
+        else:
+            num_outputs = max(1, len(self.devices))
+            save_mdl_path = str(get_path_trained_model(self.figure_of_merit)) + ".pth"
+
+        # Prepare data
+        if training_data is None:
+            training_data = self._get_prepared_training_graphs()
+
+        # Build model (ensure final layer outputs raw logits/no activation)
+        model = GNN(
+            in_feats=len(get_openqasm_gates()) + 1 + 3 + 3,
+            hidden_dim=128,
+            num_resnet_layers=5,
+            mlp_units=[1024, 128, 64],
+            output_dim=num_outputs,
+        )
+
+        # Device handling
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+
+        # Optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        # Dataloader
+        train_loader = DataLoader(training_data.X_train, batch_size=64, shuffle=True)
+
+        # Choose task + loss
+        if self.figure_of_merit == "hellinger_distance":
+            loss_fn = nn.MSELoss()
+            task = "regression"
+        else:
+            if num_outputs == 1:
+                loss_fn = nn.BCEWithLogitsLoss()
+                task = "binary"
+            else:
+                loss_fn = nn.CrossEntropyLoss()
+                task = "multiclass"
+
+        # Train (your helpers should handle model.train(), moving batches to device, etc.)
+        if task == "regression":
+            train_regression_model(
+                model=model,
+                train_loader=train_loader,
+                optimizer=optimizer,
+                loss_fn=loss_fn,
+                num_epochs=100,
+                device=device,
+            )
+        elif task == "binary":
+            train_classification_model(
+                model=model,
+                train_loader=train_loader,
+                optimizer=optimizer,
+                loss_fn=loss_fn,
+                num_epochs=100,
+                task="binary",
+                device=device,
+            )
+        else:  # multiclass
+            train_classification_model(
+                model=model,
+                train_loader=train_loader,
+                optimizer=optimizer,
+                loss_fn=loss_fn,
+                num_epochs=100,
+                task="multiclass",
+                device=device,
+            )
+        # Save the model
+        torch.save(model.state_dict(), save_mdl_path)
+        return model
 
     def train_random_forest_model(
         self, training_data: TrainingData | None = None
@@ -448,6 +529,36 @@ class Predictor:
         logger.info("Random Forest model is trained and saved.")
 
         return mdl.best_estimator_
+
+    def _get_prepared_training_graphs(self) -> TrainingData:
+        """Returns the training graphs for the given figure of merit."""
+        with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
+            prefix = f"{self.figure_of_merit}.pt"
+            file_data = path / f"graph_dataset_{prefix}"
+
+            if file_data.is_file():
+                training_data = load(file_data, weights_only=False)
+            else:
+                msg = "Training data not found."
+                raise FileNotFoundError(msg)
+        indices = np.arange(len(training_data), dtype=np.int64)
+        score_list = training_data.score_list
+        names_list = training_data.names_list
+        # split data graph
+        training_data, train_y, test_data, test_y, train_indices, test_indices = train_test_split(
+            training_data, training_data.y, indices=indices, test_size=0.3, random_state=5
+        )
+
+        return TrainingData(
+            X_train=training_data,
+            y_train=train_y,
+            X_test=test_data,
+            y_test=test_y,
+            indices_train=train_indices,
+            indices_test=test_indices,
+            names_list=names_list,
+            scores_list=score_list,
+        )
 
     def _get_prepared_training_data(self) -> TrainingData:
         """Returns the training data for the given figure of merit.
