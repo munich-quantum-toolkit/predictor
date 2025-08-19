@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 from qiskit.converters import circuit_to_dag
+from qiskit.transpiler import PassManager
+from qiskit.transpiler.passes import RemoveBarriers
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -33,8 +35,6 @@ from sklearn.metrics import (
 )
 from torch import nn
 
-from qiskit.transpiler import PassManager
-from qiskit.transpiler.passes import RemoveBarriers
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
