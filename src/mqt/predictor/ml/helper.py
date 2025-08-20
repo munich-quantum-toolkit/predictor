@@ -61,6 +61,11 @@ def get_path_trained_model(figure_of_merit: str) -> Path:
     return get_path_training_data() / "trained_model" / ("trained_clf_" + figure_of_merit + ".joblib")
 
 
+def get_path_trained_model_gnn(figure_of_merit: str) -> Path:
+    """Returns the path to the trained model folder resulting from the GNN training."""
+    return get_path_training_data() / "trained_model" / ("trained_gnn_" + figure_of_merit + ".pth")
+
+
 def get_path_training_circuits() -> Path:
     """Returns the path to the training circuits folder."""
     return get_path_training_data() / "training_circuits"

@@ -39,12 +39,13 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, train_test_split
 from torch_geometric.data import Data
 
-from mqt.predictor.hellinger import get_hellinger_model_path
+from mqt.predictor.hellinger import get_hellinger_model_path, get_hellinger_model_path_gnn
 from mqt.predictor.ml.helper import (
     TrainingData,
     create_dag,
     create_feature_vector,
     get_path_trained_model,
+    get_path_trained_model_gnn,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
+import json
 import warnings
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -449,23 +451,54 @@ class Predictor:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
             num_outputs = 1
-            save_mdl_path = str(get_hellinger_model_path(self.devices[0])) + ".pth"
+            save_mdl_path = str(get_hellinger_model_path_gnn(self.devices[0]))
         else:
             num_outputs = max(1, len(self.devices))
-            save_mdl_path = str(get_path_trained_model(self.figure_of_merit)) + ".pth"
+            save_mdl_path = str(get_path_trained_model_gnn(self.figure_of_merit))
 
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_graphs()
         # number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
         # Build model (ensure final layer outputs raw logits/no activation)
-        model = GNN(
-            in_feats=49,
-            hidden_dim=128,
-            num_resnet_layers=5,
-            mlp_units=[1024, 128, 64],
-            output_dim=num_outputs,
-        )
+        if self.figure_of_merit != "hellinger_distance":
+            model = GNN(
+                in_feats=49,
+                hidden_dim=128,
+                num_resnet_layers=5,
+                mlp_units=[1024, 128, 64],
+                output_dim=num_outputs,
+                classes=[dev.description for dev in self.devices],
+            )
+            json_dict = {
+                "in_feats": 49,
+                "hidden_dim": 128,
+                "num_resnet_layers": 5,
+                "mlp_units": [1024, 128, 64],
+                "output_dim": num_outputs,
+                "classes": [dev.description for dev in self.devices],
+            }
+        else:
+            model = GNN(
+                in_feats=49,
+                hidden_dim=128,
+                num_resnet_layers=5,
+                mlp_units=[1024, 128, 64],
+                output_dim=num_outputs,
+            )
+
+            # create a json with the characteristics of the model
+            json_dict = {
+                "in_feats": 49,
+                "hidden_dim": 128,
+                "num_resnet_layers": 5,
+                "mlp_units": [1024, 128, 64],
+                "output_dim": num_outputs,
+            }
+
+        json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
+        with json_path.open("w", encoding="utf-8") as f:
+            json.dump(json_dict, f, indent=4)
 
         # Device handling
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -643,13 +676,14 @@ class Predictor:
 
 
 def predict_device_for_figure_of_merit(
-    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity"
+    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity", gnn: bool = False
 ) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
     Arguments:
         qc: The QuantumCircuit or Path to the respective qasm file.
         figure_of_merit: The figure of merit to be used for compilation.
+        gnn: Whether to use a GNN for prediction. Defaults to False.
 
     Returns:
         The probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
@@ -661,22 +695,49 @@ def predict_device_for_figure_of_merit(
     if isinstance(qc, Path) and qc.exists():
         qc = QuantumCircuit.from_qasm_file(qc)
     assert isinstance(qc, QuantumCircuit)
-
-    path = get_path_trained_model(figure_of_merit)
+    path = get_path_trained_model(figure_of_merit) if not gnn else get_path_trained_model_gnn(figure_of_merit)
     if not path.exists():
         error_msg = "The ML model is not trained yet. Please train the model before using it."
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
-    clf = load(path)
+    if not gnn:
+        clf = load(path)
 
-    feature_vector = create_feature_vector(qc)
+        feature_vector = create_feature_vector(qc)
 
-    probabilities = clf.predict_proba([feature_vector])[0]
-    class_labels = clf.classes_
-    # sort all devices with decreasing probabilities
-    sorted_devices = np.array([
-        label for _, label in sorted(zip(probabilities, class_labels, strict=False), reverse=True)
-    ])
+        probabilities = clf.predict_proba([feature_vector])[0]
+        class_labels = clf.classes_
+        # sort all devices with decreasing probabilities
+        sorted_devices = np.array([
+            label for _, label in sorted(zip(probabilities, class_labels, strict=False), reverse=True)
+        ])
+    else:
+        # Open the json file save_mdl_path[:-4] + ".json"
+        with Path.open(path.with_suffix(".json"), encoding="utf-8") as f:
+            json_dict = json.load(f)
+
+        gnn_model = GNN(
+            in_feats=json_dict["in_feats"],
+            hidden_dim=json_dict["hidden_dim"],
+            num_resnet_layers=json_dict["num_resnet_layers"],
+            mlp_units=json_dict["mlp_units"],
+            output_dim=json_dict["output_dim"],
+            classes=json_dict["classes"],
+        )
+        gnn_model.load_state_dict(torch.load(path))
+        x, edge_index, number_of_gates = create_dag(qc)
+        feature_vector = Data(x=x, edge_index=edge_index, num_gates=number_of_gates)
+        gnn_model.eval()
+        class_labels = gnn_model.classes
+        with torch.no_grad():
+            probabilities = torch.softmax(gnn_model(feature_vector), dim=1)
+        assert class_labels is not None
+        if len(class_labels) != len(probabilities):
+            msg = "probabilities and class_labels must be same length"
+            raise ValueError(msg)
+
+        pairs = sorted(zip(probabilities.tolist(), class_labels, strict=False), reverse=True)
+        sorted_devices = np.array([label for _, label in pairs])
 
     for dev_name in sorted_devices:
         dev = get_device(dev_name)
