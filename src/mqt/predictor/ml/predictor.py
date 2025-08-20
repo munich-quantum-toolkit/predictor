@@ -44,7 +44,6 @@ from mqt.predictor.ml.helper import (
     TrainingData,
     create_dag,
     create_feature_vector,
-    get_openqasm_gates,
     get_path_trained_model,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
@@ -67,6 +66,43 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
+import warnings
+
+# ─────────────────────────────────────────────────────────────────────────
+# Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
+warnings.filterwarnings(
+    "ignore",
+    message=r"An issue occurred while importing 'torch-scatter'.*",
+    category=UserWarning,
+    module=r"torch_geometric.typing",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"An issue occurred while importing 'torch-spline-conv'.*",
+    category=UserWarning,
+    module=r"torch_geometric.typing",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"An issue occurred while importing 'torch-sparse'.*",
+    category=UserWarning,
+    module=r"torch_geometric.typing",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"An issue occurred while importing 'torch-geometric'.*",
+    category=UserWarning,
+)
+
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*'type_params' parameter of 'typing\._eval_type'.*",
+    category=DeprecationWarning,
+)
+
+# ─────────────────────────────────────────────────────────────────────────
+
 plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
@@ -79,6 +115,7 @@ def setup_device_predictor(
     path_compiled_circuits: Path | None = None,
     path_training_data: Path | None = None,
     timeout: int = 600,
+    gnn: bool = False,
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -89,14 +126,12 @@ def setup_device_predictor(
         path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
         path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
         timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
+        gnn: Whether to use a GNN for training. Defaults to False.
 
     Returns:
         True if the setup was successful, False otherwise.
     """
-    predictor = Predictor(
-        figure_of_merit=figure_of_merit,
-        devices=devices,
-    )
+    predictor = Predictor(figure_of_merit=figure_of_merit, devices=devices, gnn=gnn)
     try:
         logger.info(f"Start the training for the figure of merit: {figure_of_merit}")
         # Step 1: Generate compiled circuits for all devices
@@ -312,7 +347,7 @@ class Predictor:
         else:
             dataset = []
             for sample in results:
-                if all(score == -1 for score in sample.scores):
+                if all(score == -1 for score in sample.scores_list):
                     continue
                 dataset.append(sample)
             with resources.as_file(path_training_data) as path:
@@ -392,11 +427,16 @@ class Predictor:
             circuit_name = str(file).split(".")[0]
             return training_sample, circuit_name, scores_list
         x, edge_index, number_of_gates = create_dag(qc)
+        circuit_name = str(file).split(".")[0]
+        self.devices_description = [dev.description for dev in self.devices]
+        y = self.devices_description.index(target_label)
+        print(target_label)
         return Data(
             x=x,
+            y=torch.tensor([y], dtype=torch.float),
             circuit_name=circuit_name,
             edge_index=edge_index,
-            target_label=torch.tensor([target_label], dtype=torch.float),
+            target_label=target_label,  # torch.tensor([target_label], dtype=torch.float),
             scores_list=scores_list,
             num_nodes=number_of_gates,
         )
@@ -417,10 +457,10 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_graphs()
-
+        # number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
         # Build model (ensure final layer outputs raw logits/no activation)
         model = GNN(
-            in_feats=len(get_openqasm_gates()) + 1 + 3 + 3,
+            in_feats=49,
             hidden_dim=128,
             num_resnet_layers=5,
             mlp_units=[1024, 128, 64],
@@ -537,16 +577,17 @@ class Predictor:
             file_data = path / f"graph_dataset_{prefix}"
 
             if file_data.is_file():
-                training_data = load(file_data, weights_only=False)
+                training_data = torch.load(file_data, weights_only=False)
             else:
                 msg = "Training data not found."
                 raise FileNotFoundError(msg)
         indices = np.arange(len(training_data), dtype=np.int64)
-        score_list = training_data.score_list
-        names_list = training_data.names_list
+        score_list = [el.scores_list for el in training_data]
+        names_list = [el.circuit_name for el in training_data]
+        y = [el.target_label for el in training_data]
         # split data graph
         training_data, train_y, test_data, test_y, train_indices, test_indices = train_test_split(
-            training_data, training_data.y, indices=indices, test_size=0.3, random_state=5
+            training_data, y, indices, test_size=0.3, random_state=5
         )
 
         return TrainingData(

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -64,7 +65,7 @@ class GraphConvolutionSage(nn.Module):
 
     def forward(self, data: Data) -> torch.Tensor:
         """Forward function that allows to elaborate the input graph."""
-        x, edge_index, batch = data.X, data.edge_index, data.batch
+        x, edge_index, batch = data.x, data.edge_index, data.batch
         # 1) Graph stack with residuals
         for i, conv in enumerate(self.convs):
             x_new = conv(x, edge_index)
@@ -108,6 +109,38 @@ class GNN(nn.Module):
             mlp_act_kwargs: extra kwargs for mlp_activation.
             output_dim: dimension of the output, default is 1 for regression tasks
         """
+        # ─────────────────────────────────────────────────────────────────────────
+        # Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
+        warnings.filterwarnings(
+            "ignore",
+            message=r"An issue occurred while importing 'torch-scatter'.*",
+            category=UserWarning,
+            module=r"torch_geometric.typing",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"An issue occurred while importing 'torch-spline-conv'.*",
+            category=UserWarning,
+            module=r"torch_geometric.typing",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"An issue occurred while importing 'torch-sparse'.*",
+            category=UserWarning,
+            module=r"torch_geometric.typing",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"An issue occurred while importing 'torch-geometric'.*",
+            category=UserWarning,
+        )
+
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*'type_params' parameter of 'typing\._eval_type'.*",
+            category=DeprecationWarning,
+        )
+
         super().__init__()
         # Convolutional part
         self.graph_conv = GraphConvolutionSage(
@@ -135,5 +168,4 @@ class GNN(nn.Module):
         # Apply the MLP
         for fc in self.fcs:
             x = self.mlp_activation(fc(x), **self.mlp_act_kwargs)
-        x = self.out(x)
-        return x.squeeze(1)
+        return self.out(x)
