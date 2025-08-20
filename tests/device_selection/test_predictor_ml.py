@@ -94,12 +94,13 @@ def test_setup_device_gnn_with_prediction(path_uncompiled_circuits: Path, path_c
     assert success
 
     data_path = get_path_training_data() / "training_data_aggregated"
-    assert (data_path / "training_data_expected_fidelity.npy").exists()
-    assert (data_path / "names_list_expected_fidelity.npy").exists()
-    assert (data_path / "scores_list_expected_fidelity.npy").exists()
+    # assert (data_path / "training_data_expected_fidelity.npy").exists()
+    # assert (data_path / "names_list_expected_fidelity.npy").exists()
+    # assert (data_path / "scores_list_expected_fidelity.npy").exists()
+    assert (data_path / "graph_dataset_expected_fidelity.pt").exists()
 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=True)
 
     assert predicted.description == "ibm_falcon_127"
 

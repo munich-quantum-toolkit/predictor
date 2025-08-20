@@ -94,6 +94,7 @@ class GNN(nn.Module):
         conv_act_kwargs: dict[str, Any] | None = None,
         mlp_activation: Callable[..., torch.Tensor] = functional.leaky_relu,
         mlp_act_kwargs: dict[str, Any] | None = None,
+        classes: list[str] | None = None,
         output_dim: int = 1,
     ) -> None:
         """Init class for the GNN.
@@ -108,6 +109,7 @@ class GNN(nn.Module):
             mlp_activation: activation fn after each MLP layer
             mlp_act_kwargs: extra kwargs for mlp_activation.
             output_dim: dimension of the output, default is 1 for regression tasks
+            classes: list of class names for classification tasks
         """
         # ─────────────────────────────────────────────────────────────────────────
         # Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
@@ -150,6 +152,7 @@ class GNN(nn.Module):
         # MLP architecture
         self.mlp_activation = mlp_activation
         self.mlp_act_kwargs = mlp_act_kwargs or {}
+        self.classes = classes
         self.fcs = nn.ModuleList()
         last_dim = hidden_dim
         for out_dim in mlp_units:
