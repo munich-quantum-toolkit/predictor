@@ -299,7 +299,7 @@ def test_train_and_qcompile_with_hellinger_model_gnn(source_path: Path, target_p
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
 
-        for file in ["training_data_estimated_hellinger_distance.npy.pt"]:
+        for file in ["graph_dataset_estimated_hellinger_distance.pt"]:
             path = get_path_training_data() / "training_data_aggregated" / file
             assert path.exists()
 
