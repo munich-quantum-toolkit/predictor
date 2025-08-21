@@ -31,16 +31,23 @@ else:
 
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import torch
 from joblib import Parallel, delayed, load
 from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device
+
+# typos:ignore-start
+from optuna.samplers import TPESampler  # isort: skip
+
+# typos:ignore-end
+# cspell:disable-next-line
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from torch_geometric.data import Data
-from optuna.samplers import TPESampler
+
 from mqt.predictor.hellinger import get_hellinger_model_path, get_hellinger_model_path_gnn
 from mqt.predictor.ml.helper import (
     TrainingData,
@@ -76,8 +83,6 @@ if TYPE_CHECKING:
 
 import json
 import warnings
-
-import optuna
 
 # ─────────────────────────────────────────────────────────────────────────
 # Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
@@ -616,9 +621,9 @@ class Predictor:
                 loss_fn = nn.CrossEntropyLoss()
                 task = "multiclass"
             classes = [dev.description for dev in self.devices]
-
-        sampler_obj = TPESampler(n_startup_trials=10)
-
+        ## typos:ignore-start
+        sampler_obj = TPESampler(n_startup_trials=10)  # isort: skip
+        # # typos:ignore-end
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
 
