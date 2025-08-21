@@ -132,6 +132,7 @@ def setup_device_predictor(
     gnn: bool = False,
     number_epochs: int = 100,
     number_trials: int = 50,
+    verbose: bool = False,
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -145,6 +146,7 @@ def setup_device_predictor(
         gnn: Whether to use a GNN for training. Defaults to False.
         number_epochs: The number of epochs to train the GNN model. Defaults to 100.
         number_trials: The number of trials to run for hyperparameter optimization for the GNN. Defaults to 50.
+        verbose: Whether to print verbose output during training GNN. Defaults to False.
 
     Returns:
         True if the setup was successful, False otherwise.
@@ -585,7 +587,7 @@ class Predictor:
         return mean_val
 
     def train_gnn_model(
-        self, training_data: TrainingData | None = None, number_epochs: int = 100, number_trials: int = 50
+        self, training_data: TrainingData | None = None, number_epochs: int = 100, number_trials: int = 50, verbose: bool = False
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
 
@@ -593,6 +595,7 @@ class Predictor:
             training_data: The training data to use for training the model.
             number_epochs: The number of epochs to train the model.
             number_trials: The number of trials to run for hyperparameter optimization.
+
 
         Returns:
             The trained GNN model.
@@ -708,7 +711,7 @@ class Predictor:
                 loss_fn,
                 num_epochs=number_epochs,
                 device=device,
-                verbose=False,
+                verbose=verbose,
                 val_loader=val_loader,
                 patience=10,
                 min_delta=0.0,
@@ -724,13 +727,18 @@ class Predictor:
                 num_epochs=number_epochs,
                 task=task,
                 device=device,
-                verbose=False,
+                verbose=verbose,
                 val_loader=val_loader,
                 patience=10,
                 min_delta=0.0,
                 restore_best=True,
                 scheduler=None,
             )
+            if verbose:
+                test_loader = DataLoader(training_data.test_data, batch_size=64, shuffle=False)
+                avg_loss_test = dict_results = evaluate_classification_model(model, test_loader, device=device, verbose=verbose)
+                print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
+
 
         # Save the model
         torch.save(model.state_dict(), save_mdl_path)

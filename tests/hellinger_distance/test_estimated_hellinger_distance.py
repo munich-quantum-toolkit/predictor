@@ -218,10 +218,12 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Generate compiled circuits (using trained RL model)
         if sys.platform == "win32":
-            with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.compile_training_circuits(
-                    timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-                )
+            with warnings.catch_warnings():
+                warnings.simplefilter("always", RuntimeWarning)
+                with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
+                    ml_predictor.compile_training_circuits(
+                        timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
+                    )
         else:
             ml_predictor.compile_training_circuits(
                 timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
@@ -285,10 +287,12 @@ def test_train_and_qcompile_with_hellinger_model_gnn(source_path: Path, target_p
 
         # Generate compiled circuits (using trained RL model)
         if sys.platform == "win32":
-            with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.compile_training_circuits(
-                    timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-                )
+            with warnings.catch_warnings():
+                warnings.simplefilter("always", RuntimeWarning)
+                with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
+                    ml_predictor.compile_training_circuits(
+                        timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
+                    )
         else:
             ml_predictor.compile_training_circuits(
                 timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
