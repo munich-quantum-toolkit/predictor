@@ -36,7 +36,7 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path, get_hellinger_model_path_gnn
@@ -44,6 +44,9 @@ from mqt.predictor.ml.helper import (
     TrainingData,
     create_dag,
     create_feature_vector,
+    evaluate_classification_model,
+    evaluate_regression_model,
+    get_openqasm_gates,
     get_path_trained_model,
     get_path_trained_model_gnn,
     get_path_training_circuits,
@@ -63,12 +66,16 @@ from mqt.predictor.rl import rl_compile
 from mqt.predictor.utils import timeout_watcher
 
 if TYPE_CHECKING:
+    import torch_geometric
+    from numpy._typing import NDArray
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
 
 import json
 import warnings
+
+import optuna
 
 # ─────────────────────────────────────────────────────────────────────────
 # Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
@@ -443,6 +450,131 @@ class Predictor:
             num_nodes=number_of_gates,
         )
 
+    def objective(
+        self,
+        trial: optuna.Trial,
+        dataset: NDArray[np.float64] | list[torch_geometric.data.Data],
+        task: str,
+        in_feats: int,
+        num_outputs: int,
+        loss_fn: nn.Module,
+        k_folds: int,
+        classes: list[str] | None = None,
+        batch_size: int = 32,
+        num_epochs: int = 100,
+        patience: int = 10,
+        device: str | None = None,
+    ) -> float:
+        """Objective function for Optuna hyperparameter optimization.
+
+        Arguments:
+            trial: The Optuna trial object.
+            dataset: The dataset to use for training and validation.
+            task: The task to optimize (e.g., "binary", "multiclass", or "regression").
+            in_feats: number of input features.
+            num_outputs: number of output features.
+            device: device to use for training.
+            loss_fn: loss function to use.
+            optimizer: optimizer to use.
+            k_folds: number of folds for cross-validation.
+            classes: list of class names (for classification tasks).
+            batch_size: batch size for training.
+            num_epochs: number of epochs for training.
+            patience: patience for early stopping.
+
+
+        Returns:
+            mean_val: The mean value in validation considering the k-folds.
+        """
+        # Type of device used
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        device_obj = torch.device(device)
+
+        # Hyperparameter spaces
+        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
+        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 10)
+        mlp_depth = trial.suggest_int("mlp_depth", 1, 3)
+        mlp_choices = [32, 64, 128, 256, 512, 1024]
+        mlp_units = [trial.suggest_categorical(f"mlp_units_{i}", mlp_choices) for i in range(mlp_depth)]
+
+        # Split into k-folds
+        kf = KFold(n_splits=k_folds, shuffle=True)
+        fold_val_best_losses: list[float] = []
+
+        for _fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):
+            train_subset = [dataset[i] for i in train_idx]
+            val_subset = [dataset[i] for i in val_idx]
+            # Transform the data into loaders
+            train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+            val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+            # Define the GNN
+            model = GNN(
+                in_feats=in_feats,
+                hidden_dim=hidden_dim,
+                num_resnet_layers=num_resnet_layers,
+                mlp_units=mlp_units,
+                output_dim=num_outputs,
+                classes=classes,
+            ).to(device_obj)
+
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+            # Based on the task, do a training and evaluation for regression or classification
+            if task == "regression":
+                train_regression_model(
+                    model,
+                    train_loader,
+                    optimizer,
+                    loss_fn,
+                    num_epochs=num_epochs,
+                    device=device,
+                    verbose=False,
+                    val_loader=val_loader,
+                    patience=patience,
+                    min_delta=0.0,
+                    restore_best=True,
+                    scheduler=None,
+                )
+                val_loss, _, _ = evaluate_regression_model(
+                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=False
+                )
+            else:
+                train_classification_model(
+                    model,
+                    train_loader,
+                    optimizer,
+                    loss_fn,
+                    num_epochs=num_epochs,
+                    task=task,
+                    device=device,
+                    verbose=False,
+                    val_loader=val_loader,
+                    patience=patience,
+                    min_delta=0.0,
+                    restore_best=True,
+                    scheduler=None,
+                )
+                val_loss, _, _ = evaluate_classification_model(
+                    model, val_loader, loss_fn, task=task, device=device, return_arrays=False, verbose=False
+                )
+
+            fold_val_best_losses.append(float(val_loss))
+        # Take the mean value
+        mean_val = float(np.mean(fold_val_best_losses))
+        trial.set_user_attr("fold_val_best_losses", fold_val_best_losses)
+        trial.set_user_attr(
+            "best_hparams",
+            {
+                "in_feats": in_feats,
+                "hidden_dim": hidden_dim,
+                "num_resnet_layers": num_resnet_layers,
+                "mlp_units": mlp_units,
+                "num_outputs": num_outputs,
+            },
+        )
+        return mean_val
+
     def train_gnn_model(self, training_data: TrainingData | None = None) -> nn.Module:
         """Train the GNN model(s) and return the trained model."""
         # Figure out outputs and save path
@@ -459,40 +591,76 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_graphs()
-        # number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
+        number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
+
+        if self.figure_of_merit == "hellinger_distance":
+            loss_fn = nn.MSELoss()
+            task = "regression"
+            classes = None
+        else:
+            if num_outputs == 1:
+                loss_fn = nn.BCEWithLogitsLoss()
+                task = "binary"
+
+            else:
+                loss_fn = nn.CrossEntropyLoss()
+                task = "multiclass"
+            classes = [dev.description for dev in self.devices]
+
+        sampler_obj = optuna.samplers.TYPESampler(n_startup_trials=10)
+
+        study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
+        k_folds = min(len(training_data.y_train), 5)
+
+        def _obj(trial: optuna.Trial) -> float:
+            return self.objective(
+                trial=trial,
+                dataset=training_data.X_train,
+                task=task,
+                in_feats=number_in_features,
+                num_outputs=num_outputs,
+                loss_fn=loss_fn,
+                k_folds=k_folds,
+                classes=classes,
+                num_epochs=100,
+                patience=10,
+            )
+
+        study.optimize(_obj, n_trials=50)
+        dict_best_hyper = study.best_trial.user_attrs.get("best_hparams")
         # Build model (ensure final layer outputs raw logits/no activation)
         if self.figure_of_merit != "hellinger_distance":
             model = GNN(
-                in_feats=49,
-                hidden_dim=128,
-                num_resnet_layers=5,
-                mlp_units=[1024, 128, 64],
+                in_feats=dict_best_hyper["in_feats"],
+                hidden_dim=dict_best_hyper["hidden_dim"],
+                num_resnet_layers=dict_best_hyper["num_resnet_layers"],
+                mlp_units=dict_best_hyper["mlp_units"],
                 output_dim=num_outputs,
                 classes=[dev.description for dev in self.devices],
             )
             json_dict = {
-                "in_feats": 49,
-                "hidden_dim": 128,
-                "num_resnet_layers": 5,
-                "mlp_units": [1024, 128, 64],
+                "in_feats": dict_best_hyper["in_feats"],
+                "hidden_dim": dict_best_hyper["hidden_dim"],
+                "num_resnet_layers": dict_best_hyper["num_resnet_layers"],
+                "mlp_units": dict_best_hyper["mlp_units"],
                 "output_dim": num_outputs,
                 "classes": [dev.description for dev in self.devices],
             }
         else:
             model = GNN(
-                in_feats=49,
-                hidden_dim=128,
-                num_resnet_layers=5,
-                mlp_units=[1024, 128, 64],
+                in_feats=dict_best_hyper["in_feats"],
+                hidden_dim=dict_best_hyper["hidden_dim"],
+                num_resnet_layers=dict_best_hyper["num_resnet_layers"],
+                mlp_units=dict_best_hyper["mlp_units"],
                 output_dim=num_outputs,
             )
 
             # create a json with the characteristics of the model
             json_dict = {
-                "in_feats": 49,
-                "hidden_dim": 128,
-                "num_resnet_layers": 5,
-                "mlp_units": [1024, 128, 64],
+                "in_feats": dict_best_hyper["in_feats"],
+                "hidden_dim": dict_best_hyper["hidden_dim"],
+                "num_resnet_layers": dict_best_hyper["num_resnet_layers"],
+                "mlp_units": dict_best_hyper["mlp_units"],
                 "output_dim": num_outputs,
             }
 
@@ -503,55 +671,47 @@ class Predictor:
         # Device handling
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
-
         # Optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
+        x_train, x_val, _y_train, _y_val = train_test_split(
+            training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
+        )
         # Dataloader
-        train_loader = DataLoader(training_data.X_train, batch_size=64, shuffle=True)
+        train_loader = DataLoader(x_train, batch_size=64, shuffle=True)
 
-        # Choose task + loss
-        if self.figure_of_merit == "hellinger_distance":
-            loss_fn = nn.MSELoss()
-            task = "regression"
-        else:
-            if num_outputs == 1:
-                loss_fn = nn.BCEWithLogitsLoss()
-                task = "binary"
-            else:
-                loss_fn = nn.CrossEntropyLoss()
-                task = "multiclass"
-
-        # Train (your helpers should handle model.train(), moving batches to device, etc.)
+        val_loader = DataLoader(x_val, batch_size=64, shuffle=False)
         if task == "regression":
             train_regression_model(
-                model=model,
-                train_loader=train_loader,
-                optimizer=optimizer,
-                loss_fn=loss_fn,
+                model,
+                train_loader,
+                optimizer,
+                loss_fn,
                 num_epochs=100,
                 device=device,
+                verbose=False,
+                val_loader=val_loader,
+                patience=10,
+                min_delta=0.0,
+                restore_best=True,
+                scheduler=None,
             )
-        elif task == "binary":
+        else:
             train_classification_model(
-                model=model,
-                train_loader=train_loader,
-                optimizer=optimizer,
-                loss_fn=loss_fn,
+                model,
+                train_loader,
+                optimizer,
+                loss_fn,
                 num_epochs=100,
-                task="binary",
+                task=task,
                 device=device,
+                verbose=False,
+                val_loader=val_loader,
+                patience=10,
+                min_delta=0.0,
+                restore_best=True,
+                scheduler=None,
             )
-        else:  # multiclass
-            train_classification_model(
-                model=model,
-                train_loader=train_loader,
-                optimizer=optimizer,
-                loss_fn=loss_fn,
-                num_epochs=100,
-                task="multiclass",
-                device=device,
-            )
+
         # Save the model
         torch.save(model.state_dict(), save_mdl_path)
         return model
@@ -619,7 +779,7 @@ class Predictor:
         names_list = [el.circuit_name for el in training_data]
         y = [el.target_label for el in training_data]
         # split data graph
-        training_data, train_y, test_data, test_y, train_indices, test_indices = train_test_split(
+        training_data, test_data, train_y, test_y, train_indices, test_indices = train_test_split(
             training_data, y, indices, test_size=0.3, random_state=5
         )
 
