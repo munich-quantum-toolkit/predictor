@@ -171,7 +171,7 @@ ignore_missing_imports = true
 
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna"]
+module = ["torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
