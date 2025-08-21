@@ -38,7 +38,7 @@ from qiskit.qasm2 import dump
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from torch_geometric.data import Data
-
+from optuna.samplers import TPESampler
 from mqt.predictor.hellinger import get_hellinger_model_path, get_hellinger_model_path_gnn
 from mqt.predictor.ml.helper import (
     TrainingData,
@@ -607,7 +607,7 @@ class Predictor:
                 task = "multiclass"
             classes = [dev.description for dev in self.devices]
 
-        sampler_obj = optuna.samplers.TPESampler(n_startup_trials=10)
+        sampler_obj = TPESampler(n_startup_trials=10)
 
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
