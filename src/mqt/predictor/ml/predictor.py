@@ -130,6 +130,8 @@ def setup_device_predictor(
     path_training_data: Path | None = None,
     timeout: int = 600,
     gnn: bool = False,
+    number_epochs: int = 100,
+    number_trials: int = 50,
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -141,6 +143,8 @@ def setup_device_predictor(
         path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
         timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
         gnn: Whether to use a GNN for training. Defaults to False.
+        number_epochs: The number of epochs to train the GNN model. Defaults to 100.
+        number_trials: The number of trials to run for hyperparameter optimization for the GNN. Defaults to 50.
 
     Returns:
         True if the setup was successful, False otherwise.
@@ -168,7 +172,7 @@ def setup_device_predictor(
             predictor.train_random_forest_model()
             logger.info(f"Trained random forest classifier for {figure_of_merit}")
         else:
-            predictor.train_gnn_model()
+            predictor.train_gnn_model(number_epochs=number_epochs, number_trials=number_trials)
             logger.info(f"Trained random GNN for {figure_of_merit}")
 
     except FileNotFoundError:
@@ -580,8 +584,19 @@ class Predictor:
         )
         return mean_val
 
-    def train_gnn_model(self, training_data: TrainingData | None = None) -> nn.Module:
-        """Train the GNN model(s) and return the trained model."""
+    def train_gnn_model(
+        self, training_data: TrainingData | None = None, number_epochs: int = 100, number_trials: int = 50
+    ) -> nn.Module:
+        """Train the GNN model(s) and return the trained model.
+
+        Arguments:
+            training_data: The training data to use for training the model.
+            number_epochs: The number of epochs to train the model.
+            number_trials: The number of trials to run for hyperparameter optimization.
+
+        Returns:
+            The trained GNN model.
+        """
         # Figure out outputs and save path
         if self.figure_of_merit == "hellinger_distance":
             if len(self.devices) != 1:
@@ -627,11 +642,11 @@ class Predictor:
                 loss_fn=loss_fn,
                 k_folds=k_folds,
                 classes=classes,
-                num_epochs=100,
+                num_epochs=number_epochs,
                 patience=10,
             )
 
-        study.optimize(_obj, n_trials=50)
+        study.optimize(_obj, n_trials=number_trials)
         dict_best_hyper = study.best_trial.user_attrs.get("best_hparams")
         # Build model (ensure final layer outputs raw logits/no activation)
         if self.figure_of_merit != "hellinger_distance":
@@ -691,7 +706,7 @@ class Predictor:
                 train_loader,
                 optimizer,
                 loss_fn,
-                num_epochs=100,
+                num_epochs=number_epochs,
                 device=device,
                 verbose=False,
                 val_loader=val_loader,
@@ -706,7 +721,7 @@ class Predictor:
                 train_loader,
                 optimizer,
                 loss_fn,
-                num_epochs=100,
+                num_epochs=number_epochs,
                 task=task,
                 device=device,
                 verbose=False,
