@@ -1,56 +1,59 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Training & evaluation hooks — use YOUR existing helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Replace `user_train_eval` with the actual module/file where your functions live,
 # or paste those definitions above this block and delete the import.
-from sklearn.model_selection import KFold
-from mqt.predictor.ml.helper import (
-    evaluate_classification_model,
-    train_classification_model,
-    evaluate_regression_model,
-    train_regression_model,
-)
-import optuna
-from torch import nn
-import torch
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
+import torch
+from sklearn.model_selection import KFold
+from torch import nn
+from torch_geometric.loader import DataLoader
+
+from mqt.predictor.ml.gnn import GNN
 from mqt.predictor.ml.helper import (
     TrainingData,
-    create_dag,
-    create_feature_vector,
-    get_path_trained_model,
-    get_path_trained_model_gnn,
-    get_path_training_circuits,
-    get_path_training_circuits_compiled,
-    get_path_training_data,
+    evaluate_classification_model,
+    evaluate_regression_model,
     train_classification_model,
     train_regression_model,
 )
-from mqt.predictor.ml.gnn import GNN
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+
+if TYPE_CHECKING:
+    import optuna
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Objective with k-fold CV
 # ──────────────────────────────────────────────────────────────────────────────
-def objective(trial: optuna.Trial,
-              dataset: TrainingData,
-              task: str,
-              in_feats: int,
-              num_outputs: int,
-              device: str,
-              loss_fn: nn.Module,
-              optimizer: torch.optim.Optimizer,
-              k_folds: int,
-              classes:list[str] | None = None,
-              batch_size:int=32,
-              num_epochs:int=100,
-              patience:int=10) -> float:
-
-    """
-    Objective function for Optuna hyperparameter optimization.
+def objective(
+    trial: optuna.Trial,
+    dataset: TrainingData,
+    task: str,
+    in_feats: int,
+    num_outputs: int,
+    device: str,
+    loss_fn: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    k_folds: int,
+    classes: list[str] | None = None,
+    batch_size: int = 32,
+    num_epochs: int = 100,
+    patience: int = 10,
+) -> float:
+    """Objective function for Optuna hyperparameter optimization.
 
     Arguments:
         trial: The Optuna trial object.
@@ -64,6 +67,7 @@ def objective(trial: optuna.Trial,
         batch_size: batch size for training.
         num_epochs: number of epochs for training.
         patience: patience for early stopping.
+
     Returns:
         mean_val: The mean value in validation considering the k-folds.
     """
@@ -79,12 +83,11 @@ def objective(trial: optuna.Trial,
     mlp_choices = [32, 64, 128, 256, 512, 1024]
     mlp_units = [trial.suggest_categorical(f"mlp_units_{i}", mlp_choices) for i in range(mlp_depth)]
 
-
     # Split into k-folds
     kf = KFold(n_splits=k_folds, shuffle=True)
     fold_val_best_losses: list[float] = []
 
-    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):
+    for _fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):
         train_subset = [dataset[i] for i in train_idx]
         val_subset = [dataset[i] for i in val_idx]
         # Transform the data into loaders
@@ -97,8 +100,8 @@ def objective(trial: optuna.Trial,
             num_resnet_layers=num_resnet_layers,
             mlp_units=mlp_units,
             num_outputs=num_outputs,
-            classes=classes).to(device_obj)
-
+            classes=classes,
+        ).to(device_obj)
 
         # Based on the task, do a training and evaluation for regression or classification
         if task == "regression":
@@ -150,7 +153,7 @@ def objective(trial: optuna.Trial,
             "hidden_dim": hidden_dim,
             "num_resnet_layers": num_resnet_layers,
             "mlp_units": mlp_units,
-            "num_outputs": num_outputs,     
+            "num_outputs": num_outputs,
         },
     )
     return mean_val
