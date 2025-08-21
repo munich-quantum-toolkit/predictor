@@ -174,7 +174,7 @@ def setup_device_predictor(
             predictor.train_random_forest_model()
             logger.info(f"Trained random forest classifier for {figure_of_merit}")
         else:
-            predictor.train_gnn_model(number_epochs=number_epochs, number_trials=number_trials)
+            predictor.train_gnn_model(number_epochs=number_epochs, number_trials=number_trials, verbose=verbose)
             logger.info(f"Trained random GNN for {figure_of_merit}")
 
     except FileNotFoundError:
@@ -587,7 +587,11 @@ class Predictor:
         return mean_val
 
     def train_gnn_model(
-        self, training_data: TrainingData | None = None, number_epochs: int = 100, number_trials: int = 50, verbose: bool = False
+        self,
+        training_data: TrainingData | None = None,
+        number_epochs: int = 100,
+        number_trials: int = 50,
+        verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
 
@@ -595,6 +599,7 @@ class Predictor:
             training_data: The training data to use for training the model.
             number_epochs: The number of epochs to train the model.
             number_trials: The number of trials to run for hyperparameter optimization.
+            verbose: Whether to print verbose output during training.
 
 
         Returns:
@@ -735,10 +740,11 @@ class Predictor:
                 scheduler=None,
             )
             if verbose:
-                test_loader = DataLoader(training_data.test_data, batch_size=64, shuffle=False)
-                avg_loss_test = dict_results = evaluate_classification_model(model, test_loader, device=device, verbose=verbose)
+                test_loader = DataLoader(training_data.X_test, batch_size=64, shuffle=False)
+                avg_loss_test = dict_results = evaluate_classification_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                )
                 print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
-
 
         # Save the model
         torch.save(model.state_dict(), save_mdl_path)
