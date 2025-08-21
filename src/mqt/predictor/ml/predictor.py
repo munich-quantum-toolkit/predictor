@@ -587,7 +587,11 @@ class Predictor:
         return mean_val
 
     def train_gnn_model(
-        self, training_data: TrainingData | None = None, number_epochs: int = 100, number_trials: int = 50, verbose: bool = False
+        self,
+        training_data: TrainingData | None = None,
+        number_epochs: int = 100,
+        number_trials: int = 50,
+        verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
 
@@ -736,9 +740,10 @@ class Predictor:
             )
             if verbose:
                 test_loader = DataLoader(training_data.test_data, batch_size=64, shuffle=False)
-                avg_loss_test = dict_results = evaluate_classification_model(model, test_loader, device=device, verbose=verbose)
+                avg_loss_test = dict_results = evaluate_classification_model(
+                    model, test_loader, device=device, verbose=verbose
+                )
                 print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
-
 
         # Save the model
         torch.save(model.state_dict(), save_mdl_path)
