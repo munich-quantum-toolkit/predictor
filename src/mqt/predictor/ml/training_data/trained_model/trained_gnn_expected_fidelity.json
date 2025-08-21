@@ -1,0 +1,8 @@
+{
+  "in_feats": 49,
+  "hidden_dim": 128,
+  "num_resnet_layers": 3,
+  "mlp_units": [128, 512, 1024],
+  "output_dim": 1,
+  "classes": ["ibm_falcon_127"]
+}
