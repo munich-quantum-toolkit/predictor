@@ -592,6 +592,11 @@ class Predictor:
         number_epochs: int = 100,
         number_trials: int = 50,
         verbose: bool = False,
+        self,
+        training_data: TrainingData | None = None,
+        number_epochs: int = 100,
+        number_trials: int = 50,
+        verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
 
