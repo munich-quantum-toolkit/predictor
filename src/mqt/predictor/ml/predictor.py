@@ -750,9 +750,9 @@ class Predictor:
                 scheduler=None,
             )
             if verbose:
-                test_loader = DataLoader(training_data.X_test, batch_size=64, shuffle=False)
+                test_loader = DataLoader(training_data.test_data, batch_size=64, shuffle=False)
                 avg_loss_test = dict_results = evaluate_classification_model(
-                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                    model, test_loader, device=device, verbose=verbose
                 )
                 print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
 
