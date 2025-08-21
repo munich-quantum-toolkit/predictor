@@ -607,7 +607,7 @@ class Predictor:
                 task = "multiclass"
             classes = [dev.description for dev in self.devices]
 
-        sampler_obj = optuna.samplers.TYPESampler(n_startup_trials=10)
+        sampler_obj = optuna.samplers.TPESampler(n_startup_trials=10)
 
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
