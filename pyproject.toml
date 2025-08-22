@@ -162,10 +162,12 @@ exclude = [
     "docs/**",
 ]
 
-
-
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*"]
+# `mqt.bench` and `sb3_contrib` are fully typed but take forever to install in the environment.
+# recent versions of `gym` are typed, but stable-baselines3 pins a very old version of gym.
+# qiskit is not yet marked as typed, but is typed mostly.
+# the other libraries do not have type stubs.
+module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -261,6 +263,7 @@ wille = "wille"
 anc = "anc"
 aer = "aer"
 fom = "fom"
+TPE = "TPE"
 
 
 [tool.repo-review]

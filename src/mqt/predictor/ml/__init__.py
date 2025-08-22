@@ -11,11 +11,9 @@
 from __future__ import annotations
 
 from mqt.predictor.ml import helper
-from mqt.predictor.ml.gnn import GNN
 from mqt.predictor.ml.predictor import Predictor, predict_device_for_figure_of_merit, setup_device_predictor
 
 __all__ = [
-    "GNN",
     "Predictor",
     "helper",
     "predict_device_for_figure_of_merit",

@@ -13,13 +13,11 @@ from __future__ import annotations
 from mqt.predictor.hellinger.utils import (
     calc_device_specific_features,
     get_hellinger_model_path,
-    get_hellinger_model_path_gnn,
     hellinger_distance,
 )
 
 __all__ = [
     "calc_device_specific_features",
     "get_hellinger_model_path",
-    "get_hellinger_model_path_gnn",
     "hellinger_distance",
 ]
