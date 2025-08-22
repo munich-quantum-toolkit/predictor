@@ -34,11 +34,8 @@ import optuna
 import torch
 from joblib import Parallel, delayed, load
 from mqt.bench.targets import get_device
+from optuna.samplers import TPESampler
 
-# typos:ignore-start
-from optuna.samplers import TPESampler  # isort: skip
-
-# typos:ignore-end
 # cspell:disable-next-line
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
@@ -46,7 +43,7 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from torch_geometric.data import Data
 
-from mqt.predictor.hellinger import get_hellinger_model_path, get_hellinger_model_path_gnn
+from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.ml.helper import (
     TrainingData,
     create_dag,
@@ -611,7 +608,7 @@ class Predictor:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
             num_outputs = 1
-            save_mdl_path = str(get_hellinger_model_path_gnn(self.devices[0]))
+            save_mdl_path = str(get_hellinger_model_path(self.devices[0], gnn=True))
         else:
             num_outputs = max(1, len(self.devices))
             save_mdl_path = str(get_path_trained_model_gnn(self.figure_of_merit))
@@ -634,9 +631,7 @@ class Predictor:
                 loss_fn = nn.CrossEntropyLoss()
                 task = "multiclass"
             classes = [dev.description for dev in self.devices]
-        ## typos:ignore-start
-        sampler_obj = TPESampler(n_startup_trials=10)  # isort: skip
-        # # typos:ignore-end
+        sampler_obj = TPESampler(n_startup_trials=10)
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
 

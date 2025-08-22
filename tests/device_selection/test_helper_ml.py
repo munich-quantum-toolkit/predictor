@@ -57,6 +57,3 @@ def test_get_path_training_data() -> None:
     """Test the retrieval of the path to the training data."""
     path = get_path_training_data()
     assert path.exists()
-
-
-test_create_dag()
