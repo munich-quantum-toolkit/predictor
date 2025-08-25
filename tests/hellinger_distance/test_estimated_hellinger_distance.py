@@ -181,8 +181,11 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
+
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
-def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target, gnn: bool) -> None:
+def test_train_and_qcompile_with_hellinger_model(
+    source_path: Path, target_path: Path, device: Target, gnn: bool
+) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
 
@@ -235,7 +238,9 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
         if gnn:
-            assert (get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance.pt").exists()
+            assert (
+                get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance.pt"
+            ).exists()
         else:
             for file in [
                 "training_data_estimated_hellinger_distance.npy",
@@ -312,4 +317,3 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")
     ):
         pred.train_random_forest_model(training_data)
-

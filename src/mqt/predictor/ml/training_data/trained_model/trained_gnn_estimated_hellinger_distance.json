@@ -1,13 +1,8 @@
 {
-    "in_feats": 49,
-    "hidden_dim": 128,
-    "num_resnet_layers": 1,
-    "mlp_units": [
-        64,
-        256
-    ],
-    "output_dim": 1,
-    "classes": [
-        "quantinuum_h2_56"
-    ]
+  "in_feats": 49,
+  "hidden_dim": 128,
+  "num_resnet_layers": 1,
+  "mlp_units": [64, 256],
+  "output_dim": 1,
+  "classes": ["quantinuum_h2_56"]
 }
