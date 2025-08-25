@@ -181,8 +181,8 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
 
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
-
-def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
+@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
+def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target, gnn: bool) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
 
@@ -202,7 +202,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit)
+        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit, gnn=gnn)
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -234,90 +234,23 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         ml_predictor.generate_training_data(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
-
-        for file in [
-            "training_data_estimated_hellinger_distance.npy",
-            "names_list_estimated_hellinger_distance.npy",
-            "scores_list_estimated_hellinger_distance.npy",
-        ]:
-            path = get_path_training_data() / "training_data_aggregated" / file
-            assert path.exists()
+        if gnn:
+            assert (get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance.pt").exists()
+        else:
+            for file in [
+                "training_data_estimated_hellinger_distance.npy",
+                "names_list_estimated_hellinger_distance.npy",
+                "scores_list_estimated_hellinger_distance.npy",
+            ]:
+                path = get_path_training_data() / "training_data_aggregated" / file
+                assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_model()
+        ml_predictor.train_gnn_model() if gnn else ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
         predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit)
-        assert predicted_dev.description in get_available_device_names()
-
-
-def test_train_and_qcompile_with_hellinger_model_gnn(source_path: Path, target_path: Path, device: Target) -> None:
-    """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
-    figure_of_merit = "estimated_hellinger_distance"
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            category=UserWarning,
-            message=f"The connectivity of the device '{device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality.",
-        )
-
-        # 1. Train the reinforcement learning model for circuit compilation
-        rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
-
-        rl_predictor.train_model(
-            timesteps=5,
-            test=True,
-        )
-
-        # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit, gnn=True)
-
-        # Prepare uncompiled circuits
-        if not source_path.exists():
-            source_path.mkdir()
-        if not target_path.exists():
-            target_path.mkdir()
-
-        for i in range(2, 5):
-            qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
-            path = source_path / f"qc{i}.qasm"
-            with path.open("w", encoding="utf-8") as f:
-                dump(qc, f)
-
-        # Generate compiled circuits (using trained RL model)
-        """if sys.platform == "win32":
-            with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.compile_training_circuits(
-                    timeout=600,
-                    path_compiled_circuits=target_path,
-                    path_uncompiled_circuits=source_path,
-                    num_workers=1,
-                )
-        else:
-            ml_predictor.compile_training_circuits(
-                timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-            )"""
-        ml_predictor.compile_training_circuits(
-            timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-        )
-
-        # Generate training data from the compiled circuits
-        ml_predictor.generate_training_data(
-            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
-        )
-
-        for file in ["graph_dataset_estimated_hellinger_distance.pt"]:
-            path = get_path_training_data() / "training_data_aggregated" / file
-            assert path.exists()
-
-        # Train the ML model
-        ml_predictor.train_gnn_model()
-        qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-
-        # Test the prediction
-        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit, gnn=True)
         assert predicted_dev.description in get_available_device_names()
 
 
@@ -379,3 +312,4 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")
     ):
         pred.train_random_forest_model(training_data)
+
