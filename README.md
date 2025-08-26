@@ -104,7 +104,7 @@ In case you are using MQT Predictor in your work, we would be thankful if you re
 
 ```bibtex
 @ARTICLE{quetschlich2025mqtpredictor,
-    AUTHOR      = {N. Quetschlich and L. Burgholzer and R. Will},
+    AUTHOR      = {N. Quetschlich and L. Burgholzer and R. Wille},
     TITLE       = {{MQT Predictor: Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing}},
     YEAR        = {2025},
     JOURNAL     = {ACM Transactions on Quantum Computing (TQC)},
