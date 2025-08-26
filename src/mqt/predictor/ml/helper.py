@@ -275,6 +275,7 @@ def evaluate_classification_model(
     model.eval()
     total_loss, total = 0.0, 0
     all_logits, all_targets = [], []
+    arrays = None
 
     # --- no decorator; use context manager instead ---
     with torch.no_grad():
@@ -323,8 +324,8 @@ def evaluate_classification_model(
             if np.unique(y_bin).size > 1:
                 metrics["roc_auc"] = roc_auc_score(y_bin, probs)
                 metrics["avg_prec"] = average_precision_score(y_bin, probs)
-
-            arrays = (probs, y_bin)
+            if return_arrays:
+                arrays = (probs, y_bin)
 
         elif task == "multiclass":
             probs = torch.softmax(logits, dim=1).numpy()  # [N,K]
@@ -334,11 +335,10 @@ def evaluate_classification_model(
             metrics["accuracy"] = accuracy_score(y_mc, preds)
             metrics["f1_macro"] = f1_score(y_mc, preds, average="macro", zero_division=0)
             metrics["f1_micro"] = f1_score(y_mc, preds, average="micro", zero_division=0)
+            if return_arrays:
+                arrays = (probs, y_mc)
 
-            arrays = (probs, y_mc)
-    if return_arrays:
-        return avg_loss, metrics, arrays
-    return avg_loss, metrics, None
+    return avg_loss, metrics, arrays
 
 
 def train_classification_model(
@@ -598,6 +598,7 @@ def train_regression_model(
             scheduler.step()
 
         if val_loader is not None:
+            val_loss = float("inf")
             val_loss, val_metrics, _ = evaluate_regression_model(
                 model, val_loader, loss_fn, device=str(device), return_arrays=False, verbose=False
             )
@@ -629,7 +630,7 @@ def train_regression_model(
             if improved:
                 best_metric = train_loss
                 best_state = deepcopy(model.state_dict())
-                best_metrics_dict = {"train_loss_at_best": float(train_loss)}
+                best_metrics_dict["train_loss_at_best"] = float(train_loss)
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
