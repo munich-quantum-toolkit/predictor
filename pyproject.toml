@@ -121,6 +121,8 @@ xfail_strict = true
 filterwarnings = [
     'error',
     'ignore:.*pytorch.*:UserWarning:',
+    "ignore:.*torch_geometric.*:UserWarning:",
+    "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
     'ignore:.*Values in x.*:RuntimeWarning:',
     'ignore:.*The least populated class in y has only 3 members, which is less than n_splits=5.*:UserWarning:',
     'ignore:.*divide by zero encountered in det.*:RuntimeWarning:',
@@ -172,8 +174,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["mqt.predictor.ml.*"]
 disallow_subclassing_any = false
-
-
 
 [tool.ruff]
 line-length = 120

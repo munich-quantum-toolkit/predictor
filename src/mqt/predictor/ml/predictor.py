@@ -127,9 +127,7 @@ def setup_device_predictor(
     path_training_data: Path | None = None,
     timeout: int = 600,
     gnn: bool = False,
-    number_epochs: int = 100,
-    number_trials: int = 50,
-    verbose: bool = False,
+    **gnn_kwargs
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -171,7 +169,7 @@ def setup_device_predictor(
             predictor.train_random_forest_model()
             logger.info(f"Trained random forest classifier for {figure_of_merit}")
         else:
-            predictor.train_gnn_model(number_epochs=number_epochs, number_trials=number_trials, verbose=verbose)
+            predictor.train_gnn_model(gnn_kwargs)
             logger.info(f"Trained random GNN for {figure_of_merit}")
 
     except FileNotFoundError:
@@ -450,7 +448,7 @@ class Predictor:
         print(target_label)
         return Data(
             x=x,
-            y=torch.tensor([y], dtype=torch.float),
+            y=torch.tensor([y], dtype=torch.long if len(self.devices) > 2 else torch.float),
             circuit_name=circuit_name,
             edge_index=edge_index,
             target_label=target_label,  # torch.tensor([target_label], dtype=torch.float),
@@ -469,7 +467,7 @@ class Predictor:
         k_folds: int,
         classes: list[str] | None = None,
         batch_size: int = 32,
-        num_epochs: int = 100,
+        num_epochs: int = 10,
         patience: int = 10,
         device: str | None = None,
     ) -> float:
@@ -586,8 +584,8 @@ class Predictor:
     def train_gnn_model(
         self,
         training_data: TrainingData | None = None,
-        number_epochs: int = 100,
-        number_trials: int = 50,
+        number_epochs: int = 10,
+        number_trials: int = 2,
         verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
