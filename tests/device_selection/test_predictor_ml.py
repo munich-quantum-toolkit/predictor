@@ -52,23 +52,13 @@ def test_setup_device_predictor_with_prediction(
             dump(qc, f)
 
     device = get_device("ibm_falcon_127")
-    if gnn:
-        success = setup_device_predictor(
-            devices=[device],
-            figure_of_merit="expected_fidelity",
-            path_uncompiled_circuits=path_uncompiled_circuits,
-            path_compiled_circuits=path_compiled_circuits,
-            gnn=True,
-            number_epochs=10,
-            number_trials=2,
-        )
-    else:
-        success = setup_device_predictor(
-            devices=[device],
-            figure_of_merit="expected_fidelity",
-            path_uncompiled_circuits=path_uncompiled_circuits,
-            path_compiled_circuits=path_compiled_circuits,
-        )
+    success = setup_device_predictor(
+        devices=[device],
+        figure_of_merit="expected_fidelity",
+        path_uncompiled_circuits=path_uncompiled_circuits,
+        path_compiled_circuits=path_compiled_circuits,
+        gnn=gnn
+    )
     assert success
 
     data_path = get_path_training_data() / "training_data_aggregated"
