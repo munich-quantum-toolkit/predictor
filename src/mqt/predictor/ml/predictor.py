@@ -78,42 +78,6 @@ if TYPE_CHECKING:
     from mqt.predictor.reward import figure_of_merit
 
 import json
-import warnings
-
-# ─────────────────────────────────────────────────────────────────────────
-# Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
-warnings.filterwarnings(
-    "ignore",
-    message=r"An issue occurred while importing 'torch-scatter'.*",
-    category=UserWarning,
-    module=r"torch_geometric.typing",
-)
-warnings.filterwarnings(
-    "ignore",
-    message=r"An issue occurred while importing 'torch-spline-conv'.*",
-    category=UserWarning,
-    module=r"torch_geometric.typing",
-)
-warnings.filterwarnings(
-    "ignore",
-    message=r"An issue occurred while importing 'torch-sparse'.*",
-    category=UserWarning,
-    module=r"torch_geometric.typing",
-)
-warnings.filterwarnings(
-    "ignore",
-    message=r"An issue occurred while importing 'torch-geometric'.*",
-    category=UserWarning,
-)
-
-
-warnings.filterwarnings(
-    "ignore",
-    message=r".*'type_params' parameter of 'typing\._eval_type'.*",
-    category=DeprecationWarning,
-)
-
-# ─────────────────────────────────────────────────────────────────────────
 
 plt.rcParams["font.family"] = "Times New Roman"
 
