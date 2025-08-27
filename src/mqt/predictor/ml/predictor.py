@@ -442,7 +442,7 @@ class Predictor:
         patience: int = 10,
         device: str | None = None,
     ) -> float:
-        """Objective function for Optuna hyperparameter optimization.
+        """Objective function for Optuna GNN hyperparameter optimization.
 
         Arguments:
             trial: The Optuna trial object.
