@@ -127,7 +127,7 @@ def setup_device_predictor(
     path_training_data: Path | None = None,
     timeout: int = 600,
     gnn: bool = False,
-    **gnn_kwargs
+    **gnn_kwargs,
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
