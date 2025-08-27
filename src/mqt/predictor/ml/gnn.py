@@ -77,8 +77,6 @@ class GraphConvolutionSage(nn.Module):
         # 2) Global pooling
         return global_mean_pool(x, batch)
 
-        # 3) MLP head
-
 
 class GNN(nn.Module):
     """Architecture composed by a Graph Convolutional part with Sage Convolution module and followed by a MLP."""
@@ -111,38 +109,6 @@ class GNN(nn.Module):
             output_dim: dimension of the output, default is 1 for regression tasks
             classes: list of class names for classification tasks
         """
-        # ─────────────────────────────────────────────────────────────────────────
-        # Suppress torch-geometric "plugin" import warnings (torch-scatter, etc.)
-        warnings.filterwarnings(
-            "ignore",
-            message=r"An issue occurred while importing 'torch-scatter'.*",
-            category=UserWarning,
-            module=r"torch_geometric.typing",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r"An issue occurred while importing 'torch-spline-conv'.*",
-            category=UserWarning,
-            module=r"torch_geometric.typing",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r"An issue occurred while importing 'torch-sparse'.*",
-            category=UserWarning,
-            module=r"torch_geometric.typing",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r"An issue occurred while importing 'torch-geometric'.*",
-            category=UserWarning,
-        )
-
-        warnings.filterwarnings(
-            "ignore",
-            message=r".*'type_params' parameter of 'typing\._eval_type'.*",
-            category=DeprecationWarning,
-        )
-
         super().__init__()
         # Convolutional part
         self.graph_conv = GraphConvolutionSage(
