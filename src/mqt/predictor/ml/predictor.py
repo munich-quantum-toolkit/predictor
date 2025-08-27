@@ -79,6 +79,10 @@ if TYPE_CHECKING:
 
 import json
 
+GNNSample = tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str]
+FeatureSample = tuple[list[float], str]
+TrainingSample = GNNSample | FeatureSample
+
 plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
@@ -320,8 +324,8 @@ class Predictor:
                 continue
 
             if self.gnn:
-                x, y, edge_idx, n_nodes = training_sample
-                gnn_training_sample = Data(x=x, y=y, edge_index=edge_idx, num_nodes=n_nodes)
+                x, y, edge_idx, n_nodes, target_label = training_sample
+                gnn_training_sample = Data(x=x, y=y, edge_index=edge_idx, num_nodes=n_nodes, target_label=target_label)
 
             training_data.append(gnn_training_sample if self.gnn else training_sample)
             names_list.append(circuit_name)
@@ -345,7 +349,7 @@ class Predictor:
         path_uncompiled_circuit: Path,
         path_compiled_circuits: Path,
         logger_level: int = logging.INFO,
-    ) -> tuple[tuple[list[Any], Any], str, list[float]] | Data:
+    ) -> tuple[tuple[list[float], Any] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str], str, list[float]]:
         """Handles to create a training sample from a given file.
 
         Arguments:
@@ -407,25 +411,16 @@ class Predictor:
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
-        if not self.gnn:
+        training_sample: TrainingSample
+        if self.gnn:
+            x, edge_index, number_of_gates = create_dag(qc)
+            y = torch.tensor([[dev.description for dev in self.devices].index(target_label)], dtype=torch.float)
+            training_sample = (x, y, edge_index, number_of_gates, target_label)
+        else:
             feature_vec = create_feature_vector(qc)
             training_sample = (feature_vec, target_label)
-            circuit_name = str(file).split(".")[0]
-            return training_sample, circuit_name, scores_list
-        x, edge_index, number_of_gates = create_dag(qc)
         circuit_name = str(file).split(".")[0]
-        self.devices_description = [dev.description for dev in self.devices]
-        y = self.devices_description.index(target_label)
-        print(target_label)
-        return Data(
-            x=x,
-            y=torch.tensor([y], dtype=torch.long if len(self.devices) > 2 else torch.float),
-            circuit_name=circuit_name,
-            edge_index=edge_index,
-            target_label=target_label,
-            scores_list=scores_list,
-            num_nodes=number_of_gates,
-        )
+        return training_sample, circuit_name, scores_list
 
     def objective(
         self,
@@ -584,7 +579,7 @@ class Predictor:
 
         # Prepare data
         if training_data is None:
-            training_data = self._get_prepared_training_graphs()
+            training_data = self._get_prepared_training_data()
         number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
 
         if self.figure_of_merit == "hellinger_distance":
@@ -761,37 +756,6 @@ class Predictor:
 
         return mdl.best_estimator_
 
-    def _get_prepared_training_graphs(self) -> TrainingData:
-        """Returns the training graphs for the given figure of merit."""
-        with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
-            prefix = f"{self.figure_of_merit}.pt"
-            file_data = path / f"graph_dataset_{prefix}"
-
-            if file_data.is_file():
-                training_data = torch.load(file_data, weights_only=False)
-            else:
-                msg = "Training data not found."
-                raise FileNotFoundError(msg)
-        indices = np.arange(len(training_data), dtype=np.int64)
-        score_list = [el.scores_list for el in training_data]
-        names_list = [el.circuit_name for el in training_data]
-        y = [el.target_label for el in training_data]
-        # split data graph
-        training_data, test_data, train_y, test_y, train_indices, test_indices = train_test_split(
-            training_data, y, indices, test_size=0.3, random_state=5
-        )
-
-        return TrainingData(
-            X_train=training_data,
-            y_train=train_y,
-            X_test=test_data,
-            y_test=test_y,
-            indices_train=train_indices,
-            indices_test=test_indices,
-            names_list=names_list,
-            scores_list=score_list,
-        )
-
     def _get_prepared_training_data(self) -> TrainingData:
         """Returns the training data for the given figure of merit.
 
@@ -800,23 +764,29 @@ class Predictor:
         """
         with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
             prefix = f"{self.figure_of_merit}.npy"
-            file_data = path / f"training_data_{prefix}"
             file_names = path / f"names_list_{prefix}"
             file_scores = path / f"scores_list_{prefix}"
+            file_data = (
+                path / f"training_data_{prefix}" if not self.gnn else path / f"graph_dataset_{self.figure_of_merit}.pt"
+            )
 
             if file_data.is_file() and file_names.is_file() and file_scores.is_file():
-                training_data = np.load(file_data, allow_pickle=True)
+                training_data = (
+                    np.load(file_data, allow_pickle=True) if not self.gnn else torch.load(file_data, weights_only=False)
+                )
                 names_list = list(np.load(file_names, allow_pickle=True))
                 scores_list = [list(scores) for scores in np.load(file_scores, allow_pickle=True)]
             else:
                 msg = "Training data not found."
                 raise FileNotFoundError(msg)
-
-        x_list, y_list = zip(*training_data, strict=False)
-        x = np.array(x_list, dtype=np.float64)
-        y = np.array(y_list, dtype=str)
+        if not self.gnn:
+            x_list, y_list = zip(*training_data, strict=False)
+            x = np.array(x_list, dtype=np.float64)
+            y = np.array(y_list, dtype=str)
+        else:
+            x = training_data
+            y = np.array([el.target_label for el in training_data])
         indices = np.arange(len(y), dtype=np.int64)
-
         x_train, x_test, y_train, y_test, indices_train, indices_test = train_test_split(
             x, y, indices, test_size=0.3, random_state=5
         )

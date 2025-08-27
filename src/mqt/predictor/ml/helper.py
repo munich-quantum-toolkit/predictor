@@ -598,7 +598,6 @@ def train_regression_model(
         val_loss = float("inf")
 
         if val_loader is not None:
-            
             val_loss, val_metrics, _ = evaluate_regression_model(
                 model, val_loader, loss_fn, device=str(device), return_arrays=False, verbose=False
             )
