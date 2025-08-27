@@ -422,7 +422,7 @@ class Predictor:
             y=torch.tensor([y], dtype=torch.long if len(self.devices) > 2 else torch.float),
             circuit_name=circuit_name,
             edge_index=edge_index,
-            target_label=target_label,  # torch.tensor([target_label], dtype=torch.float),
+            target_label=target_label,
             scores_list=scores_list,
             num_nodes=number_of_gates,
         )

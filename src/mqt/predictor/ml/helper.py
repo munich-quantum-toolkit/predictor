@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import math
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib import resources
@@ -164,7 +163,7 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
 
 
 def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
-    """Creates and returns the associate DAG of the quantum circuit.
+    """Creates and returns the feature-annotated DAG of the quantum circuit.
 
     Arguments:
         qc: the quantum circuit to be compiled
@@ -229,7 +228,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
         # 2c) up to 3 angle params
 
-        params[i] = torch.tensor(param_vector(node), dtype=torch.float) % (2 * math.pi)
+        params[i] = torch.tensor(param_vector(node), dtype=torch.float) % (2 * np.pi)
 
         node_vector = torch.cat([onehots, qubits.float(), params], dim=1)
 
@@ -253,7 +252,7 @@ def evaluate_classification_model(
     return_arrays: bool = False,
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
-    """Evaluate the models.
+    """Evaluate the classifier models, it returns a dictionary with all the metrics considered for both binary and multiclass classification.
 
     Arguments:
         model: the model to be evaluated, model's output must be logits
@@ -357,7 +356,7 @@ def train_classification_model(
     restore_best: bool = True,
     scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> None:
-    """Trains the model with optional early stopping on validation loss.
+    """Trains a GNN model with optional early stopping on validation loss.
 
     Arguments:
         model: the model to be trained
@@ -521,7 +520,7 @@ def evaluate_regression_model(
 
     metrics: dict[str, float] = {"loss": float(avg_loss)}
     if preds.size > 0:
-        rmse = float(math.sqrt(mean_squared_error(y_true, preds)))
+        rmse = float(np.sqrt(mean_squared_error(y_true, preds)))
         mae = float(mean_absolute_error(y_true, preds))
         r2 = float(r2_score(y_true, preds)) if np.var(y_true) > 0 else float("nan")
         metrics.update({"rmse": rmse, "mae": mae, "r2": r2})
@@ -596,9 +595,10 @@ def train_regression_model(
         train_loss = running_loss / max(1, total)
         if scheduler is not None:
             scheduler.step()
+        val_loss = float("inf")
 
         if val_loader is not None:
-            val_loss = float("inf")
+            
             val_loss, val_metrics, _ = evaluate_regression_model(
                 model, val_loader, loss_fn, device=str(device), return_arrays=False, verbose=False
             )
