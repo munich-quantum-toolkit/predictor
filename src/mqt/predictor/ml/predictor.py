@@ -15,11 +15,12 @@ import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from joblib import dump as joblib_dump
 from torch import nn
 from torch_geometric.loader import DataLoader
+from typing_extensions import Unpack
 
 from mqt.predictor.ml.gnn import GNN
 
@@ -119,6 +120,14 @@ plt.rcParams["font.family"] = "Times New Roman"
 logger = logging.getLogger("mqt-predictor")
 
 
+class TrainGNNKwargs(TypedDict, total=False):
+    """Arguments for training the GNN model."""
+
+    num_epochs: int
+    num_trials: int
+    verbose: bool
+
+
 def setup_device_predictor(
     devices: list[Target],
     figure_of_merit: figure_of_merit = "expected_fidelity",
@@ -127,7 +136,7 @@ def setup_device_predictor(
     path_training_data: Path | None = None,
     timeout: int = 600,
     gnn: bool = False,
-    **gnn_kwargs
+    **gnn_kwargs: Unpack[TrainGNNKwargs],
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -139,9 +148,7 @@ def setup_device_predictor(
         path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
         timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
         gnn: Whether to use a GNN for training. Defaults to False.
-        number_epochs: The number of epochs to train the GNN model. Defaults to 100.
-        number_trials: The number of trials to run for hyperparameter optimization for the GNN. Defaults to 50.
-        verbose: Whether to print verbose output during training GNN. Defaults to False.
+        gnn_kwargs: Additional keyword arguments for GNN training.
 
     Returns:
         True if the setup was successful, False otherwise.
@@ -169,7 +176,7 @@ def setup_device_predictor(
             predictor.train_random_forest_model()
             logger.info(f"Trained random forest classifier for {figure_of_merit}")
         else:
-            predictor.train_gnn_model(gnn_kwargs)
+            predictor.train_gnn_model(**gnn_kwargs)
             logger.info(f"Trained random GNN for {figure_of_merit}")
 
     except FileNotFoundError:
@@ -584,16 +591,16 @@ class Predictor:
     def train_gnn_model(
         self,
         training_data: TrainingData | None = None,
-        number_epochs: int = 10,
-        number_trials: int = 2,
+        num_epochs: int = 10,
+        num_trials: int = 2,
         verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
 
         Arguments:
             training_data: The training data to use for training the model.
-            number_epochs: The number of epochs to train the model.
-            number_trials: The number of trials to run for hyperparameter optimization.
+            num_epochs: The number of epochs to train the model.
+            num_trials: The number of trials to run for hyperparameter optimization.
             verbose: Whether to print verbose output during training.
 
 
@@ -643,11 +650,11 @@ class Predictor:
                 loss_fn=loss_fn,
                 k_folds=k_folds,
                 classes=classes,
-                num_epochs=number_epochs,
+                num_epochs=num_epochs,
                 patience=10,
             )
 
-        study.optimize(_obj, n_trials=number_trials)
+        study.optimize(_obj, n_trials=num_trials)
         dict_best_hyper = study.best_trial.user_attrs.get("best_hparams")
         # Build model (ensure final layer outputs raw logits/no activation)
         if self.figure_of_merit != "hellinger_distance":
@@ -707,7 +714,7 @@ class Predictor:
                 train_loader,
                 optimizer,
                 loss_fn,
-                num_epochs=number_epochs,
+                num_epochs=num_epochs,
                 device=device,
                 verbose=verbose,
                 val_loader=val_loader,
@@ -722,7 +729,7 @@ class Predictor:
                 train_loader,
                 optimizer,
                 loss_fn,
-                num_epochs=number_epochs,
+                num_epochs=num_epochs,
                 task=task,
                 device=device,
                 verbose=verbose,
