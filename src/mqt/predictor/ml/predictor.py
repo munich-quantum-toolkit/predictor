@@ -321,7 +321,7 @@ class Predictor:
 
             if self.gnn:
                 x, y, edge_idx, n_nodes = training_sample
-                gnn_training_sample = Data(x=x,y=y, edge_index=edge_idx,num_nodes=n_nodes)
+                gnn_training_sample = Data(x=x, y=y, edge_index=edge_idx, num_nodes=n_nodes)
 
             training_data.append(gnn_training_sample if self.gnn else training_sample)
             names_list.append(circuit_name)
