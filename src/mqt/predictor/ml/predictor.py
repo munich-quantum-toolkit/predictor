@@ -314,30 +314,30 @@ class Predictor:
             )
             for filename in path_uncompiled_circuits.glob("*.qasm")
         )
-        if not self.gnn:
-            for sample in results:
-                training_sample, circuit_name, scores = sample
-                if all(score == -1 for score in scores):
-                    continue
-                training_data.append(training_sample)
-                names_list.append(circuit_name)
-                scores_list.append(scores)
+        for sample in results:
+            training_sample, circuit_name, scores = sample
+            if all(score == -1 for score in scores):
+                continue
+
+            if self.gnn:
+                x, y, edge_idx, n_nodes = training_sample
+                gnn_training_sample = Data(x=x,y=y, edge_index=edge_idx,num_nodes=n_nodes)
+
+            training_data.append(gnn_training_sample if self.gnn else training_sample)
+            names_list.append(circuit_name)
+            scores_list.append(scores)
 
             with resources.as_file(path_training_data) as path:
-                data = np.asarray(training_data, dtype=object)
-                np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+                if self.gnn:
+                    torch.save(training_data, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
+                else:
+                    data = np.asarray(training_data, dtype=object)
+                    np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+
                 data = np.asarray(names_list, dtype=str)
                 np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
                 data = np.asarray(scores_list, dtype=object)
                 np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
-        else:
-            dataset = []
-            for sample in results:
-                if all(score == -1 for score in sample.scores_list):
-                    continue
-                dataset.append(sample)
-            with resources.as_file(path_training_data) as path:
-                torch.save(dataset, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
 
     def _generate_training_sample(
         self,
