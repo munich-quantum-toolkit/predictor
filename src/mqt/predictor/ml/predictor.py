@@ -51,7 +51,7 @@ from mqt.predictor.ml.helper import (
     create_feature_vector,
     evaluate_classification_model,
     evaluate_regression_model,
-    get_openqasm_gates,
+    get_openqasm3_gates,
     get_path_trained_model,
     get_path_trained_model_gnn,
     get_path_training_circuits,
@@ -580,7 +580,7 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_data()
-        number_in_features = int(len(get_openqasm_gates()) + 1 + 3 + 3)
+        number_in_features = int(len(get_openqasm3_gates()) + 1 + 3 + 3)
 
         if self.figure_of_merit == "hellinger_distance":
             loss_fn = nn.MSELoss()

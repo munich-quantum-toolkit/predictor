@@ -124,6 +124,49 @@ def get_openqasm_gates() -> list[str]:
     ]
 
 
+def get_openqasm3_gates() -> list[str]:
+    """Returns a list of all quantum gates within the openQASM 3.0 standard header."""
+    return [
+        # Single-qubit
+        "id",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "p",
+        "rx",
+        "ry",
+        "rz",
+        "u",
+        # Two-qubit
+        "cx",
+        "cy",
+        "cz",
+        "ch",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "cu",
+        "swap",
+        # Three-qubit
+        "ccx",
+        "cswap",
+        # OpenQASM 2.0 compatibility
+        "CX",
+        "phase",
+        "cphase",
+        "u1",
+        "u2",
+        "u3",
+    ]
+
+
 def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, int]:
     """Calculates and returns the feature vector of a given quantum circuit gate dictionary."""
     res_dct = dict.fromkeys(get_openqasm_gates(), 0)
@@ -183,7 +226,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     # Transform the circuit into a DAG
     dag = circuit_to_dag(qc)
 
-    unique_gates = [*get_openqasm_gates(), "measure"]
+    unique_gates = [*get_openqasm3_gates(), "measure"]
     gate2idx = {g: i for i, g in enumerate(unique_gates)}
     number_unique_gates = len(unique_gates)
 
