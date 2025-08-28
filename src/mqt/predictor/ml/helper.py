@@ -157,10 +157,7 @@ def get_openqasm3_gates() -> list[str]:
         # Three-qubit
         "ccx",
         "cswap",
-        # OpenQASM 2.0 compatibility
-        "CX",
-        "phase",
-        "cphase",
+        # OpenQasm2 compatibility
         "u1",
         "u2",
         "u3",
