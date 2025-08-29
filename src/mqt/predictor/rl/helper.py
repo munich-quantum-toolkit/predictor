@@ -12,108 +12,21 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.transpiler import PassManager, Target
 
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from numpy.random import Generator
     from numpy.typing import NDArray
-
-    from mqt.predictor.rl.actions import Action
-
-    # from mqt.predictor.rl.actions import Action
 
 import zipfile
 from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
-
-
-def best_of_n_passmanager(
-    action: Action,
-    device: Target,
-    qc: QuantumCircuit,
-    max_iteration: tuple[int, int] = (20, 20),
-    metric_fn: Callable[[QuantumCircuit], float] | None = None,
-) -> tuple[QuantumCircuit, dict[str, Any]]:
-    """Runs the given transpile_pass multiple times and keeps the best result.
-
-    Args:
-        action: The action dictionary with a 'transpile_pass' key
-            (lambda device -> [passes]).
-        device: The target backend or device.
-        qc: The input quantum circuit.
-        max_iteration: A tuple (layout_trials, routing_trials) specifying
-            how many times to try.
-        metric_fn: Optional function to score circuits; defaults to circuit depth.
-
-    Returns:
-        A tuple containing the best transpiled circuit and its corresponding
-        property set.
-    """
-    best_val = None
-    best_result = None
-    best_property_set = None
-
-    if callable(action.transpile_pass):
-        try:
-            if action.name == "SabreLayout+AIRouting":
-                all_passes = action.transpile_pass(device, max_iteration)
-            else:
-                all_passes = action.transpile_pass(device)
-        except TypeError as e:
-            msg = f"Error calling transpile_pass for {action.name}: {e}"
-            raise ValueError(msg) from e
-    else:
-        all_passes = action.transpile_pass
-
-    if not isinstance(all_passes, list):
-        msg = f"Expected list of passes, got {type(all_passes)}"
-        raise TypeError(msg)
-
-    layout_passes = all_passes[:-1]
-    routing_pass = all_passes[-1:]
-
-    # Run layout once
-    layout_pm = PassManager(layout_passes)
-    try:
-        layouted_qc = layout_pm.run(qc)
-        layout_props = dict(layout_pm.property_set)
-    except Exception:
-        return qc, {}
-
-    # Run routing multiple times and optimize for the given metric
-    for i in range(max_iteration[1]):
-        pm = PassManager(routing_pass)
-        pm.property_set.update(layout_props)
-        try:
-            out_circ = pm.run(layouted_qc)
-            prop_set = dict(pm.property_set)
-
-            val = metric_fn(out_circ) if metric_fn else out_circ.depth()
-            if best_val is None or val < best_val:
-                best_val = val
-                best_result = out_circ
-                best_property_set = prop_set
-                if best_val == 0:
-                    break
-        except Exception as e:
-            print(f"[Routing] Trial {i + 1} failed: {e}")
-            continue
-    if best_result is not None:
-        if best_property_set is None:
-            best_property_set = {}
-        return best_result, best_property_set
-    print("All mapping attempts failed; returning original circuit.")
-    return qc, {}
-
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.

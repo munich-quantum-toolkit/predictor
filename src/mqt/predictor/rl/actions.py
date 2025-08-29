@@ -50,6 +50,7 @@ from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import CouplingMap
 from qiskit.transpiler.passes import (
     ApplyLayout,
+    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
     CollectCliffords,
@@ -132,6 +133,7 @@ class Action:
         ]
     )
     stochastic: bool | None = False
+    preserve: bool | None = False
 
 
 @dataclass
@@ -233,7 +235,8 @@ register_action(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        [Optimize1qGatesDecomposition(basis=get_openqasm_gates())],
+        preserve=True,
+        transpile_pass= lambda device: [Optimize1qGatesDecomposition(basis=device.operation_names)],
     )
 )
 
@@ -243,6 +246,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeCancellation()],
+        preserve=True,
     )
 )
 
@@ -252,6 +256,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeInverseCancellation()],
+        preserve=True,
     )
 )
 
@@ -261,6 +266,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [RemoveDiagonalGatesBeforeMeasure()],
+        preserve=True,
     )
 )
 
@@ -285,6 +291,7 @@ register_action(
                 (SXGate(), SXdgGate()),
             ])
         ],
+        preserve=True,
     )
 )
 
@@ -307,6 +314,7 @@ register_action(
             ConsolidateBlocks(basis_gates=native_gate),
             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
         ],
+        preserve=True,
     )
 )
 
@@ -346,56 +354,70 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "QiskitO3",
-        CompilationOrigin.QISKIT,
-        PassType.OPT,
-        transpile_pass=lambda native_gate, coupling_map: [
-            Collect2qBlocks(),
-            ConsolidateBlocks(basis_gates=native_gate),
-            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-            Optimize1qGatesDecomposition(basis=native_gate),
-            CommutativeCancellation(basis_gates=native_gate),
-            GatesInBasis(native_gate),
-            ConditionalController(
-                common.generate_translation_passmanager(
-                    target=None, basis_gates=native_gate, coupling_map=coupling_map
-                ).to_flow_controller(),
-                condition=lambda property_set: not property_set["all_gates_in_basis"],
-            ),
-            Depth(recurse=True),
-            FixedPoint("depth"),
-            Size(recurse=True),
-            FixedPoint("size"),
-            MinimumPoint(["depth", "size"], "optimization_loop"),
-        ],
-        do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
-    )
-)
+# register_action(
+#     DeviceDependentAction(
+#         "QiskitO3",
+#         CompilationOrigin.QISKIT,
+#         PassType.OPT,
+#         transpile_pass=lambda native_gate, coupling_map: [
+#             Collect2qBlocks(),
+#             ConsolidateBlocks(basis_gates=native_gate),
+#             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+#             Optimize1qGatesDecomposition(basis=native_gate),
+#             CommutativeCancellation(basis_gates=native_gate),
+#             GatesInBasis(native_gate),
+#             ConditionalController(
+#                 common.generate_translation_passmanager(
+#                     target=None, basis_gates=native_gate, coupling_map=coupling_map
+#                 ).to_flow_controller(),
+#                 condition=lambda property_set: not property_set["all_gates_in_basis"],
+#             ),
+#             Depth(recurse=True),
+#             FixedPoint("depth"),
+#             Size(recurse=True),
+#             FixedPoint("size"),
+#             MinimumPoint(["depth", "size"], "optimization_loop"),
+#         ],
+#         do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
+#     )
+# )
 
-register_action(
-    DeviceDependentAction(
-        "BQSKitO2",
-        CompilationOrigin.BQSKIT,
-        PassType.OPT,
-        transpile_pass=lambda circuit: bqskit_compile(
-            circuit,
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-            seed=10,
-            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-        ),
-    )
-)
+# register_action(
+#     DeviceDependentAction(
+#         "BQSKitO2",
+#         CompilationOrigin.BQSKIT,
+#         PassType.OPT,
+#         transpile_pass=lambda circuit: bqskit_compile(
+#             circuit,
+#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+#             seed=10,
+#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+#         ),
+#     )
+# )
 
 register_action(
     DeviceDependentAction(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
-        transpile_pass=lambda device: VF2PostLayout(target=device, time_limit=100),
+        transpile_pass=lambda device: VF2PostLayout(target=device, call_limit=30000000, max_trials=250000),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "TrivialLayout",
+        CompilationOrigin.QISKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: [
+            TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+            EnlargeWithAncilla(),
+            ApplyLayout(),
+        ],
     )
 )
 
@@ -419,7 +441,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
         transpile_pass=lambda device: [
-            VF2Layout(target=device),
+            VF2Layout(target=device, call_limit=30000000, max_trials=250000),
             ConditionalController(
                 [
                     FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
@@ -432,6 +454,23 @@ register_action(
         ],
     )
 )
+
+# register_action(
+#     DeviceDependentAction(
+#         "SabreLayout",
+#         CompilationOrigin.QISKIT,
+#         PassType.LAYOUT,
+#         transpile_pass=lambda device: [
+#             SabreLayout(
+#                 coupling_map=CouplingMap(device.build_coupling_map()), 
+#                 skip_routing=True,
+#             ),
+#             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+#             EnlargeWithAncilla(),
+#             ApplyLayout(),
+#         ],
+#     )
+# )
 
 register_action(
     DeviceDependentAction(
@@ -447,205 +486,96 @@ register_action(
 
 register_action(
     DeviceDependentAction(
+        "BasicSwap",
+        CompilationOrigin.QISKIT,
+        PassType.ROUTING,
+        transpile_pass=lambda device: [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))],
+    )
+)
+# register_action(
+#     DeviceDependentAction(
+#         "SabreSwap",
+#         CompilationOrigin.QISKIT,
+#         PassType.ROUTING,
+#         stochastic=True,
+#         transpile_pass=lambda device: [
+#             SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay")
+#         ],
+#     )
+# )
+
+# register_action(
+#     DeviceDependentAction(
+#         "AIRouting",
+#         CompilationOrigin.QISKIT,
+#         PassType.ROUTING,
+#         stochastic=True,
+#         transpile_pass=lambda device: [
+#                 SafeAIRouting(
+#                     coupling_map=device.build_coupling_map(),
+#                     optimization_level=3,
+#                     layout_mode="improve", 
+#                     local_mode=True
+#                 )
+#             ],
+#     )
+# )
+
+register_action(
+    DeviceDependentAction(
         "SabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
         # Qiskit O3 by default uses (max_iterations, layout_trials, swap_trials) = (4, 20, 20)
-        transpile_pass=lambda device, max_iteration=(20, 20): [
+        transpile_pass=lambda device: [
             SabreLayout(
                 coupling_map=CouplingMap(device.build_coupling_map()),
                 skip_routing=False,
-                layout_trials=max_iteration[0],
-                swap_trials=max_iteration[1],
-                max_iterations=4,
                 seed=None,
             ),
         ],
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "SabreLayout+AIRouting",
-        CompilationOrigin.QISKIT,
-        PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20, 20): [
-            SabreLayout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                skip_routing=True,
-                layout_trials=max_iteration[0],
-                swap_trials=max_iteration[1],
-                max_iterations=4,
-                seed=None,
-            ),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
-        ],
-    )
-)
+# register_action(
+#     DeviceDependentAction(
+#         "AIRouting_opt", 
+#         CompilationOrigin.QISKIT,
+#         PassType.MAPPING,
+#         stochastic=True,
+#         transpile_pass=lambda device: [
+#             ### Requires a initial layout, but "optimize" mode overwrites it
+#             TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+#             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+#             EnlargeWithAncilla(),
+#             ApplyLayout(),
+#             SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+#         ],
+#     )
+# )
 
-register_action(
-    DeviceDependentAction(
-        "AIRouting",
-        CompilationOrigin.QISKIT,
-        PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device: [
-            ### Requires a initial layout, but "optimize" mode overwrites it
-            TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
-        ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        "BQSKitMapping",
-        CompilationOrigin.BQSKIT,
-        PassType.MAPPING,
-        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-            bqskit_circuit,
-            model=MachineModel(
-                num_qudits=device.num_qubits,
-                gate_set=get_bqskit_native_gates(device),
-                coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-            ),
-            with_mapping=True,
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-            seed=10,
-            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-        ),
-    )
-)
-
-
-register_action(
-    DeviceDependentAction(
-        name="DenseLayout+SabreSwap",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20, 20): [
-            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SabreSwap(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                heuristic="decay",
-                trials=max_iteration[1],
-                seed=None,
-            ),
-        ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        name="DenseLayout+AIRouting",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device: [
-            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
-        ],
-    )
-)
-
-
-register_action(
-    DeviceDependentAction(
-        name="VF2Layout+SabreSwap",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device, max_iteration=(20, 20): [
-            VF2Layout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                target=device,
-                call_limit=30000000,
-                max_trials=250000,
-            ),
-            ConditionalController(
-                [
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                == VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            ConditionalController(
-                [
-                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                # Run if VF2Layout did not find a solution
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                != VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            SabreSwap(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                heuristic="decay",
-                trials=max_iteration[1],
-                seed=None,
-            ),
-        ],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        name="VF2Layout+AIRouting",
-        origin=CompilationOrigin.QISKIT,
-        pass_type=PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device: [
-            VF2Layout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                target=device,
-                call_limit=30000000,
-                max_trials=250000,
-            ),
-            ConditionalController(
-                [
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                == VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            ConditionalController(
-                [
-                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                # Run if VF2Layout did not find a solution
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                != VF2LayoutStopReason.SOLUTION_FOUND,
-            ),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="improve"),
-        ],
-    )
-)
+# register_action(
+#     DeviceDependentAction(
+#         "BQSKitMapping",
+#         CompilationOrigin.BQSKIT,
+#         PassType.MAPPING,
+#         transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+#             bqskit_circuit,
+#             model=MachineModel(
+#                 num_qudits=device.num_qubits,
+#                 gate_set=get_bqskit_native_gates(device),
+#                 coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
+#             ),
+#             with_mapping=True,
+#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+#             seed=10,
+#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+#         ),
+#     )
+# )
 
 register_action(
     DeviceDependentAction(
@@ -658,22 +588,22 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "BQSKitSynthesis",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-            bqskit_circuit,
-            model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-            seed=10,
-            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-        ),
-    )
-)
+# register_action(
+#     DeviceDependentAction(
+#         "BQSKitSynthesis",
+#         CompilationOrigin.BQSKIT,
+#         PassType.SYNTHESIS,
+#         transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+#             bqskit_circuit,
+#             model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
+#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+#             seed=10,
+#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+#         ),
+#     )
+# )
 
 register_action(
     DeviceIndependentAction(

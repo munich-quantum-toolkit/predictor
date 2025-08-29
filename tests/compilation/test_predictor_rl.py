@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 import pytest
+from qiskit_ibm_runtime import QiskitRuntimeService
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
@@ -30,7 +31,7 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
-from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+from mqt.predictor.rl.helper import create_feature_dict
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -68,30 +69,45 @@ def test_qcompile_with_newly_trained_models() -> None:
     Important: Those trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
-    figure_of_merit = "expected_fidelity"
-    device = get_device("ibm_falcon_127")
-    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
-    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+    # figure_of_merit = "expected_fidelity"
+    # device = get_device("ibm_eagle_127")
+    # qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 20)
+    # predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-    model_name = "model_" + figure_of_merit + "_" + device.description
-    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
-    if not model_path.exists():
-        with pytest.raises(
-            FileNotFoundError,
-            match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-            ),
-        ):
-            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    # model_name = "model_" + figure_of_merit + "_" + device.description
+    # model_path = Path(get_path_trained_model() / (model_name + ".zip"))
+    # if not model_path.exists():
+    #     with pytest.raises(
+    #         FileNotFoundError,
+    #         match=re.escape(
+    #             "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+    #         ),
+    #     ):
+    #         rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    figure_of_merit = "expected_fidelity"
+
+    api_token = "f--aKMqeiWLjkaazIlxEFVKxJ5cVgAqhxbP9K87iPbP2"
+    available_devices = ["ibm_brisbane", "ibm_torino"]
+    device = available_devices[0]
+
+    service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
+    backend = service.backend(device)
+    backend.target.description = "ibm_brisbane"  # HACK
+    print(backend.target)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=backend.target)
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 17, target=backend.target)
 
     predictor.train_model(
-        timesteps=100,
-        test=True,
+        timesteps=100000,
+        test=False,
     )
 
-    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    qc_compiled, reward, compilation_information = rl_compile(
+        qc, device=backend.target, figure_of_merit=figure_of_merit
+    )
+    print(f"Fidelity: {reward}")
 
-    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
+    check_nat_gates = GatesInBasis(basis_gates=backend.target.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 

@@ -51,7 +51,7 @@ class Predictor:
     def compile_as_predicted(
         self,
         qc: QuantumCircuit,
-    ) -> tuple[QuantumCircuit, list[str]]:
+    ) -> tuple[QuantumCircuit, float, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
@@ -76,10 +76,19 @@ class Predictor:
             action = int(action)
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
-            obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+            # if action_item.name == "terminate":
+            # swap_count = self.env.state.count_ops().get("swap", 0)
+            # depth = self.env.state.depth()
+            # critical_depth = reward.crit_depth(self.env.state)
+            # esp= reward.estimated_success_probability(self.env.state, self.env.device)
+            obs, reward_val, terminated, truncated, _info = self.env.step(action)
 
         if not self.env.error_occurred:
-            return self.env.state, used_compilation_passes
+            return (
+                self.env.state,
+                reward_val,
+                used_compilation_passes,
+            )  # swap_count, depth, critical_depth, esp
 
         msg = "Error occurred during compilation."
         raise RuntimeError(msg)
@@ -110,7 +119,7 @@ class Predictor:
             n_steps = 2048
             n_epochs = 10
             batch_size = 64
-            progress_bar = True
+            progress_bar = False
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
         model = MaskablePPO(
@@ -181,4 +190,5 @@ def rl_compile(
     else:
         predictor = predictor_singleton
 
-    return predictor.compile_as_predicted(qc)
+    qc, _, info = predictor.compile_as_predicted(qc)
+    return qc, info
