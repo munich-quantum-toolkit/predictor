@@ -1,6 +1,7 @@
 # Welcome to MQT Predictor's documentation!
 
-MQT Predictor is a tool for Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing developed as part of the [Munich Quantum Toolkit](https://mqt.readthedocs.io) (_MQT_).
+MQT Predictor is a tool for automatic device selection with device-specific circuit compilation for quantum computing.
+It is part of the _{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`_.
 
 From a user's perspective, the framework works as follows:
 
@@ -12,25 +13,26 @@ The compiled circuit is returned together with the compilation information and t
 
 The MQT Predictor framework is based on two main components:
 
-- An [Automatic Device Selection](device_selection.md) component that predicts the most suitable device for a given quantum circuit and figure of merit.
-- A [Device-Specific Circuit Compilation](compilation.md) component that compiles a given quantum circuit for a given device.
+- An {doc}`Automatic Device Selection <device_selection>` component that predicts the most suitable device for a given quantum circuit and figure of merit.
+- A {doc}`Device-Specific Circuit Compilation <compilation>` component that compiles a given quantum circuit for a given device.
 
-Combining these two components, the framework can be used to automatically compile a given quantum circuit for the most suitable device optimizing a [customizable figure of merit](figure_of_merit.md).
-How to install the framework is described in the [installation](installation.md) section, how to set it up in the [setup](setup.md) section, and how to use it in the [quickstart](quickstart.md) section.
+Combining these two components, the framework can be used to automatically compile a given quantum circuit for the most suitable device optimizing a {doc}`customizable figure of merit <figure_of_merit>`.
+How to install the framework is described in the {doc}`installation section <installation>`, how to set it up in the {doc}`setup section <setup>` section, and how to use it in the {doc}`quickstart section <quickstart>` section.
 
-If you are interested in the theory behind MQT Predictor, have a look at the publications in the [references list](references.md).
+If you are interested in the theory behind MQT Predictor, have a look at the publications in the {doc}`references list <references>`.
 
 ---
 
 ```{toctree}
-:hidden: true
+:hidden:
 
 self
 ```
 
 ```{toctree}
 :caption: User Guide
-:glob: true
+:glob:
+:hidden:
 :maxdepth: 1
 
 installation
@@ -44,7 +46,8 @@ references
 
 ```{toctree}
 :caption: Developers
-:glob: true
+:glob:
+:hidden:
 :maxdepth: 1
 
 contributing
