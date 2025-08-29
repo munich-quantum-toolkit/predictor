@@ -14,13 +14,13 @@ import re
 from pathlib import Path
 
 import pytest
-from qiskit_ibm_runtime import QiskitRuntimeService
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
 from qiskit.transpiler.passes import GatesInBasis
+from qiskit_ibm_runtime import QiskitRuntimeService
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -86,7 +86,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     #         rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
     figure_of_merit = "expected_fidelity"
 
-    api_token = "f--aKMqeiWLjkaazIlxEFVKxJ5cVgAqhxbP9K87iPbP2"
+    api_token = ""
     available_devices = ["ibm_brisbane", "ibm_torino"]
     device = available_devices[0]
 
