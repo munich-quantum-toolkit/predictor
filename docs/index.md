@@ -51,7 +51,6 @@ references
 :maxdepth: 1
 
 contributing
-development_guide
 support
 ```
 
