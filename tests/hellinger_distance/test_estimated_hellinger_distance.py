@@ -182,7 +182,10 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
 
-def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
+@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
+def test_train_and_qcompile_with_hellinger_model(
+    source_path: Path, target_path: Path, device: Target, gnn: bool
+) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
 
@@ -202,7 +205,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit)
+        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit, gnn=gnn)
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -220,7 +223,10 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         if sys.platform == "win32":
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.compile_training_circuits(
-                    timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
+                    timeout=600,
+                    path_compiled_circuits=target_path,
+                    path_uncompiled_circuits=source_path,
+                    num_workers=1,
                 )
         else:
             ml_predictor.compile_training_circuits(
@@ -231,17 +237,21 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         ml_predictor.generate_training_data(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
-
-        for file in [
-            "training_data_estimated_hellinger_distance.npy",
-            "names_list_estimated_hellinger_distance.npy",
-            "scores_list_estimated_hellinger_distance.npy",
-        ]:
-            path = get_path_training_data() / "training_data_aggregated" / file
-            assert path.exists()
+        if gnn:
+            assert (
+                get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance.pt"
+            ).exists()
+        else:
+            for file in [
+                "training_data_estimated_hellinger_distance.npy",
+                "names_list_estimated_hellinger_distance.npy",
+                "scores_list_estimated_hellinger_distance.npy",
+            ]:
+                path = get_path_training_data() / "training_data_aggregated" / file
+                assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_model()
+        ml_predictor.train_gnn_model() if gnn else ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
@@ -269,10 +279,16 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
             if file.suffix == ".npy":
                 file.unlink()
 
+    data_path = get_path_training_data() / "training_data_aggregated"
+    if data_path.exists():
+        for file in data_path.iterdir():
+            if file.suffix == ".pt":
+                file.unlink()
+
     model_path = get_path_training_data() / "trained_model"
     if model_path.exists():
         for file in model_path.iterdir():
-            if file.suffix == ".joblib":
+            if file.suffix == ".joblib" or file.suffix == ".pth" or file.suffix == ".json":
                 file.unlink()
 
 
