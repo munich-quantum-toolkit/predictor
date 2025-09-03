@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import ctypes
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,7 @@ import zipfile
 from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
+
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
@@ -88,7 +90,6 @@ def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float6
     feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)
     feature_dict["parallelism"] = np.array([supermarq_features.parallelism], dtype=np.float32)
     feature_dict["liveness"] = np.array([supermarq_features.liveness], dtype=np.float32)
-
     return feature_dict
 
 
@@ -105,3 +106,9 @@ def get_path_trained_model() -> Path:
 def get_path_training_circuits() -> Path:
     """Returns the path to the training circuits folder used for RL training."""
     return get_path_training_data() / "training_circuits"
+
+def trim_memory() -> None:
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception as e:
+        pass  # Not available on all platforms

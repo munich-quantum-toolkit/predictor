@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+from collections import deque
+from copy import deepcopy
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
@@ -21,12 +23,13 @@ from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.helper import get_path_trained_model, logger
 from mqt.predictor.rl.predictorenv import PredictorEnv
+from mqt.predictor.reward import figure_of_merit, crit_depth, estimated_success_probability
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
 
-    from mqt.predictor.reward import figure_of_merit
+    from mqt.predictor.reward import figure_of_merit, crit_depth, estimated_success_probability
 
 
 class Predictor:
@@ -70,17 +73,39 @@ class Predictor:
         used_compilation_passes = []
         terminated = False
         truncated = False
+        recent_actions = deque(maxlen=8)
+        blocked_actions = set()
         while not (terminated or truncated):
             action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+            if blocked_actions:
+                action_masks = deepcopy(action_masks)
+                for idx in blocked_actions:
+                    action_masks[idx] = False
+            action, _ = trained_rl_model.predict(obs, action_masks=action_masks, deterministic=True)
             action = int(action)
+
+            recent_actions.append(action)
+
+            max_cycle_length = 4
+
+            def is_cycle(lst, k):
+                if len(lst) < 2*k:
+                    return False
+                return lst[-2*k:-k] == lst[-k:]
+            
+            for k in range(3, max_cycle_length+1):
+                if is_cycle(list(recent_actions), k):
+                    print(f"Avoiding {k}-cycle infinite loop pattern")
+                    for cyc_action in set(list(recent_actions)[-k:]):
+                        blocked_actions.add(cyc_action)
+                    break
+
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
-            # if action_item.name == "terminate":
-            # swap_count = self.env.state.count_ops().get("swap", 0)
-            # depth = self.env.state.depth()
-            # critical_depth = reward.crit_depth(self.env.state)
-            # esp= reward.estimated_success_probability(self.env.state, self.env.device)
+            if action_item.name == "terminate":
+                depth = self.env.state.depth()
+                critical_depth = crit_depth(self.env.state)
+                esp= estimated_success_probability(self.env.state, self.env.device)
             obs, reward_val, terminated, truncated, _info = self.env.step(action)
 
         if not self.env.error_occurred:
@@ -88,7 +113,7 @@ class Predictor:
                 self.env.state,
                 reward_val,
                 used_compilation_passes,
-            )  # swap_count, depth, critical_depth, esp
+                depth, critical_depth, esp)
 
         msg = "Error occurred during compilation."
         raise RuntimeError(msg)
@@ -122,20 +147,27 @@ class Predictor:
             progress_bar = False
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
-        model = MaskablePPO(
-            MaskableMultiInputActorCriticPolicy,
-            self.env,
-            verbose=verbose,
-            tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
-            gamma=0.98,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            n_epochs=n_epochs,
-        )
+        # model = MaskablePPO(
+        #     MaskableMultiInputActorCriticPolicy,
+        #     self.env,
+        #     verbose=verbose,
+        #     tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
+        #     gamma=0.98,
+        #     n_steps=n_steps,
+        #     batch_size=batch_size,
+        #     n_epochs=n_epochs,
+        # )
+        model = MaskablePPO.load(
+                get_path_trained_model() / "model_expected_fidelity_ibm_brisbane.zip",
+                env=self.env,
+                verbose=verbose,
+                device="cuda",
+            )
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
         model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
         model.save(get_path_trained_model() / (model_name + "_" + self.figure_of_merit + "_" + self.device_name))
+        print("Model saved")
 
 
 def load_model(model_name: str) -> MaskablePPO:
@@ -190,5 +222,5 @@ def rl_compile(
     else:
         predictor = predictor_singleton
 
-    qc, _, info = predictor.compile_as_predicted(qc)
-    return qc, info
+    qc, reward, info, depth, critical_depth, esp = predictor.compile_as_predicted(qc)
+    return qc, reward, info, depth, critical_depth, esp

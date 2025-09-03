@@ -12,15 +12,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import pandas as pd
 
 import pytest
+from qiskit_ibm_runtime import QiskitRuntimeService
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
 from qiskit.transpiler.passes import GatesInBasis
-from qiskit_ibm_runtime import QiskitRuntimeService
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -31,7 +32,8 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
-from mqt.predictor.rl.helper import create_feature_dict
+from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits
+from qiskit import QuantumCircuit
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -93,19 +95,18 @@ def test_qcompile_with_newly_trained_models() -> None:
     service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
     backend = service.backend(device)
     backend.target.description = "ibm_brisbane"  # HACK
-    print(backend.target)
+    print(backend.configuration().dt)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=backend.target)
     qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 17, target=backend.target)
 
     predictor.train_model(
-        timesteps=100000,
+        timesteps=30000,
         test=False,
     )
 
-    qc_compiled, reward, compilation_information = rl_compile(
+    qc_compiled, compilation_information = rl_compile(
         qc, device=backend.target, figure_of_merit=figure_of_merit
     )
-    print(f"Fidelity: {reward}")
 
     check_nat_gates = GatesInBasis(basis_gates=backend.target.operation_names)
     check_nat_gates(qc_compiled)
@@ -152,3 +153,49 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
+
+
+def test_evaluations() -> None:
+    test_dir = get_path_training_circuits() / "new_indep_circuits" / "test"
+    results_dir = Path(__file__).resolve().parent / "results" / "baseline"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    output_path = results_dir / "info.csv"
+    figure_of_merit = "expected_fidelity"
+
+    api_token = ""
+    available_devices = ["ibm_brisbane", "ibm_torino"]
+    device = available_devices[0]
+
+    service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
+    backend = service.backend(device)
+    backend.target.description = "ibm_brisbane"  # HACK
+    model_results = []
+    model_label= "baseline"
+    for file_path in test_dir.glob("*.qasm"):
+        file_name = file_path.name
+        print(f"File: {file_name}")
+        qc = QuantumCircuit.from_qasm_file(str(file_path))
+        qc_compiled, reward, info, depth, critical_depth, esp = rl_compile(
+            qc, device=backend.target, figure_of_merit=figure_of_merit
+        )
+        model_results.append({
+            "model": model_label,
+            "file": file_path.name,
+            "depth": depth,
+            "crit_depth": critical_depth,
+            "esp": esp,
+            "reward": reward,
+            "ep_length_mean": len(info)
+        })
+        print(f"✅ Size {qc.num_qubits} | File: {file_path.name} | "
+            f"Reward: {reward:.4f} | "
+            f"Depth: {depth} | "
+            f"Critical Depth: {critical_depth} |"
+            f"ESP: {esp} |"
+            f"Mean Steps: {len(info):.1f}")
+        
+    df = pd.DataFrame(model_results)
+    df.sort_values(by=["depth", "model"], inplace=True)
+    df.to_csv(output_path, index=False)
+    print(f"📁 Results saved to: {output_path}")
+

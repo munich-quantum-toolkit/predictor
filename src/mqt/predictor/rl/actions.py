@@ -10,14 +10,11 @@
 
 from __future__ import annotations
 
-import os
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from bqskit import MachineModel
-from bqskit import compile as bqskit_compile
 from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
@@ -58,31 +55,23 @@ from qiskit.transpiler.passes import (
     CommutativeInverseCancellation,
     ConsolidateBlocks,
     DenseLayout,
-    Depth,
     EnlargeWithAncilla,
-    FixedPoint,
     FullAncillaAllocation,
-    GatesInBasis,
     InverseCancellation,
-    MinimumPoint,
     Optimize1qGatesDecomposition,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
-    SabreSwap,
-    Size,
     TrivialLayout,
     UnitarySynthesis,
     VF2Layout,
     VF2PostLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
-from qiskit.transpiler.preset_passmanagers import common
 from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
-    get_bqskit_native_gates,
 )
 
 if TYPE_CHECKING:
@@ -230,13 +219,22 @@ def get_openqasm_gates() -> list[str]:
     ]
 
 
+# register_action(
+#     DeviceIndependentAction(
+#         "Optimize1qGatesDecomposition",
+#         CompilationOrigin.QISKIT,
+#         PassType.OPT,
+#         preserve=True,
+#         transpile_pass=lambda device: [Optimize1qGatesDecomposition(basis=device.operation_names)],
+#     )
+# )
+
 register_action(
     DeviceIndependentAction(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        preserve=True,
-        transpile_pass= lambda device: [Optimize1qGatesDecomposition(basis=device.operation_names)],
+        [Optimize1qGatesDecomposition()],
     )
 )
 
@@ -304,17 +302,26 @@ register_action(
     )
 )
 
+# register_action(
+#     DeviceDependentAction(
+#         "Opt2qBlocks",
+#         CompilationOrigin.QISKIT,
+#         PassType.OPT,
+#         transpile_pass=lambda native_gate, coupling_map: [
+#             Collect2qBlocks(),
+#             ConsolidateBlocks(basis_gates=native_gate),
+#             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+#         ],
+#         preserve=True,
+#     )
+# )
+
 register_action(
-    DeviceDependentAction(
+    DeviceIndependentAction(
         "Opt2qBlocks",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        transpile_pass=lambda native_gate, coupling_map: [
-            Collect2qBlocks(),
-            ConsolidateBlocks(basis_gates=native_gate),
-            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-        ],
-        preserve=True,
+        [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
     )
 )
 
@@ -403,7 +410,7 @@ register_action(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
-        transpile_pass=lambda device: VF2PostLayout(target=device, call_limit=30000000, max_trials=250000),
+        transpile_pass=lambda device: VF2PostLayout(target=device),
     )
 )
 
@@ -441,7 +448,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
         transpile_pass=lambda device: [
-            VF2Layout(target=device, call_limit=30000000, max_trials=250000),
+            VF2Layout(target=device),
             ConditionalController(
                 [
                     FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
@@ -462,7 +469,7 @@ register_action(
 #         PassType.LAYOUT,
 #         transpile_pass=lambda device: [
 #             SabreLayout(
-#                 coupling_map=CouplingMap(device.build_coupling_map()), 
+#                 coupling_map=CouplingMap(device.build_coupling_map()),
 #                 skip_routing=True,
 #             ),
 #             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
@@ -514,7 +521,7 @@ register_action(
 #                 SafeAIRouting(
 #                     coupling_map=device.build_coupling_map(),
 #                     optimization_level=3,
-#                     layout_mode="improve", 
+#                     layout_mode="improve",
 #                     local_mode=True
 #                 )
 #             ],
@@ -532,7 +539,6 @@ register_action(
             SabreLayout(
                 coupling_map=CouplingMap(device.build_coupling_map()),
                 skip_routing=False,
-                seed=None,
             ),
         ],
     )
@@ -540,7 +546,7 @@ register_action(
 
 # register_action(
 #     DeviceDependentAction(
-#         "AIRouting_opt", 
+#         "AIRouting_opt",
 #         CompilationOrigin.QISKIT,
 #         PassType.MAPPING,
 #         stochastic=True,

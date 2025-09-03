@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import gc
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
@@ -64,6 +65,7 @@ from mqt.predictor.rl.helper import (
     create_feature_dict,
     get_path_training_circuits,
     get_state_sample,
+    trim_memory
 )
 from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
@@ -166,7 +168,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.rng = np.random.default_rng(10)
 
         spaces = {
-            "num_qubits": Discrete(128),
+            "num_qubits": Discrete(134),
             "depth": Discrete(1000000),
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "critical_depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
@@ -192,8 +194,16 @@ class PredictorEnv(Env):  # type: ignore[misc]
         """
         self.used_actions.append(str(self.action_set[action].name))
         logger.info(f"Applying: {self.action_set[action].name!s}")
+        if self.num_steps > 70:
+            return (
+                create_feature_dict(self.state),
+                0,
+                True,
+                False,
+                {},
+            )
         altered_qc = self.apply_action(action)
-        if not altered_qc:
+        if not altered_qc :
             return (
                 create_feature_dict(self.state),
                 0,
@@ -203,6 +213,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
             )
 
         self.state: QuantumCircuit = altered_qc
+
+        del altered_qc
+        gc.collect()
         self.num_steps += 1
 
         self.valid_actions = self.determine_valid_actions_for_state()
@@ -223,13 +236,18 @@ class PredictorEnv(Env):  # type: ignore[misc]
             temp_circ = self.state.decompose(gates_to_decompose="unitary")
             # qiskit fallback to ['id', 'u1', 'u2', 'u3', 'cx'] by default according to https://quantum.cloud.ibm.com/docs/en/api/qiskit/0.24/transpiler
             self.state = transpile(temp_circ, basis_gates=get_openqasm_gates(), optimization_level=0)
+            del temp_circ
+            gc.collect()
         elif self.state.count_ops().get("clifford"):
             temp_circ = self.state.decompose(gates_to_decompose="clifford")
             self.state = transpile(temp_circ, basis_gates=get_openqasm_gates(), optimization_level=0)
+            del temp_circ
+            gc.collect()
 
         self.state._layout = self.layout  # noqa: SLF001
-        obs = create_feature_dict(self.state)
-        return obs, reward_val, done, False, {}
+        #obs = create_feature_dict(self.state)
+        trim_memory()
+        return create_feature_dict(self.state), reward_val, done, False, {}
 
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
@@ -283,6 +301,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
+        trim_memory()
         return create_feature_dict(self.state), {}
 
     def action_masks(self) -> list[bool]:
@@ -337,8 +356,11 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if action.origin == CompilationOrigin.BQSKIT:
             return self._apply_bqskit_action(action, action_index)
         msg = f"Origin {action.origin} not supported."
+
+        gc.collect()
+        trim_memory()
         raise ValueError(msg)
-    
+
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         if action.name in ["QiskitO3", "Opt2qBlocks"] and isinstance(action, DeviceDependentAction):
             passes = action.transpile_pass(
@@ -408,6 +430,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert self.layout is not None
             self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
         # Decompose to the allowed gates (by default generic u gates are used)
+        del tket_qc
         return transpile(altered_qc, basis_gates=get_openqasm_gates(), optimization_level=0)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
@@ -456,21 +479,41 @@ class PredictorEnv(Env):  # type: ignore[misc]
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
+        logger.info(f"Mapped:{mapped}")
+
         if not only_nat_gates:  # not native gates yet
-            if not mapped: 
+            if not mapped:
                 return self.actions_synthesis_indices + self.actions_opt_indices
-            else:
-                return self.actions_synthesis_indices + self.actions_preserving_indices
+            return self.actions_synthesis_indices + self.actions_preserving_indices
 
         if mapped and self.layout is not None:  # The circuit is correctly mapped
-            return [self.action_terminate_index, *self.actions_opt_indices, *self.actions_final_optimization_indices]
-        
-        if self.layout is not None:  
+            return [self.action_terminate_index, *self.actions_opt_indices] #*self.actions_final_optimization_indices]
+
+        if self.layout is not None:
             # The circuit is not yet mapped but a layout is set.
             return self.actions_routing_indices
-        else: 
-            # The circuit already fulfils coupling map but no layout is assigned, could explore better layout options
-            if mapped: 
-                return self.actions_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
-            else: 
-                return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices
+        # The circuit already fulfils coupling map but no layout is assigned, could explore better layout options
+        if mapped:
+            return self.actions_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
+        return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices
+    
+        
+
+        # if not only_nat_gates:
+        #     actions = self.actions_synthesis_indices + self.actions_opt_indices
+        #     if self.layout is not None:
+        #         actions += self.actions_routing_indices
+        #     return actions
+
+        # check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
+        # check_mapping(self.state)
+        # mapped = check_mapping.property_set["is_swap_mapped"]
+
+        # if mapped and self.layout is not None:  # The circuit is correctly mapped.
+        #     return [self.action_terminate_index, *self.actions_opt_indices]
+
+        # if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
+        #     return self.actions_routing_indices
+
+        # # No layout applied yet
+        # return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
