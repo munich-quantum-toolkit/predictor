@@ -30,7 +30,7 @@ nox.options.sessions = ["lint", "tests", "minimums"]
 
 # TODO(denialhaag): Add 3.14 when all dependencies support it
 #   https://github.com/munich-quantum-toolkit/predictor/issues/420
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12"]
+PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13"]
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
@@ -83,9 +83,6 @@ def tests(session: nox.Session) -> None:
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
-    if platform.system() == "Windows":
-        session.skip("Too slow on Windows — skipping minimums session.")
-        return
     _run_tests(
         session,
         install_args=["--resolution=lowest-direct"],

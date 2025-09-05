@@ -70,7 +70,7 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
                 try:
                     specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
                 except KeyError:
-                    # try flipped orientation
+                    # try flipped orientation (for uni-directional devices)
                     specific_fidelity = 1 - device[gate_type][second_qubit_idx, first_qubit_idx].error
 
             res *= specific_fidelity
@@ -212,7 +212,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 if first_qubit_idx not in active_qubits:
                     continue
                 
-                dt=5e-10 # discrete time unit used in duration
+                dt = device.dt # discrete time unit used in duration
                 res *= np.exp(
                     -instruction.duration * dt
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)

@@ -66,7 +66,7 @@ class Predictor:
         Raises:
             RuntimeError: If an error occurs during compilation.
         """
-        trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
+        trained_rl_model = load_model("model_new_actions_" + self.figure_of_merit + "_" + self.device_name)
 
         obs, _ = self.env.reset(qc, seed=0)
 
@@ -147,18 +147,18 @@ class Predictor:
             progress_bar = False
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
-        # model = MaskablePPO(
-        #     MaskableMultiInputActorCriticPolicy,
-        #     self.env,
-        #     verbose=verbose,
-        #     tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
-        #     gamma=0.98,
-        #     n_steps=n_steps,
-        #     batch_size=batch_size,
-        #     n_epochs=n_epochs,
-        # )
+        model = MaskablePPO(
+            MaskableMultiInputActorCriticPolicy,
+            self.env,
+            verbose=verbose,
+            tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
+            gamma=0.98,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+        )
         model = MaskablePPO.load(
-                get_path_trained_model() / "model_expected_fidelity_ibm_brisbane.zip",
+                get_path_trained_model() / "model_new_actions_expected_fidelity_ibm_torino.zip",
                 env=self.env,
                 verbose=verbose,
                 device="cuda",

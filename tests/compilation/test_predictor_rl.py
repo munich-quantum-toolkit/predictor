@@ -90,18 +90,18 @@ def test_qcompile_with_newly_trained_models() -> None:
 
     api_token = ""
     available_devices = ["ibm_brisbane", "ibm_torino"]
-    device = available_devices[0]
+    device = available_devices[1]
 
     service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
     backend = service.backend(device)
-    backend.target.description = "ibm_brisbane"  # HACK
-    print(backend.configuration().dt)
+    backend.target.description = "ibm_torino"  # HACK
     predictor = Predictor(figure_of_merit=figure_of_merit, device=backend.target)
     qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 17, target=backend.target)
 
     predictor.train_model(
-        timesteps=30000,
+        timesteps=10000,
         test=False,
+        model_name="model_new_actions"
     )
 
     qc_compiled, compilation_information = rl_compile(
@@ -157,20 +157,20 @@ def test_register_action() -> None:
 
 def test_evaluations() -> None:
     test_dir = get_path_training_circuits() / "new_indep_circuits" / "test"
-    results_dir = Path(__file__).resolve().parent / "results" / "baseline"
+    results_dir = Path(__file__).resolve().parent / "results" / "new_actions"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "info.csv"
     figure_of_merit = "expected_fidelity"
 
     api_token = ""
     available_devices = ["ibm_brisbane", "ibm_torino"]
-    device = available_devices[0]
+    device = available_devices[1]
 
     service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
     backend = service.backend(device)
-    backend.target.description = "ibm_brisbane"  # HACK
+    backend.target.description = "ibm_torino"  # HACK
     model_results = []
-    model_label= "baseline"
+    model_label= "new_actions"
     for file_path in test_dir.glob("*.qasm"):
         file_name = file_path.name
         print(f"File: {file_name}")
