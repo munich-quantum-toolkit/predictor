@@ -191,10 +191,7 @@ class Predictor:
             if (path_compiled_circuits / (target_filename + ".qasm")).exists():
                 continue
             try:
-                if sys.platform == "win32":
-                    res = rl_compile(qc, device, self.figure_of_merit, rl_pred)
-                else:
-                    res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
+                res = timeout_watcher(rl_compile, [qc, device, self.figure_of_merit, rl_pred], timeout)
                 if isinstance(res, tuple):
                     compiled_qc = res[0]
                     with Path(path_compiled_circuits / (target_filename + ".qasm")).open("w", encoding="utf-8") as f:
@@ -209,6 +206,7 @@ class Predictor:
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         timeout: int = 600,
+        num_workers: int = -1
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
@@ -229,24 +227,19 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(path_uncompiled_circuits)
 
-        if sys.platform != "win32":
-            Parallel(n_jobs=1, verbose=100)(
-                delayed(self._compile_all_circuits_devicewise)(
-                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
-                )
-                for device in self.devices
+        Parallel(n_jobs=num_workers, verbose=100)(
+            delayed(self._compile_all_circuits_devicewise)(
+                device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
             )
-        else:
-            for device in self.devices:
-                self._compile_all_circuits_devicewise(
-                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
-                )
+            for device in self.devices
+        )
 
     def generate_training_data(
         self,
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         path_training_data: Path | None = None,
+        num_workers: int = -1
     ) -> None:
         """Creates and saves training data from all generated training samples.
 
@@ -274,7 +267,7 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=1, verbose=100)(
+        results = Parallel(n_jobs=num_workers, verbose=100)(
             delayed(self._generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
