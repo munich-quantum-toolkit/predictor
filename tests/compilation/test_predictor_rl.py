@@ -20,7 +20,6 @@ from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import CouplingMap, InstructionProperties, Target
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
-
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
