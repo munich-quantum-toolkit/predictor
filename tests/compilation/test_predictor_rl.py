@@ -18,8 +18,8 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Target
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -38,7 +38,7 @@ def test_predictor_env_reset_from_string() -> None:
     device = get_device("ibm_eagle_127")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
     assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
@@ -94,15 +94,19 @@ def test_qcompile_with_newly_trained_models() -> None:
     check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
+    check_mapping(qc_compiled)
+    mapped = check_mapping.property_set["is_swap_mapped"]
 
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
+    assert mapped, "Circuit should be mapped to the device's coupling map."
 
 
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 5)
     with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
         rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
     with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):

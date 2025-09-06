@@ -11,6 +11,9 @@ resolution-markers = [
     "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
 ]
 
+[manifest]
+overrides = [{ name = "networkx", marker = "python_full_version < '3.13'", specifier = "==2.8.5" }]
+
 [[package]]
 name = "absl-py"
 version = "2.3.1"
@@ -105,6 +108,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/6b/d52e42361e1aa00709585ecc30b3f9684b3ab62530771402248b1b1d6240/babel-2.17.0.tar.gz", hash = "sha256:0c54cffb19f690cdcc52a3b50bcbf71e07a808d1c80d549f2459b9d2cf0afb9d", size = 9951852, upload-time = "2025-02-01T15:17:41.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/b8/3fe70c75fe32afc4bb507f75563d39bc5642255d1d94f1f23604725780bf/babel-2.17.0-py3-none-any.whl", hash = "sha256:4d0b53093fdfb4b21c92b5213dba5a1b23885afa8383709427046b21c366e5f2", size = 10182537, upload-time = "2025-02-01T15:17:37.39Z" },
+]
+
+[[package]]
+name = "backoff"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
 ]
 
 [[package]]
@@ -1527,8 +1539,7 @@ name = "mqt-bench"
 version = "2.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "networkx", marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
     { name = "qiskit", extra = ["qasm3-import"] },
@@ -1550,11 +1561,13 @@ dependencies = [
     { name = "pytket" },
     { name = "pytket-qiskit" },
     { name = "qiskit" },
+    { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'" },
+    { name = "qiskit-ibm-transpiler", marker = "python_full_version < '3.13'" },
     { name = "rich" },
     { name = "sb3-contrib" },
     { name = "scikit-learn" },
     { name = "tensorboard" },
-    { name = "torch", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
@@ -1605,6 +1618,8 @@ requires-dist = [
     { name = "pytket", specifier = ">=1.29.0" },
     { name = "pytket-qiskit", specifier = ">=0.60.0" },
     { name = "qiskit", specifier = "!=1.3.2" },
+    { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'", specifier = ">=0.3.2" },
+    { name = "qiskit-ibm-transpiler", marker = "python_full_version < '3.13'", specifier = ">=0.11.1" },
     { name = "rich", specifier = ">=12.6.0" },
     { name = "sb3-contrib", specifier = ">=2.0.0" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
@@ -1732,31 +1747,11 @@ wheels = [
 
 [[package]]
 name = "networkx"
-version = "3.4.2"
+version = "2.8.5"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
-    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/1d/06475e1cd5264c0b870ea2cc6fdb3e37177c1e565c43f56ff17a10e3937f/networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1", size = 2151368, upload-time = "2024-10-21T12:39:38.695Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/af/fe794d69bcc4882c4905b49c8b207b8dc4dd7ea26e6142781eac8203ea05/networkx-2.8.5.tar.gz", hash = "sha256:15a7b81a360791c458c55a417418ea136c13378cfdc06a2dcdc12bd2f9cf09c1", size = 1955125, upload-time = "2022-07-18T21:25:02.609Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f", size = 1723263, upload-time = "2024-10-21T12:39:36.247Z" },
-]
-
-[[package]]
-name = "networkx"
-version = "3.5"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.13'",
-    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
-    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
-    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
-    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/4f/ccdb8ad3a38e583f214547fd2f7ff1fc160c43a75af88e6aec213404b96a/networkx-3.5.tar.gz", hash = "sha256:d4c6f9cf81f52d69230866796b82afbccdec3db7ae4fbd1b65ea750feed50037", size = 2471065, upload-time = "2025-05-29T11:35:07.804Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/8d/776adee7bbf76365fdd7f2552710282c79a4ead5d2a46408c9043a2b70ba/networkx-3.5-py3-none-any.whl", hash = "sha256:0030d386a9a06dee3565298b4a734b68589749a544acbb6c412dc9e2489ec6ec", size = 2034406, upload-time = "2025-05-29T11:35:04.961Z" },
+    { url = "https://files.pythonhosted.org/packages/95/1b/14b5b17c52f7329b875e4ad2dcad23c808778b42ef6d250a7223d4dc378a/networkx-2.8.5-py3-none-any.whl", hash = "sha256:a762f4b385692d9c3a6f2912d058d76d29a827deaedf9e63ed14d397b8030687", size = 2020253, upload-time = "2022-07-18T21:24:59.008Z" },
 ]
 
 [[package]]
@@ -2510,8 +2505,7 @@ dependencies = [
     { name = "graphviz" },
     { name = "jinja2" },
     { name = "lark" },
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "networkx", marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
     { name = "qwasm" },
@@ -2782,8 +2776,33 @@ wheels = [
 ]
 
 [[package]]
+name = "qiskit-ibm-ai-local-transpiler"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jsonschema", marker = "python_full_version < '3.13'" },
+    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "qiskit", marker = "python_full_version < '3.13'" },
+    { name = "qiskit-ibm-runtime", marker = "python_full_version < '3.13'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/2b/d4a31925f23a4614587bd256f1a5b46d53f667971243df2bff62ceb1286e/qiskit_ibm_ai_local_transpiler-0.4.2-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:6b13b0978b0bb906c1175a63b1c2c00070ed7f3ff9c302d9b8a8e104f5a8ec39", size = 97513406, upload-time = "2025-07-02T15:25:39.934Z" },
+    { url = "https://files.pythonhosted.org/packages/54/70/b80685df8b5b957c6e61e44eec9c13f0b72c8a4458734048c5de875d1eb8/qiskit_ibm_ai_local_transpiler-0.4.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:94a59d360c4470dac7a8467b86cd3787430b917c3d7aa1635279087459168a19", size = 98170843, upload-time = "2025-07-02T15:24:43.794Z" },
+    { url = "https://files.pythonhosted.org/packages/10/ec/d62bb53f8dfc16cc908696809f5508b161f8c6709f6be44b410281c4e184/qiskit_ibm_ai_local_transpiler-0.4.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4933917d137e07a7c889e11c9db30d6f48fc09fe1ecd2e6f856bf451e2e5fba8", size = 97637275, upload-time = "2025-07-02T15:23:20.273Z" },
+    { url = "https://files.pythonhosted.org/packages/78/34/807162739e60cbd1f9365d5d00ce583445c4b5ac5e381384c892b69ebf25/qiskit_ibm_ai_local_transpiler-0.4.2-cp310-cp310-win_amd64.whl", hash = "sha256:d4a426b7798a4064487a1d50b0bf019ea1f5eec2a74580aaa2cb945c9b35b385", size = 97416246, upload-time = "2025-07-02T15:23:46.745Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/f3/d653647764d13142f028ede9cd772fdb04e73259af622c3207210936d073/qiskit_ibm_ai_local_transpiler-0.4.2-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:0dd30e5679fb7c2371a11380a3b2c485410a3cb5f23628a94188d50cb4f197ff", size = 97513399, upload-time = "2025-07-02T15:23:59.758Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/20/1885c4064bbfd9919e0e03ccff97c3b4afdbeb3bc8effaf9253b5502afc8/qiskit_ibm_ai_local_transpiler-0.4.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:f3fa93eb41ad5c14480b726c9737a98017c3a1723326e18c2b2c3c964a6de0b9", size = 98170686, upload-time = "2025-07-02T15:21:48.295Z" },
+    { url = "https://files.pythonhosted.org/packages/58/c4/072723658abfd11169a63462396e8765b09f5a204a8d9401ad44da0e5004/qiskit_ibm_ai_local_transpiler-0.4.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8703192d174ef0f71272bb50fe74b5612690cd9ee9e933a3346567327a04e8eb", size = 97636848, upload-time = "2025-07-02T15:23:38.279Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/01/4b4dc70144d08e0694d3a92aa0c7486a9dbb48f8442a7ada92d14f1bdfc7/qiskit_ibm_ai_local_transpiler-0.4.2-cp311-cp311-win_amd64.whl", hash = "sha256:5af2024463e2c34e58e56ead767d6b0f9ee14c3d4d1a01fce3f2ca0230479147", size = 97416835, upload-time = "2025-07-02T15:24:51.17Z" },
+    { url = "https://files.pythonhosted.org/packages/31/f7/1e3a0eaf8250ba30a1c0dd4bb9a375d414cf18015cba5d6a85f369de13b9/qiskit_ibm_ai_local_transpiler-0.4.2-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:7d601b5f508582a6aec4f2fbe04ed50cc52d30e133fc8051178e5558ecaabe13", size = 97512749, upload-time = "2025-07-02T15:27:47.411Z" },
+    { url = "https://files.pythonhosted.org/packages/05/fc/df0b6e3a9bdd1690aad940144130f247825fa0710270baba9614805d0071/qiskit_ibm_ai_local_transpiler-0.4.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2d99f87b76c2ae68678afa6f70f8632842a017c1a917774a89de12c9db58f557", size = 98169638, upload-time = "2025-07-02T15:20:13.497Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/b4/90a577916747678edcde64dba3a724796ed8cb99915a3e3962f90791ae23/qiskit_ibm_ai_local_transpiler-0.4.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a49da8a583a117b4bc1c51d92a2075718b0cd7e5f000afbc80235e52b2568f70", size = 97636994, upload-time = "2025-07-02T15:23:41.209Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/cb/bd0f3995d06c9a2cafa7c49f990dd15e4a2b6860fd43cf6c29d9b9446018/qiskit_ibm_ai_local_transpiler-0.4.2-cp312-cp312-win_amd64.whl", hash = "sha256:aeaa9acacda590f5fd3f668bc16a75f2a515ba6002a1088c617b1b1546076886", size = 97417172, upload-time = "2025-07-02T15:23:07.882Z" },
+]
+
+[[package]]
 name = "qiskit-ibm-runtime"
-version = "0.41.1"
+version = "0.41.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ibm-platform-services" },
@@ -2797,9 +2816,25 @@ dependencies = [
     { name = "requests-ntlm" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/c9/3ac506ad9d157d2ec3f3c548cee61645d6cf8d73d404cf7a2db18534dd4c/qiskit_ibm_runtime-0.41.1.tar.gz", hash = "sha256:e9831956d316a7bd589f4a7a1a0da1e76c95083fbc38746884c3598443babacb", size = 1472381, upload-time = "2025-08-19T18:59:28.776Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/0f/8dce46911ad83dde9b593ee56136b9ba05950551bf8242a83e4108e9a5df/qiskit_ibm_runtime-0.41.0.tar.gz", hash = "sha256:c4a1b79026419a911b32da802c5b6a694c23a1bbf63854205e13a6c4bbd65cd2", size = 1472034, upload-time = "2025-08-05T18:23:56.891Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/33/fb0ef7140d15f28cc3246a26e8c9d0c9016c3c7c6f400b1579fd41e2ec35/qiskit_ibm_runtime-0.41.1-py3-none-any.whl", hash = "sha256:30673c532324b343924e860b2b67ea39f2cf26bff15a552ac5ff6cc3fdb5f296", size = 1418753, upload-time = "2025-08-19T18:59:26.489Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/97/cc8edf7f4500cb3e99c187c214977880396ea2462c2c28ece98db47a8075/qiskit_ibm_runtime-0.41.0-py3-none-any.whl", hash = "sha256:09692ef0b2fc8562298f5f0ebee394486233359149326490b59bb16ea5b68f2b", size = 1418666, upload-time = "2025-08-05T18:23:54.956Z" },
+]
+
+[[package]]
+name = "qiskit-ibm-transpiler"
+version = "0.13.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "backoff", marker = "python_full_version < '3.13'" },
+    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "qiskit", marker = "python_full_version < '3.13'" },
+    { name = "qiskit-qasm3-import", marker = "python_full_version < '3.13'" },
+    { name = "requests", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/ac/d6f176107a0a07aeae583dbde3e7812cd31f670f0d285a0167ece51f040e/qiskit_ibm_transpiler-0.13.1.tar.gz", hash = "sha256:83631565b3adb6ce3825a82af8b6276e3f5e87d193c6efd01b7edae3bf56b31c", size = 46935, upload-time = "2025-07-21T09:42:49.367Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/a4/4127dccc7ecfca71d0df5310ced026790ffd1e8da196fc360011416bcffa/qiskit_ibm_transpiler-0.13.1-py3-none-any.whl", hash = "sha256:5ebd20cf2b6fea77a2cf0263a113bfe37f4e2ac2a836469e4fe714565f886060", size = 61069, upload-time = "2025-07-21T09:42:47.889Z" },
 ]
 
 [[package]]
@@ -3570,6 +3605,28 @@ wheels = [
 
 [[package]]
 name = "stable-baselines3"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "cloudpickle", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "gymnasium", version = "1.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "matplotlib", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "pandas", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/3b/13aacfe41697455f559449ad0dc5f51b4f30aed8fb000131225c64cc60f4/stable_baselines3-2.4.1.tar.gz", hash = "sha256:3bbf0e46b9aa4b1fd2696ff4c806ddb8ba719966ef0f71fba61f7a177e563c81", size = 212611, upload-time = "2025-01-07T13:22:42.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/96/04e1e987b5dd8ac0f192e74ad740fb5d72b4c9acd04f3ee13f5f9d6eacae/stable_baselines3-2.4.1-py3-none-any.whl", hash = "sha256:f74cde94a15c1d9d90343e73d790e1898b4c1cbb3f09eeeb580303d33f3fc4d6", size = 183963, upload-time = "2025-01-07T13:22:39.666Z" },
+]
+
+[[package]]
+name = "stable-baselines3"
 version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
@@ -3750,12 +3807,17 @@ wheels = [
 name = "torch"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
+    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
+    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
+]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "filelock", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "fsspec", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "jinja2", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "networkx", marker = "(python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version < '3.13' and sys_platform != 'darwin')" },
     { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cuda-cupti-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cuda-nvrtc-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -3770,10 +3832,10 @@ dependencies = [
     { name = "nvidia-nccl-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-nvtx-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "setuptools", marker = "python_full_version >= '3.12'" },
-    { name = "sympy" },
+    { name = "setuptools", marker = "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
+    { name = "sympy", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
     { name = "triton", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/63/28/110f7274254f1b8476c561dada127173f994afa2b1ffc044efb773c15650/torch-2.8.0-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:0be92c08b44009d4131d1ff7a8060d10bafdb7ddcb7359ef8d8c5169007ea905", size = 102052793, upload-time = "2025-08-06T14:53:15.852Z" },
@@ -3795,6 +3857,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/15/0e/8a800e093b7f7430dbaefa80075aee9158ec22e4c4fc3c1a66e4fb96cb4f/torch-2.8.0-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:83c13411a26fac3d101fe8035a6b0476ae606deb8688e904e796a3534c197def", size = 102020139, upload-time = "2025-08-06T14:54:39.047Z" },
     { url = "https://files.pythonhosted.org/packages/4a/15/5e488ca0bc6162c86a33b58642bc577c84ded17c7b72d97e49b5833e2d73/torch-2.8.0-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:8f0a9d617a66509ded240add3754e462430a6c1fc5589f86c17b433dd808f97a", size = 887990692, upload-time = "2025-08-06T14:56:18.286Z" },
     { url = "https://files.pythonhosted.org/packages/b4/a8/6a04e4b54472fc5dba7ca2341ab219e529f3c07b6941059fbf18dccac31f/torch-2.8.0-cp313-cp313t-win_amd64.whl", hash = "sha256:a7242b86f42be98ac674b88a4988643b9bc6145437ec8f048fea23f72feb5eca", size = 241603453, upload-time = "2025-08-06T14:55:22.945Z" },
+    { url = "https://files.pythonhosted.org/packages/04/6e/650bb7f28f771af0cb791b02348db8b7f5f64f40f6829ee82aa6ce99aabe/torch-2.8.0-cp313-none-macosx_11_0_arm64.whl", hash = "sha256:7b677e17f5a3e69fdef7eb3b9da72622f8d322692930297e4ccb52fefc6c8211", size = 73632395, upload-time = "2025-08-06T14:55:28.645Z" },
+]
+
+[[package]]
+name = "torch"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "filelock", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "fsspec", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "jinja2", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "networkx", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "setuptools", marker = "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "sympy", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/d6/e6d4c57e61c2b2175d3aafbfb779926a2cfd7c32eeda7c543925dceec923/torch-2.8.0-cp310-none-macosx_11_0_arm64.whl", hash = "sha256:a3f16a58a9a800f589b26d47ee15aca3acf065546137fc2af039876135f4c760", size = 73611154, upload-time = "2025-08-06T14:53:10.919Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/5e/05a5c46085d9b97e928f3f037081d3d2b87fb4b4195030fc099aaec5effc/torch-2.8.0-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:5ae0524688fb6707c57a530c2325e13bb0090b745ba7b4a2cd6a3ce262572916", size = 73621174, upload-time = "2025-08-06T14:53:25.44Z" },
+    { url = "https://files.pythonhosted.org/packages/be/66/5c9a321b325aaecb92d4d1855421e3a055abd77903b7dab6575ca07796db/torch-2.8.0-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:619c2869db3ada2c0105487ba21b5008defcc472d23f8b80ed91ac4a380283b0", size = 73630478, upload-time = "2025-08-06T14:53:57.144Z" },
+    { url = "https://files.pythonhosted.org/packages/de/69/8b7b13bba430f5e21d77708b616f767683629fc4f8037564a177d20f90ed/torch-2.8.0-cp313-cp313t-macosx_14_0_arm64.whl", hash = "sha256:1a62a1ec4b0498930e2543535cf70b1bef8c777713de7ceb84cd79115f553767", size = 73915128, upload-time = "2025-08-06T14:54:34.769Z" },
     { url = "https://files.pythonhosted.org/packages/04/6e/650bb7f28f771af0cb791b02348db8b7f5f64f40f6829ee82aa6ce99aabe/torch-2.8.0-cp313-none-macosx_11_0_arm64.whl", hash = "sha256:7b677e17f5a3e69fdef7eb3b9da72622f8d322692930297e4ccb52fefc6c8211", size = 73632395, upload-time = "2025-08-06T14:55:28.645Z" },
 ]
 
