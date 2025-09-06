@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
-from collections import deque
-from copy import deepcopy
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
@@ -23,13 +21,12 @@ from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.helper import get_path_trained_model, logger
 from mqt.predictor.rl.predictorenv import PredictorEnv
-from mqt.predictor.reward import figure_of_merit, crit_depth, estimated_success_probability
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
 
-    from mqt.predictor.reward import figure_of_merit, crit_depth, estimated_success_probability
+    from mqt.predictor.reward import figure_of_merit
 
 
 class Predictor:
@@ -54,7 +51,7 @@ class Predictor:
     def compile_as_predicted(
         self,
         qc: QuantumCircuit,
-    ) -> tuple[QuantumCircuit, float, list[str]]:
+    ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
@@ -66,54 +63,23 @@ class Predictor:
         Raises:
             RuntimeError: If an error occurs during compilation.
         """
-        trained_rl_model = load_model("model_new_actions_" + self.figure_of_merit + "_" + self.device_name)
+        trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
 
         obs, _ = self.env.reset(qc, seed=0)
 
         used_compilation_passes = []
         terminated = False
         truncated = False
-        recent_actions = deque(maxlen=8)
-        blocked_actions = set()
         while not (terminated or truncated):
             action_masks = get_action_masks(self.env)
-            if blocked_actions:
-                action_masks = deepcopy(action_masks)
-                for idx in blocked_actions:
-                    action_masks[idx] = False
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks, deterministic=True)
+            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
             action = int(action)
-
-            recent_actions.append(action)
-
-            max_cycle_length = 4
-
-            def is_cycle(lst, k):
-                if len(lst) < 2*k:
-                    return False
-                return lst[-2*k:-k] == lst[-k:]
-            
-            for k in range(3, max_cycle_length+1):
-                if is_cycle(list(recent_actions), k):
-                    print(f"Avoiding {k}-cycle infinite loop pattern")
-                    for cyc_action in set(list(recent_actions)[-k:]):
-                        blocked_actions.add(cyc_action)
-                    break
-
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
-            if action_item.name == "terminate":
-                depth = self.env.state.depth()
-                critical_depth = crit_depth(self.env.state)
-                esp= estimated_success_probability(self.env.state, self.env.device)
-            obs, reward_val, terminated, truncated, _info = self.env.step(action)
+            obs, _reward_val, terminated, truncated, _info = self.env.step(action)
 
         if not self.env.error_occurred:
-            return (
-                self.env.state,
-                reward_val,
-                used_compilation_passes,
-                depth, critical_depth, esp)
+            return self.env.state, used_compilation_passes
 
         msg = "Error occurred during compilation."
         raise RuntimeError(msg)
@@ -144,7 +110,7 @@ class Predictor:
             n_steps = 2048
             n_epochs = 10
             batch_size = 64
-            progress_bar = False
+            progress_bar = True
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
         model = MaskablePPO(
@@ -157,17 +123,10 @@ class Predictor:
             batch_size=batch_size,
             n_epochs=n_epochs,
         )
-        model = MaskablePPO.load(
-                get_path_trained_model() / "model_new_actions_expected_fidelity_ibm_torino.zip",
-                env=self.env,
-                verbose=verbose,
-                device="cuda",
-            )
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
         model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
         model.save(get_path_trained_model() / (model_name + "_" + self.figure_of_merit + "_" + self.device_name))
-        print("Model saved")
 
 
 def load_model(model_name: str) -> MaskablePPO:
@@ -222,5 +181,4 @@ def rl_compile(
     else:
         predictor = predictor_singleton
 
-    qc, reward, info, depth, critical_depth, esp = predictor.compile_as_predicted(qc)
-    return qc, reward, info, depth, critical_depth, esp
+    return predictor.compile_as_predicted(qc)

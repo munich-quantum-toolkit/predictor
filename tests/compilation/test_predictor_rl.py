@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-import pandas as pd
 
 import pytest
-from qiskit_ibm_runtime import QiskitRuntimeService
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Target
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -32,8 +30,7 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
-from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits
-from qiskit import QuantumCircuit
+from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -71,50 +68,40 @@ def test_qcompile_with_newly_trained_models() -> None:
     Important: Those trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
-    # figure_of_merit = "expected_fidelity"
-    # device = get_device("ibm_eagle_127")
-    # qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 20)
-    # predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
-
-    # model_name = "model_" + figure_of_merit + "_" + device.description
-    # model_path = Path(get_path_trained_model() / (model_name + ".zip"))
-    # if not model_path.exists():
-    #     with pytest.raises(
-    #         FileNotFoundError,
-    #         match=re.escape(
-    #             "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-    #         ),
-    #     ):
-    #         rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
     figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-    api_token = ""
-    available_devices = ["ibm_brisbane", "ibm_torino"]
-    device = available_devices[1]
-
-    service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
-    backend = service.backend(device)
-    backend.target.description = "ibm_torino"  # HACK
-    predictor = Predictor(figure_of_merit=figure_of_merit, device=backend.target)
-    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 17, target=backend.target)
+    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
+    if not model_path.exists():
+        with pytest.raises(
+            FileNotFoundError,
+            match=re.escape(
+                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+            ),
+        ):
+            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
-        timesteps=10000,
-        test=False,
-        model_name="model_new_actions"
+        timesteps=100,
+        test=True,
     )
 
-    qc_compiled, compilation_information = rl_compile(
-        qc, device=backend.target, figure_of_merit=figure_of_merit
-    )
+    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    check_nat_gates = GatesInBasis(basis_gates=backend.target.operation_names)
+    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
+    check_mapping(qc_compiled)
+    mapped = check_mapping.property_set["is_swap_mapped"]
 
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
+    assert mapped, "Circuit should be mapped to the device's coupling map."
 
 
 def test_qcompile_with_false_input() -> None:
@@ -153,49 +140,3 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
-
-
-def test_evaluations() -> None:
-    test_dir = get_path_training_circuits() / "new_indep_circuits" / "test"
-    results_dir = Path(__file__).resolve().parent / "results" / "new_actions"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    output_path = results_dir / "info.csv"
-    figure_of_merit = "expected_fidelity"
-
-    api_token = ""
-    available_devices = ["ibm_brisbane", "ibm_torino"]
-    device = available_devices[1]
-
-    service = QiskitRuntimeService(channel="ibm_cloud", token=api_token)
-    backend = service.backend(device)
-    backend.target.description = "ibm_torino"  # HACK
-    model_results = []
-    model_label= "new_actions"
-    for file_path in test_dir.glob("*.qasm"):
-        file_name = file_path.name
-        print(f"File: {file_name}")
-        qc = QuantumCircuit.from_qasm_file(str(file_path))
-        qc_compiled, reward, info, depth, critical_depth, esp = rl_compile(
-            qc, device=backend.target, figure_of_merit=figure_of_merit
-        )
-        model_results.append({
-            "model": model_label,
-            "file": file_path.name,
-            "depth": depth,
-            "crit_depth": critical_depth,
-            "esp": esp,
-            "reward": reward,
-            "ep_length_mean": len(info)
-        })
-        print(f"✅ Size {qc.num_qubits} | File: {file_path.name} | "
-            f"Reward: {reward:.4f} | "
-            f"Depth: {depth} | "
-            f"Critical Depth: {critical_depth} |"
-            f"ESP: {esp} |"
-            f"Mean Steps: {len(info):.1f}")
-        
-    df = pd.DataFrame(model_results)
-    df.sort_values(by=["depth", "model"], inplace=True)
-    df.to_csv(output_path, index=False)
-    print(f"📁 Results saved to: {output_path}")
-

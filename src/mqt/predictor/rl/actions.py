@@ -10,12 +10,15 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-import sys
+from typing import TYPE_CHECKING
 
+from bqskit import MachineModel
+from bqskit import compile as bqskit_compile
 from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
@@ -49,7 +52,6 @@ from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import CouplingMap
 from qiskit.transpiler.passes import (
     ApplyLayout,
-    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
     CollectCliffords,
@@ -57,24 +59,30 @@ from qiskit.transpiler.passes import (
     CommutativeInverseCancellation,
     ConsolidateBlocks,
     DenseLayout,
+    Depth,
     EnlargeWithAncilla,
+    FixedPoint,
     FullAncillaAllocation,
+    GatesInBasis,
     InverseCancellation,
+    MinimumPoint,
     Optimize1qGatesDecomposition,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
     SabreSwap,
-    TrivialLayout,
+    Size,
     UnitarySynthesis,
     VF2Layout,
     VF2PostLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
+from qiskit.transpiler.preset_passmanagers import common
 from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
+    get_bqskit_native_gates,
 )
 
 if TYPE_CHECKING:
@@ -176,50 +184,6 @@ def remove_action(name: str) -> None:
         raise KeyError(msg)
     del _ACTIONS[name]
 
-
-def get_openqasm_gates() -> list[str]:
-    """Returns a list of all quantum gates within the openQASM 2.0 standard header.
-
-    According to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
-    Removes generic single qubit gates u1, u2, u3 since they are no meaningful features for RL
-
-    """
-    return [
-        "cx",
-        "id",
-        "u",
-        "p",
-        "x",
-        "y",
-        "z",
-        "h",
-        "r",
-        "s",
-        "sdg",
-        "t",
-        "tdg",
-        "rx",
-        "ry",
-        "rz",
-        "sx",
-        "sxdg",
-        "cz",
-        "cy",
-        "swap",
-        "ch",
-        "ccx",
-        "cswap",
-        "crx",
-        "cry",
-        "crz",
-        "cu1",
-        "cp",
-        "csx",
-        "cu",
-        "rxx",
-        "rzz",
-        "rccx",
-    ]
 
 register_action(
     DeviceDependentAction(
@@ -345,49 +309,49 @@ register_action(
     )
 )
 
-# register_action(
-#     DeviceDependentAction(
-#         "QiskitO3",
-#         CompilationOrigin.QISKIT,
-#         PassType.OPT,
-#         transpile_pass=lambda native_gate, coupling_map: [
-#             Collect2qBlocks(),
-#             ConsolidateBlocks(basis_gates=native_gate),
-#             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-#             Optimize1qGatesDecomposition(basis=native_gate),
-#             CommutativeCancellation(basis_gates=native_gate),
-#             GatesInBasis(native_gate),
-#             ConditionalController(
-#                 common.generate_translation_passmanager(
-#                     target=None, basis_gates=native_gate, coupling_map=coupling_map
-#                 ).to_flow_controller(),
-#                 condition=lambda property_set: not property_set["all_gates_in_basis"],
-#             ),
-#             Depth(recurse=True),
-#             FixedPoint("depth"),
-#             Size(recurse=True),
-#             FixedPoint("size"),
-#             MinimumPoint(["depth", "size"], "optimization_loop"),
-#         ],
-#         do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
-#     )
-# )
+register_action(
+    DeviceDependentAction(
+        "QiskitO3",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        transpile_pass=lambda native_gate, coupling_map: [
+            Collect2qBlocks(),
+            ConsolidateBlocks(basis_gates=native_gate),
+            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+            Optimize1qGatesDecomposition(basis=native_gate),
+            CommutativeCancellation(basis_gates=native_gate),
+            GatesInBasis(native_gate),
+            ConditionalController(
+                common.generate_translation_passmanager(
+                    target=None, basis_gates=native_gate, coupling_map=coupling_map
+                ).to_flow_controller(),
+                condition=lambda property_set: not property_set["all_gates_in_basis"],
+            ),
+            Depth(recurse=True),
+            FixedPoint("depth"),
+            Size(recurse=True),
+            FixedPoint("size"),
+            MinimumPoint(["depth", "size"], "optimization_loop"),
+        ],
+        do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
+    )
+)
 
-# register_action(
-#     DeviceDependentAction(
-#         "BQSKitO2",
-#         CompilationOrigin.BQSKIT,
-#         PassType.OPT,
-#         transpile_pass=lambda circuit: bqskit_compile(
-#             circuit,
-#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-#             seed=10,
-#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-#         ),
-#     )
-# )
+register_action(
+    DeviceDependentAction(
+        "BQSKitO2",
+        CompilationOrigin.BQSKIT,
+        PassType.OPT,
+        transpile_pass=lambda circuit: bqskit_compile(
+            circuit,
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
 
 register_action(
     DeviceDependentAction(
@@ -438,7 +402,7 @@ register_action(
         CompilationOrigin.TKET,
         PassType.LAYOUT,
         transpile_pass=lambda device: [
-            GraphPlacement(Architecture(list(device.build_coupling_map())),timeout=5000, maximum_matches=5000)
+            GraphPlacement(Architecture(list(device.build_coupling_map())), timeout=5000, maximum_matches=5000)
         ],
     )
 )
@@ -449,7 +413,14 @@ register_action(
         CompilationOrigin.TKET,
         PassType.LAYOUT,
         transpile_pass=lambda device, node_err, edge_err, readout_err: [
-            NoiseAwarePlacement(Architecture(list(device.build_coupling_map())), node_err, edge_err, readout_err, timeout=5000, maximum_matches=5000)
+            NoiseAwarePlacement(
+                Architecture(list(device.build_coupling_map())),
+                node_err,
+                edge_err,
+                readout_err,
+                timeout=5000,
+                maximum_matches=5000,
+            )
         ],
     )
 )
@@ -485,13 +456,13 @@ if sys.version_info < (3, 13):
             PassType.ROUTING,
             stochastic=True,
             transpile_pass=lambda device: [
-                    SafeAIRouting(
-                        coupling_map=device.build_coupling_map(),
-                        optimization_level=3,
-                        layout_mode="improve",
-                        local_mode=True
-                    )
-                ],
+                SafeAIRouting(
+                    coupling_map=device.build_coupling_map(),
+                    optimization_level=3,
+                    layout_mode="improve",
+                    local_mode=True,
+                )
+            ],
         )
     )
 
@@ -518,38 +489,33 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         stochastic=True,
-        # Qiskit O3 by default uses (max_iterations, layout_trials, swap_trials) = (4, 20, 20)
         transpile_pass=lambda device: [
-            SabreLayout(
-                coupling_map=CouplingMap(device.build_coupling_map()),
-                skip_routing=False,
-                max_iterations=1
-            ),
+            SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False, max_iterations=1),
         ],
     )
 )
 
-# register_action(
-#     DeviceDependentAction(
-#         "BQSKitMapping",
-#         CompilationOrigin.BQSKIT,
-#         PassType.MAPPING,
-#         transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-#             bqskit_circuit,
-#             model=MachineModel(
-#                 num_qudits=device.num_qubits,
-#                 gate_set=get_bqskit_native_gates(device),
-#                 coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-#             ),
-#             with_mapping=True,
-#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-#             seed=10,
-#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-#         ),
-#     )
-# )
+register_action(
+    DeviceDependentAction(
+        "BQSKitMapping",
+        CompilationOrigin.BQSKIT,
+        PassType.MAPPING,
+        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+            bqskit_circuit,
+            model=MachineModel(
+                num_qudits=device.num_qubits,
+                gate_set=get_bqskit_native_gates(device),
+                coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
+            ),
+            with_mapping=True,
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
 
 register_action(
     DeviceDependentAction(
@@ -562,22 +528,22 @@ register_action(
     )
 )
 
-# register_action(
-#     DeviceDependentAction(
-#         "BQSKitSynthesis",
-#         CompilationOrigin.BQSKIT,
-#         PassType.SYNTHESIS,
-#         transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-#             bqskit_circuit,
-#             model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-#             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#             max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-#             seed=10,
-#             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
-#         ),
-#     )
-# )
+register_action(
+    DeviceDependentAction(
+        "BQSKitSynthesis",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
+            bqskit_circuit,
+            model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
+            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+            seed=10,
+            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        ),
+    )
+)
 
 register_action(
     DeviceIndependentAction(
@@ -599,7 +565,7 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
 
 def extract_cregs_and_measurements(
     qc: QuantumCircuit,
-) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Any], list[Any]]]]:
+) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Qubit], list[ClassicalRegister]]]]:
     """Extracts classical registers and measurement operations from a quantum circuit.
 
     Args:
@@ -639,7 +605,7 @@ def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
 def add_cregs_and_measurements(
     qc: QuantumCircuit,
     cregs: list[ClassicalRegister],
-    measurements: list[tuple[Instruction, list[Any], list[Any]]],
+    measurements: list[tuple[Instruction, list[Qubit], list[ClassicalRegister]]],
     qubit_map: dict[Qubit, Qubit] | None = None,
 ) -> QuantumCircuit:
     """Adds classical registers and measurement operations back to the quantum circuit.
@@ -671,23 +637,17 @@ class SafeAIRouting(AIRouting):  # type: ignore[misc]
 
     def run(self, dag: DAGCircuit) -> DAGCircuit:
         """Run the routing pass on a DAGCircuit."""
-        # 1. Convert input dag to circuit
         qc_orig = dag_to_circuit(dag)
-
-        # 2. Extract classical registers and measurement instructions
+        # Extract classical registers and measurement instructions
         cregs, measurements = extract_cregs_and_measurements(qc_orig)
-
-        # 3. Remove cregs and measurements
+        # Remove cregs and measurements
         qc_noclassical = remove_cregs(qc_orig)
-
-        # 4. Convert back to dag and run routing (AIRouting)
+        # Convert back to dag and run routing (AIRouting)
         dag_noclassical = circuit_to_dag(qc_noclassical)
         dag_routed = super().run(dag_noclassical)
-
-        # 5. Convert routed dag to circuit for restoration
+        # Convert routed dag to circuit for restoration
         qc_routed = dag_to_circuit(dag_routed)
-
-        # 6. Build mapping from original qubits to qubits in routed circuit
+        # Build mapping from original qubits to qubits in routed circuit
         final_layout = getattr(self, "property_set", {}).get("final_layout", None)
         if final_layout is None and hasattr(dag_routed, "property_set"):
             final_layout = dag_routed.property_set.get("final_layout", None)
@@ -713,128 +673,7 @@ class SafeAIRouting(AIRouting):  # type: ignore[misc]
                     msg = f"Physical qubit {phys} not found in output circuit!"
                     raise RuntimeError(msg) from err
                 qubit_map[virt] = qc_routed.qubits[idx]
-                # 7. Restore classical registers and measurement instructions
+                # Restore classical registers and measurement instructions
         qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
-        # 8. Return as dag
-        return circuit_to_dag(qc_final)
-
-def extract_cregs_and_measurements(
-    qc: QuantumCircuit,
-) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Any], list[Any]]]]:
-    """Extracts classical registers and measurement operations from a quantum circuit.
-
-    Args:
-        qc: The input QuantumCircuit.
-
-    Returns:
-        A tuple containing a list of classical registers and a list of measurement operations.
-    """
-    cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
-    measurements = [(item.operation, item.qubits, item.clbits) for item in qc.data if item.operation.name == "measure"]
-    return cregs, measurements
-
-
-def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
-    """Removes classical registers and measurement operations from the circuit.
-
-    Args:
-        qc: The input QuantumCircuit.
-
-    Returns:
-        A new QuantumCircuit with only quantum operations (no cregs or measurements).
-    """
-    qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
-    new_qc = QuantumCircuit(*qregs)
-    old_to_new = {}
-    for orig_qr, new_qr in zip(qc.qregs, new_qc.qregs, strict=False):
-        for idx in range(orig_qr.size):
-            old_to_new[orig_qr[idx]] = new_qr[idx]
-    for item in qc.data:
-        instr = item.operation
-        qargs = [old_to_new[q] for q in item.qubits]
-        if instr.name not in ("measure", "barrier"):
-            new_qc.append(instr, qargs)
-    return new_qc
-
-
-def add_cregs_and_measurements(
-    qc: QuantumCircuit,
-    cregs: list[ClassicalRegister],
-    measurements: list[tuple[Instruction, list[Any], list[Any]]],
-    qubit_map: dict[Qubit, Qubit] | None = None,
-) -> QuantumCircuit:
-    """Adds classical registers and measurement operations back to the quantum circuit.
-
-    Args:
-        qc: The quantum circuit to which cregs and measurements are added.
-        cregs: List of ClassicalRegister to add.
-        measurements: List of measurement instructions as tuples (Instruction, qubits, clbits).
-        qubit_map: Optional dictionary mapping original qubits to new qubits.
-
-    Returns:
-        The modified QuantumCircuit with cregs and measurements added.
-    """
-    for cr in cregs:
-        qc.add_register(cr)
-    for instr, qargs, cargs in measurements:
-        new_qargs = [qubit_map[q] for q in qargs] if qubit_map else qargs
-        qc.append(instr, new_qargs, cargs)
-    return qc
-
-
-class SafeAIRouting(AIRouting):  # type: ignore[misc]
-    """Custom AIRouting wrapper that removes classical registers before routing.
-
-    This prevents failures in AIRouting when classical bits are present by
-    temporarily removing classical registers and measurements and restoring
-    them after routing is completed.
-    """
-
-    def run(self, dag: DAGCircuit) -> DAGCircuit:
-        """Run the routing pass on a DAGCircuit."""
-        # 1. Convert input dag to circuit
-        qc_orig = dag_to_circuit(dag)
-
-        # 2. Extract classical registers and measurement instructions
-        cregs, measurements = extract_cregs_and_measurements(qc_orig)
-
-        # 3. Remove cregs and measurements
-        qc_noclassical = remove_cregs(qc_orig)
-
-        # 4. Convert back to dag and run routing (AIRouting)
-        dag_noclassical = circuit_to_dag(qc_noclassical)
-        dag_routed = super().run(dag_noclassical)
-
-        # 5. Convert routed dag to circuit for restoration
-        qc_routed = dag_to_circuit(dag_routed)
-
-        # 6. Build mapping from original qubits to qubits in routed circuit
-        final_layout = getattr(self, "property_set", {}).get("final_layout", None)
-        if final_layout is None and hasattr(dag_routed, "property_set"):
-            final_layout = dag_routed.property_set.get("final_layout", None)
-
-        assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
-        qubit_map = {}
-        for virt in qc_orig.qubits:
-            try:
-                phys = final_layout[virt]
-            except KeyError as err:
-                msg = f"Virtual qubit {virt} not found in final layout!"
-                raise RuntimeError(msg) from err
-            if isinstance(phys, int):
-                try:
-                    qubit_map[virt] = qc_routed.qubits[phys]
-                except IndexError as err:
-                    msg = f"Physical index {phys} is out of range in routed circuit!"
-                    raise RuntimeError(msg) from err
-            else:
-                try:
-                    idx = qc_routed.qubits.index(phys)
-                except ValueError as err:
-                    msg = f"Physical qubit {phys} not found in output circuit!"
-                    raise RuntimeError(msg) from err
-                qubit_map[virt] = qc_routed.qubits[idx]
-                # 7. Restore classical registers and measurement instructions
-        qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
-        # 8. Return as dag
+        # Return as dag
         return circuit_to_dag(qc_final)

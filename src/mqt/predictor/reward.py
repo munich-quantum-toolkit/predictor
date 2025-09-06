@@ -189,7 +189,6 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 
     res = 1.0
     for instr in scheduled_circ.data:
-        
         instruction = instr.operation
         qargs = instr.qubits
         gate_type = instruction.name
@@ -202,7 +201,6 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 
         if len(qargs) == 1:
             if gate_type == "measure":
-                
                 res *= 1 - device[gate_type][first_qubit_idx,].error
                 continue
             if gate_type == "delay":
@@ -211,18 +209,19 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 # only consider active qubits
                 if first_qubit_idx not in active_qubits:
                     continue
-                
-                dt = device.dt # discrete time unit used in duration
+
+                dt = device.dt  # discrete time unit used in duration
                 res *= np.exp(
-                    -instruction.duration * dt
+                    -instruction.duration
+                    * dt
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
                 )
                 continue
             res *= 1 - device[gate_type][first_qubit_idx,].error
-            
+
         else:
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
-            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error  
+            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
 
     if qiskit_version >= "2.0.0":
         for i in range(device.num_qubits):

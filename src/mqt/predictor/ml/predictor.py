@@ -206,7 +206,7 @@ class Predictor:
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         timeout: int = 600,
-        num_workers: int = -1
+        num_workers: int = -1,
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
@@ -239,7 +239,7 @@ class Predictor:
         path_uncompiled_circuits: Path | None = None,
         path_compiled_circuits: Path | None = None,
         path_training_data: Path | None = None,
-        num_workers: int = -1
+        num_workers: int = -1,
     ) -> None:
         """Creates and saves training data from all generated training samples.
 
