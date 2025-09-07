@@ -4,8 +4,12 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
-With this release, `mqt-predictor` no longer supports the x86 architecture on macOS.
-This step was necessary to ensure compatibility with PyTorch.
+### End of support for x86 macOS systems
+
+Starting with this release, MQT Predictor no longer supports x86 macOS systems.
+This step is necessary to ensure compatibility with PyTorch.
+Furthermore, this coincides with GitHub removing the `macos-13` runners from their infrastructure.
+x86 macOS systems are no longer tested in our CI.
 
 ## [2.3.0] - 2025-07-29
 
@@ -19,7 +23,7 @@ The RL action handling has been updated to utilize dataclasses, which improves t
 
 ### General
 
-MQT Bench has moved to the [munich-quantum-toolkit](https://github.com/munich-quantum-toolkit) GitHub organization under https://github.com/munich-quantum-toolkit/predictor.
+MQT Predictor has moved to the [munich-quantum-toolkit](https://github.com/munich-quantum-toolkit) GitHub organization under https://github.com/munich-quantum-toolkit/predictor.
 While most links should be automatically redirected, please update any links in your code to point to the new location.
 All links in the documentation have been updated accordingly.
 
