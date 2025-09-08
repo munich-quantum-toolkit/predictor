@@ -61,6 +61,8 @@ plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
 
+NO_PARALLEL = sys.platform == "win32" and sys.version_info >= (3, 13)
+
 
 def setup_device_predictor(
     devices: list[Target],
@@ -227,12 +229,20 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(path_uncompiled_circuits)
 
-        Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self._compile_all_circuits_devicewise)(
-                device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+        # On Windows + Python 3.13, joblib's default "loky" process backend is broken
+        # (missing `_posixsubprocess`). Fall back to no multiprocessing.
+        if NO_PARALLEL:
+            for device in self.devices:
+                self._compile_all_circuits_devicewise(
+                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+                )
+        else:
+            Parallel(n_jobs=num_workers, verbose=100)(
+                delayed(self._compile_all_circuits_devicewise)(
+                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
+                )
+                for device in self.devices
             )
-            for device in self.devices
-        )
 
     def generate_training_data(
         self,
@@ -267,15 +277,27 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=num_workers, verbose=100)(
-            delayed(self._generate_training_sample)(
-                filename.name,
-                path_uncompiled_circuits,
-                path_compiled_circuits,
-                logger.level,
+        if NO_PARALLEL:
+            results = Parallel(n_jobs=1, verbose=100)(
+                delayed(self._generate_training_sample)(
+                    filename.name,
+                    path_uncompiled_circuits,
+                    path_compiled_circuits,
+                    logger.level,
+                )
+                for filename in path_uncompiled_circuits.glob("*.qasm")
             )
-            for filename in path_uncompiled_circuits.glob("*.qasm")
-        )
+        else:
+            results = Parallel(n_jobs=num_workers, verbose=100)(
+                delayed(self._generate_training_sample)(
+                    filename.name,
+                    path_uncompiled_circuits,
+                    path_compiled_circuits,
+                    logger.level,
+                )
+                for filename in path_uncompiled_circuits.glob("*.qasm")
+            )
+
         for sample in results:
             training_sample, circuit_name, scores = sample
             if all(score == -1 for score in scores):
