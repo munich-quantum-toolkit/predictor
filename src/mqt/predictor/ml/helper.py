@@ -235,10 +235,10 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
         # assume controls appear first, then target:
         ctrls = qinds[:n_ctrl]
 
-        tgt = qinds[-1] if qinds else -1
+        tgt = qinds[n_ctrl:] if qinds else [-1] * (len(qinds) - n_ctrl)
         # pad to 2 controls
-        ctrls = ctrls + [-1] * (2 - len(ctrls))
-        return [tgt, ctrls[0], ctrls[1]]
+        ctrls = ctrls + [-1] * (3 - len(qinds))
+        return tgt + ctrls
 
     # helper to extract up to 3 real-valued params
     def param_vector(node: DAGOpNode, dim: int = 3) -> list[float]:
@@ -251,7 +251,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     # preallocate feature arrays
     onehots = torch.zeros((number_of_gates, number_unique_gates), dtype=torch.float)
-    qubits = torch.full((number_of_gates, 3), -1, dtype=torch.long)
+    qubits = torch.full((number_of_gates, 3), -1, dtype=torch.float)
     params = torch.zeros((number_of_gates, 3), dtype=torch.float)
 
     for i, node in enumerate(nodes):
@@ -264,13 +264,12 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
         onehots[i, gate2idx[node.op.name]] = 1.0
 
         # 2b) [target, ctrl1, ctrl2]
-        qubits[i] = torch.tensor(qubit_vector(node), dtype=torch.long) / num_qubits
-
+        val = torch.tensor(qubit_vector(node)) / num_qubits
+        qubits[i] = val.clone()
         # 2c) up to 3 angle params
-
         params[i] = torch.tensor(param_vector(node), dtype=torch.float) % (2 * np.pi)
 
-        node_vector = torch.cat([onehots, qubits.float(), params], dim=1)
+        node_vector = torch.cat([onehots, qubits, params], dim=1)
 
     # build edges
     idx_map = {node: i for i, node in enumerate(nodes)}
@@ -321,8 +320,8 @@ def evaluate_classification_model(
         for batch in loader:
             batch_device = batch.to(device)
             logits = model(batch_device)  # [B,1] or [B,K]
-            y = batch_device.y.view_as(logits)
-
+            # y = batch_device.y.view_as(logits)
+            y = batch_device.y
             # unify shapes for loss computation
             if task == "multiclass":
                 if y.dim() > 1:
@@ -348,7 +347,6 @@ def evaluate_classification_model(
     y_true = torch.cat(all_targets, dim=0)
 
     metrics: dict[str, float] = {"loss": float(avg_loss)}
-
     # ---- Convert logits -> probs / preds & compute sklearn metrics ----
     if verbose:
         if task == "binary":
@@ -370,7 +368,6 @@ def evaluate_classification_model(
             probs = torch.softmax(logits, dim=1).numpy()  # [N,K]
             preds = probs.argmax(axis=1)  # [N]
             y_mc = y_true.view(-1).numpy().astype(int)
-
             metrics["accuracy"] = accuracy_score(y_mc, preds)
             metrics["f1_macro"] = f1_score(y_mc, preds, average="macro", zero_division=0)
             metrics["f1_micro"] = f1_score(y_mc, preds, average="micro", zero_division=0)
@@ -430,8 +427,8 @@ def train_classification_model(
         for batch in train_loader:
             batch_device = batch.to(device)
             logits = model(batch_device)
-            y = batch_device.y.view_as(logits)
-
+            # y = batch_device.y.view_as(logits)
+            y = batch_device.y
             if task == "multiclass":
                 if y.dim() > 1:
                     y = y.squeeze(-1)

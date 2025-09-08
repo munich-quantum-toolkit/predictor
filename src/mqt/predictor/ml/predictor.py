@@ -29,6 +29,8 @@ if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
 else:
     from typing_extensions import assert_never
 
+import gc
+
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -435,6 +437,7 @@ class Predictor:
         batch_size: int = 32,
         num_epochs: int = 10,
         patience: int = 10,
+        verbose: bool = False,
         device: str | None = None,
     ) -> float:
         """Objective function for Optuna GNN hyperparameter optimization.
@@ -453,6 +456,7 @@ class Predictor:
             batch_size: batch size for training.
             num_epochs: number of epochs for training.
             patience: patience for early stopping.
+            verbose: whether to print verbose output during training.
 
 
         Returns:
@@ -465,7 +469,7 @@ class Predictor:
 
         # Hyperparameter spaces
         hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
-        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 10)
+        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 5)
         mlp_depth = trial.suggest_int("mlp_depth", 1, 3)
         mlp_choices = [32, 64, 128, 256, 512, 1024]
         mlp_units = [trial.suggest_categorical(f"mlp_units_{i}", mlp_choices) for i in range(mlp_depth)]
@@ -508,7 +512,7 @@ class Predictor:
                     restore_best=True,
                     scheduler=None,
                 )
-                val_loss, _, _ = evaluate_regression_model(
+                val_loss, val_metrics, _ = evaluate_regression_model(
                     model, val_loader, loss_fn, device=device, return_arrays=False, verbose=False
                 )
             else:
@@ -520,18 +524,22 @@ class Predictor:
                     num_epochs=num_epochs,
                     task=task,
                     device=device,
-                    verbose=False,
+                    verbose=verbose,
                     val_loader=val_loader,
                     patience=patience,
                     min_delta=0.0,
                     restore_best=True,
                     scheduler=None,
                 )
-                val_loss, _, _ = evaluate_classification_model(
-                    model, val_loader, loss_fn, task=task, device=device, return_arrays=False, verbose=False
+                val_loss, val_metrics, _ = evaluate_classification_model(
+                    model, val_loader, loss_fn, task=task, device=device, return_arrays=False, verbose=verbose
                 )
 
             fold_val_best_losses.append(float(val_loss))
+            del train_loader, val_loader, train_subset, val_subset, optimizer, model
+            if device_obj.type == "cuda":
+                torch.cuda.empty_cache()
+            gc.collect()
         # Take the mean value
         mean_val = float(np.mean(fold_val_best_losses))
         trial.set_user_attr("fold_val_best_losses", fold_val_best_losses)
@@ -543,6 +551,7 @@ class Predictor:
                 "num_resnet_layers": num_resnet_layers,
                 "mlp_units": mlp_units,
                 "num_outputs": num_outputs,
+                "val_metrics": val_metrics,
             },
         )
         return mean_val
@@ -611,6 +620,7 @@ class Predictor:
                 classes=classes,
                 num_epochs=num_epochs,
                 patience=10,
+                verbose=verbose,
             )
 
         study.optimize(_obj, n_trials=num_trials)
@@ -664,9 +674,9 @@ class Predictor:
             training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
         )
         # Dataloader
-        train_loader = DataLoader(x_train, batch_size=64, shuffle=True)
+        train_loader = DataLoader(x_train, batch_size=32, shuffle=True)
 
-        val_loader = DataLoader(x_val, batch_size=64, shuffle=False)
+        val_loader = DataLoader(x_val, batch_size=32, shuffle=False)
         if task == "regression":
             train_regression_model(
                 model,
@@ -699,9 +709,9 @@ class Predictor:
                 scheduler=None,
             )
             if verbose:
-                test_loader = DataLoader(training_data.X_test, batch_size=64, shuffle=False)
-                avg_loss_test = dict_results = evaluate_classification_model(
-                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                test_loader = DataLoader(training_data.X_test, batch_size=32, shuffle=False)
+                avg_loss_test, dict_results, _ = evaluate_classification_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose, task=task
                 )
                 print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
 
