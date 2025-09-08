@@ -12,7 +12,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "networkx", marker = "python_full_version < '3.13'", specifier = "==2.8.5" }]
+overrides = [{ name = "networkx", specifier = "==2.8.5" }]
 
 [[package]]
 name = "absl-py"
@@ -912,14 +912,40 @@ wheels = [
 
 [[package]]
 name = "gymnasium"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "cloudpickle", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "farama-notifications", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4e/12/1047b8fdbfcdce74022048d916e844ad7e6e1114d81d26a7aed657e3a76d/gymnasium-1.0.0.tar.gz", hash = "sha256:9d2b66f30c1b34fe3c2ce7fae65ecf365d0e9982d2b3d860235e773328a3b403", size = 821389, upload-time = "2024-10-08T10:01:02.49Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/85/f5039ce2df5f0789ff1240f08a59f3e8c92e4c5f99543b7aad7388532f7c/gymnasium-1.0.0-py3-none-any.whl", hash = "sha256:b6f40e1e24c5bd419361e1a5b86a9117d2499baecc3a660d44dfff4c465393ad", size = 958120, upload-time = "2024-10-08T10:01:00.337Z" },
+]
+
+[[package]]
+name = "gymnasium"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
+    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
+    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
+]
 dependencies = [
-    { name = "cloudpickle" },
-    { name = "farama-notifications" },
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
+    { name = "cloudpickle", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "farama-notifications", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fd/17/c2a0e15c2cd5a8e788389b280996db927b923410de676ec5c7b2695e9261/gymnasium-1.2.0.tar.gz", hash = "sha256:344e87561012558f603880baf264ebc97f8a5c997a957b0c9f910281145534b0", size = 821142, upload-time = "2025-06-27T08:21:20.262Z" }
 wheels = [
@@ -1499,7 +1525,7 @@ name = "mqt-bench"
 version = "2.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "networkx" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
     { name = "qiskit", extra = ["qasm3-import"] },
@@ -1522,12 +1548,13 @@ dependencies = [
     { name = "pytket-qiskit" },
     { name = "qiskit" },
     { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'" },
-    { name = "qiskit-ibm-transpiler" },
+    { name = "qiskit-ibm-transpiler", marker = "python_full_version < '3.13'" },
     { name = "rich" },
-    { name = "sb3-contrib" },
+    { name = "sb3-contrib", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "sb3-contrib", version = "2.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
     { name = "scikit-learn" },
     { name = "tensorboard" },
-    { name = "torch" },
+    { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
@@ -1579,12 +1606,12 @@ requires-dist = [
     { name = "pytket-qiskit", specifier = ">=0.71.0" },
     { name = "qiskit", specifier = "!=1.3.2" },
     { name = "qiskit-ibm-ai-local-transpiler", marker = "python_full_version < '3.13'", specifier = ">=0.3.2" },
-    { name = "qiskit-ibm-transpiler", specifier = ">=0.11.1" },
+    { name = "qiskit-ibm-transpiler", marker = "python_full_version < '3.13'", specifier = ">=0.11.1" },
     { name = "rich", specifier = ">=12.6.0" },
     { name = "sb3-contrib", specifier = ">=2.0.0" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "tensorboard", specifier = ">=2.17.0" },
-    { name = "torch", specifier = ">=2.7.1,<2.8.0" },
+    { name = "torch", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'", specifier = ">=2.2.2,<2.3.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "typing-extensions", specifier = ">=4.1" },
 ]
@@ -2484,7 +2511,7 @@ dependencies = [
     { name = "graphviz" },
     { name = "jinja2" },
     { name = "lark" },
-    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "networkx" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
     { name = "qwasm" },
@@ -2805,11 +2832,11 @@ name = "qiskit-ibm-transpiler"
 version = "0.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "backoff" },
+    { name = "backoff", marker = "python_full_version < '3.13'" },
     { name = "networkx", marker = "python_full_version < '3.13'" },
-    { name = "qiskit" },
-    { name = "qiskit-qasm3-import" },
-    { name = "requests" },
+    { name = "qiskit", marker = "python_full_version < '3.13'" },
+    { name = "qiskit-qasm3-import", marker = "python_full_version < '3.13'" },
+    { name = "requests", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8a/ac/d6f176107a0a07aeae583dbde3e7812cd31f670f0d285a0167ece51f040e/qiskit_ibm_transpiler-0.13.1.tar.gz", hash = "sha256:83631565b3adb6ce3825a82af8b6276e3f5e87d193c6efd01b7edae3bf56b31c", size = 46935, upload-time = "2025-07-21T09:42:49.367Z" }
 wheels = [
@@ -3056,10 +3083,33 @@ wheels = [
 
 [[package]]
 name = "sb3-contrib"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "stable-baselines3", version = "2.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c7/4e/dd31aba603634a7b9473b502fe85b694e4392c448eae0d345640b87211c2/sb3_contrib-2.4.0.tar.gz", hash = "sha256:a3709d97ddd529c45e3d56a5ae7e61a380bb2e11bacb9a3e6951ac0c481350ca", size = 89358, upload-time = "2024-11-18T10:20:53.214Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/de/33d3b00116488de9371a56009089ab408d949cda7057e2560c8efae810df/sb3_contrib-2.4.0-py3-none-any.whl", hash = "sha256:725d90157028a94c69804f2e7332128518fb7cbab39e7e141d2d0355547a72ab", size = 92752, upload-time = "2024-11-18T10:20:51.074Z" },
+]
+
+[[package]]
+name = "sb3-contrib"
 version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
+    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
+    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
+]
 dependencies = [
-    { name = "stable-baselines3" },
+    { name = "stable-baselines3", version = "2.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7e/23/2831ccecc8fc2fcda401804f3ed1dc3b81f7c4ad3cb32dc6b1cd79f91c49/sb3_contrib-2.7.0.tar.gz", hash = "sha256:87281ae64e6965e46ac24b58778241d2b07b29996044491267ed844c1a75acfe", size = 90289, upload-time = "2025-07-25T13:02:07.208Z" }
 wheels = [
@@ -3575,16 +3625,44 @@ wheels = [
 
 [[package]]
 name = "stable-baselines3"
+version = "2.4.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "cloudpickle", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "gymnasium", version = "1.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "matplotlib", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "pandas", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/3b/13aacfe41697455f559449ad0dc5f51b4f30aed8fb000131225c64cc60f4/stable_baselines3-2.4.1.tar.gz", hash = "sha256:3bbf0e46b9aa4b1fd2696ff4c806ddb8ba719966ef0f71fba61f7a177e563c81", size = 212611, upload-time = "2025-01-07T13:22:42.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/96/04e1e987b5dd8ac0f192e74ad740fb5d72b4c9acd04f3ee13f5f9d6eacae/stable_baselines3-2.4.1-py3-none-any.whl", hash = "sha256:f74cde94a15c1d9d90343e73d790e1898b4c1cbb3f09eeeb580303d33f3fc4d6", size = 183963, upload-time = "2025-01-07T13:22:39.666Z" },
+]
+
+[[package]]
+name = "stable-baselines3"
 version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
+    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
+    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
+]
 dependencies = [
-    { name = "cloudpickle" },
-    { name = "gymnasium" },
-    { name = "matplotlib" },
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin')" },
+    { name = "cloudpickle", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "gymnasium", version = "1.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "matplotlib", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')" },
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13' and 'x86_64' not in platform_machine) or (python_full_version >= '3.11' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
-    { name = "pandas" },
-    { name = "torch" },
+    { name = "pandas", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "torch", version = "2.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/56/cc/9a334071fae143bc7177e17a3191db83c1a4bf9038b09c4c5a34e427ca33/stable_baselines3-2.7.0.tar.gz", hash = "sha256:5258561e5becd15234274262cf09fcb9a082a73c2c67a85322f5652a05195ec4", size = 219012, upload-time = "2025-07-25T09:54:35.113Z" }
 wheels = [
@@ -3756,13 +3834,45 @@ wheels = [
 
 [[package]]
 name = "torch"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.12.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version == '3.11.*' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+    "python_full_version < '3.11' and 'x86_64' in platform_machine and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "filelock", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "fsspec", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "jinja2", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "networkx", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "sympy", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' and 'x86_64' in platform_machine and sys_platform == 'darwin'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/55/7192974ab13e5e5577f45d14ce70d42f5a9a686b4f57bbe8c9ab45c4a61a/torch-2.2.2-cp310-none-macosx_10_9_x86_64.whl", hash = "sha256:b2e2200b245bd9f263a0d41b6a2dab69c4aca635a01b30cca78064b0ef5b109e", size = 150788930, upload-time = "2024-03-27T21:08:09.98Z" },
+    { url = "https://files.pythonhosted.org/packages/33/6b/21496316c9b8242749ee2a9064406271efdf979e91d440e8a3806b5e84bf/torch-2.2.2-cp310-none-macosx_11_0_arm64.whl", hash = "sha256:877b3e6593b5e00b35bbe111b7057464e76a7dd186a287280d941b564b0563c2", size = 59707286, upload-time = "2024-03-27T21:10:28.154Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/14/e105b8ef6d324e789c1589e95cb0ab63f3e07c2216d68b1178b7c21b7d2a/torch-2.2.2-cp311-none-macosx_10_9_x86_64.whl", hash = "sha256:95b9b44f3bcebd8b6cd8d37ec802048c872d9c567ba52c894bba90863a439059", size = 150796474, upload-time = "2024-03-27T21:09:29.142Z" },
+    { url = "https://files.pythonhosted.org/packages/96/23/18b9c16c18a77755e7f15173821c7100f11e6b3b7717bea8d729bdeb92c0/torch-2.2.2-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:49aa4126ede714c5aeef7ae92969b4b0bbe67f19665106463c39f22e0a1860d1", size = 59714938, upload-time = "2024-03-27T21:09:34.709Z" },
+    { url = "https://files.pythonhosted.org/packages/79/78/29dcab24a344ffd9ee9549ec0ab2c7885c13df61cde4c65836ee275efaeb/torch-2.2.2-cp312-none-macosx_10_9_x86_64.whl", hash = "sha256:eb4d6e9d3663e26cd27dc3ad266b34445a16b54908e74725adb241aa56987533", size = 150797270, upload-time = "2024-03-27T21:08:29.623Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/0e/e4e033371a7cba9da0db5ccb507a9174e41b9c29189a932d01f2f61ecfc0/torch-2.2.2-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:bf9558da7d2bf7463390b3b2a61a6a3dbb0b45b161ee1dd5ec640bf579d479fc", size = 59678388, upload-time = "2024-03-27T21:08:35.869Z" },
+]
+
+[[package]]
+name = "torch"
 version = "2.7.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.12.*' and sys_platform != 'darwin')",
+    "(python_full_version == '3.11.*' and 'x86_64' not in platform_machine) or (python_full_version == '3.11.*' and sys_platform != 'darwin')",
+    "(python_full_version < '3.11' and 'x86_64' not in platform_machine) or (python_full_version < '3.11' and sys_platform != 'darwin')",
+]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx", marker = "python_full_version < '3.13'" },
+    { name = "filelock", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "fsspec", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "jinja2", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
+    { name = "networkx", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
     { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cuda-cupti-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-cuda-nvrtc-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -3777,10 +3887,10 @@ dependencies = [
     { name = "nvidia-nccl-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-nvtx-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "setuptools", marker = "python_full_version >= '3.12'" },
-    { name = "sympy" },
+    { name = "setuptools", marker = "(python_full_version == '3.12.*' and 'x86_64' not in platform_machine and sys_platform == 'darwin') or (python_full_version >= '3.12' and sys_platform != 'darwin') or (python_full_version >= '3.13' and sys_platform == 'darwin')" },
+    { name = "sympy", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
     { name = "triton", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.13' or (python_full_version < '3.13' and 'x86_64' not in platform_machine) or sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/27/2e06cb52adf89fe6e020963529d17ed51532fc73c1e6d1b18420ef03338c/torch-2.7.1-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:a103b5d782af5bd119b81dbcc7ffc6fa09904c423ff8db397a1e6ea8fd71508f", size = 99089441, upload-time = "2025-06-04T17:38:48.268Z" },

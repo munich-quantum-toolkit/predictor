@@ -47,7 +47,7 @@ dependencies = [
     "torch>=2.2.2,<2.3.0; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict torch v2.3.0 for macOS x86 since it is not supported anymore.
     "typing-extensions>=4.1",  # for `assert_never`
     "qiskit-ibm-transpiler>=0.11.1; python_version < '3.13'",
-    "qiskit-ibm-ai-local-transpiler>=0.3.2; python_version < '3.13'"
+    "qiskit-ibm-ai-local-transpiler>=0.3.2; python_version < '3.13'",
 ]
 
 classifiers = [
@@ -253,5 +253,5 @@ ignore = ["GH200"]
 
 [tool.uv]
 override-dependencies = [
-  "networkx==2.8.5; python_version < '3.13'", # qiskit-ibm-ai-local-transpiler requires this specific version of networkx
+  "networkx==2.8.5",
 ]

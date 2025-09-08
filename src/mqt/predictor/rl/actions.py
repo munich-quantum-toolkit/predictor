@@ -78,7 +78,9 @@ from qiskit.transpiler.passes import (
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
-from qiskit_ibm_transpiler.ai.routing import AIRouting
+
+if sys.version_info < (3, 13):
+    from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
@@ -627,53 +629,55 @@ def add_cregs_and_measurements(
     return qc
 
 
-class SafeAIRouting(AIRouting):  # type: ignore[misc]
-    """Custom AIRouting wrapper that removes classical registers before routing.
+if sys.version_info < (3, 13):
 
-    This prevents failures in AIRouting when classical bits are present by
-    temporarily removing classical registers and measurements and restoring
-    them after routing is completed.
-    """
+    class SafeAIRouting(AIRouting):  # type: ignore[misc]
+        """Custom AIRouting wrapper that removes classical registers before routing.
 
-    def run(self, dag: DAGCircuit) -> DAGCircuit:
-        """Run the routing pass on a DAGCircuit."""
-        qc_orig = dag_to_circuit(dag)
-        # Extract classical registers and measurement instructions
-        cregs, measurements = extract_cregs_and_measurements(qc_orig)
-        # Remove cregs and measurements
-        qc_noclassical = remove_cregs(qc_orig)
-        # Convert back to dag and run routing (AIRouting)
-        dag_noclassical = circuit_to_dag(qc_noclassical)
-        dag_routed = super().run(dag_noclassical)
-        # Convert routed dag to circuit for restoration
-        qc_routed = dag_to_circuit(dag_routed)
-        # Build mapping from original qubits to qubits in routed circuit
-        final_layout = getattr(self, "property_set", {}).get("final_layout", None)
-        if final_layout is None and hasattr(dag_routed, "property_set"):
-            final_layout = dag_routed.property_set.get("final_layout", None)
+        This prevents failures in AIRouting when classical bits are present by
+        temporarily removing classical registers and measurements and restoring
+        them after routing is completed.
+        """
 
-        assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
-        qubit_map = {}
-        for virt in qc_orig.qubits:
-            try:
-                phys = final_layout[virt]
-            except KeyError as err:
-                msg = f"Virtual qubit {virt} not found in final layout!"
-                raise RuntimeError(msg) from err
-            if isinstance(phys, int):
+        def run(self, dag: DAGCircuit) -> DAGCircuit:
+            """Run the routing pass on a DAGCircuit."""
+            qc_orig = dag_to_circuit(dag)
+            # Extract classical registers and measurement instructions
+            cregs, measurements = extract_cregs_and_measurements(qc_orig)
+            # Remove cregs and measurements
+            qc_noclassical = remove_cregs(qc_orig)
+            # Convert back to dag and run routing (AIRouting)
+            dag_noclassical = circuit_to_dag(qc_noclassical)
+            dag_routed = super().run(dag_noclassical)
+            # Convert routed dag to circuit for restoration
+            qc_routed = dag_to_circuit(dag_routed)
+            # Build mapping from original qubits to qubits in routed circuit
+            final_layout = getattr(self, "property_set", {}).get("final_layout", None)
+            if final_layout is None and hasattr(dag_routed, "property_set"):
+                final_layout = dag_routed.property_set.get("final_layout", None)
+
+            assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
+            qubit_map = {}
+            for virt in qc_orig.qubits:
                 try:
-                    qubit_map[virt] = qc_routed.qubits[phys]
-                except IndexError as err:
-                    msg = f"Physical index {phys} is out of range in routed circuit!"
+                    phys = final_layout[virt]
+                except KeyError as err:
+                    msg = f"Virtual qubit {virt} not found in final layout!"
                     raise RuntimeError(msg) from err
-            else:
-                try:
-                    idx = qc_routed.qubits.index(phys)
-                except ValueError as err:
-                    msg = f"Physical qubit {phys} not found in output circuit!"
-                    raise RuntimeError(msg) from err
-                qubit_map[virt] = qc_routed.qubits[idx]
-                # Restore classical registers and measurement instructions
-        qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
-        # Return as dag
-        return circuit_to_dag(qc_final)
+                if isinstance(phys, int):
+                    try:
+                        qubit_map[virt] = qc_routed.qubits[phys]
+                    except IndexError as err:
+                        msg = f"Physical index {phys} is out of range in routed circuit!"
+                        raise RuntimeError(msg) from err
+                else:
+                    try:
+                        idx = qc_routed.qubits.index(phys)
+                    except ValueError as err:
+                        msg = f"Physical qubit {phys} not found in output circuit!"
+                        raise RuntimeError(msg) from err
+                    qubit_map[virt] = qc_routed.qubits[idx]
+                    # Restore classical registers and measurement instructions
+            qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
+            # Return as dag
+            return circuit_to_dag(qc_final)

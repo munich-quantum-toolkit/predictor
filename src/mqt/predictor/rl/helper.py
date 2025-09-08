@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit import QuantumCircuit
+
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
@@ -26,6 +27,7 @@ import zipfile
 from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
+
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
