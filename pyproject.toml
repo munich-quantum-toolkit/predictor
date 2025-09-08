@@ -34,6 +34,7 @@ dependencies = [
     "pytket>=1.29.0", # lowest version that supports the used pytket AutoRebase pass instead of auto_rebase
     "pytket_qiskit>=0.71.0",
     "sb3_contrib>=2.0.0",
+    "stable-baselines3>=2.7.0",
     "tqdm>=4.66.0",
     "rich>=12.6.0",
     "scikit-learn>=1.5.1",
