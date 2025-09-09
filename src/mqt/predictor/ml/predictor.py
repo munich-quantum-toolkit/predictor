@@ -61,7 +61,7 @@ plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
 
-USE_THREADS = sys.platform == "win32" and sys.version_info >= (3, 13)
+NO_PARALLEL = sys.platform == "win32" and sys.version_info >= (3, 13)
 
 
 def setup_device_predictor(
@@ -230,14 +230,12 @@ class Predictor:
                 zip_ref.extractall(path_uncompiled_circuits)
 
         # On Windows + Python 3.13, joblib's default "loky" process backend is broken
-        # (missing `_posixsubprocess`). We fall back to the "threading" backend here.
-        if USE_THREADS:
-            Parallel(n_jobs=num_workers, backend="threading", verbose=100)(
-                delayed(self._compile_all_circuits_devicewise)(
+        # (missing `_posixsubprocess`). Fall back to no multiprocessing.
+        if NO_PARALLEL:
+            for device in self.devices:
+                self._compile_all_circuits_devicewise(
                     device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
                 )
-                for device in self.devices
-            )
         else:
             Parallel(n_jobs=num_workers, verbose=100)(
                 delayed(self._compile_all_circuits_devicewise)(
@@ -279,8 +277,8 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        if USE_THREADS:
-            results = Parallel(n_jobs=num_workers, backend="threading", verbose=100)(
+        if NO_PARALLEL:
+            results = Parallel(n_jobs=1, verbose=100)(
                 delayed(self._generate_training_sample)(
                     filename.name,
                     path_uncompiled_circuits,
