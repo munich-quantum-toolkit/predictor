@@ -427,7 +427,10 @@ class Predictor:
         if not training_data:
             training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
-        mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
+        if NO_PARALLEL:
+            mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=1).fit(training_data.X_train, training_data.y_train)
+        else:
+            mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
 
         joblib_dump(mdl, save_mdl_path)
         logger.info("Random Forest model is trained and saved.")
