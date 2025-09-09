@@ -113,7 +113,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
-        self.actions_preserving_indices = []
+        self.actions_mapping_preserving_indices = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -134,7 +134,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
             if getattr(elem, "preserve", False):
-                self.actions_preserving_indices.append(index)
+                self.actions_mapping_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.LAYOUT]:
             self.action_set[index] = elem
@@ -241,26 +241,16 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def calculate_reward(self, qc: QuantumCircuit | None = None) -> float:
         """Calculates and returns the reward for the current state."""
-        if qc is None:
-            if self.reward_function == "expected_fidelity":
-                return expected_fidelity(self.state, self.device)
-            if self.reward_function == "estimated_success_probability":
-                return estimated_success_probability(self.state, self.device)
-            if self.reward_function == "estimated_hellinger_distance":
-                return estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
-            if self.reward_function == "critical_depth":
-                return crit_depth(self.state)
-            assert_never(self.state)
-        else:
-            if self.reward_function == "expected_fidelity":
-                return expected_fidelity(qc, self.device)
-            if self.reward_function == "estimated_success_probability":
-                return estimated_success_probability(qc, self.device)
-            if self.reward_function == "estimated_hellinger_distance":
-                return estimated_hellinger_distance(qc, self.device, self.hellinger_model)
-            if self.reward_function == "critical_depth":
-                return crit_depth(qc)
-            assert_never(self.state)
+        circuit = self.state if qc is None else qc
+        if self.reward_function == "expected_fidelity":
+            return expected_fidelity(circuit, self.device)
+        if self.reward_function == "estimated_success_probability":
+            return estimated_success_probability(circuit, self.device)
+        if self.reward_function == "estimated_hellinger_distance":
+            return estimated_hellinger_distance(circuit, self.device, self.hellinger_model)
+        if self.reward_function == "critical_depth":
+            return crit_depth(circuit)
+        assert_never(circuit)
 
     def render(self) -> None:
         """Renders the current state."""
@@ -310,7 +300,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         """Returns a list of valid actions for the current state."""
         action_mask = [action in self.valid_actions for action in self.action_set]
 
-        # # it is not clear how tket will handle the layout, so we remove all actions that are from "origin"=="tket" if a layout is set
+        # it is not clear how tket will handle the layout, so we remove all actions that are from "origin"=="tket" if a layout is set
         if self.layout is not None:
             action_mask = [
                 action_mask[i] and self.action_set[i].origin != CompilationOrigin.TKET for i in range(len(action_mask))
@@ -620,30 +610,35 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
+        # Check if all gates are native to the device
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-
+        # Check if the circuit is mapped to the device coupling graph
         check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
-        if not only_nat_gates:  # not native gates yet
+        if not only_nat_gates:
+            # Circuit still has non-native gates
             if not mapped:
+                # Allow synthesis and optimization actions
                 return self.actions_synthesis_indices + self.actions_opt_indices
-            return self.actions_synthesis_indices + self.actions_preserving_indices
-
-        if mapped and self.layout is not None:  # The circuit is correctly mapped
-            return [
-                self.action_terminate_index,
-                *self.actions_preserving_indices,
-                *self.actions_final_optimization_indices,
-            ]
-
-        if self.layout is not None:
-            # The circuit is not yet mapped but a layout is set.
-            return self.actions_routing_indices
-        # The circuit already fulfils coupling map but no layout is assigned, could explore better layout options
+            # Allow synthesis and mapping-preserving actions (to not )
+            return self.actions_synthesis_indices + self.actions_mapping_preserving_indices
+        # Circuit has only native gates
         if mapped:
-            return self.actions_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
+            if self.layout is not None:
+                # The circuits is correctly compiled, terminate or do further mapping-preserving optimizations
+                return [
+                    self.action_terminate_index,
+                    *self.actions_mapping_preserving_indices,
+                    *self.actions_final_optimization_indices,
+                ]
+            # No layout is assigned, assign a valid layout
+            return self.actions_mapping_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
+        if self.layout is not None:
+            # Not mapped yet but a layout is assigned in the last step, do routing
+            return self.actions_routing_indices
+        # Not mapped yet, do general optimizations/layout/mapping
         return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices

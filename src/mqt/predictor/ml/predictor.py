@@ -231,18 +231,13 @@ class Predictor:
 
         # On Windows + Python 3.13, joblib's default "loky" process backend is broken
         # (missing `_posixsubprocess`). Fall back to no multiprocessing.
-        if NO_PARALLEL:
-            for device in self.devices:
-                self._compile_all_circuits_devicewise(
-                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
-                )
-        else:
-            Parallel(n_jobs=num_workers, verbose=100)(
-                delayed(self._compile_all_circuits_devicewise)(
-                    device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
-                )
-                for device in self.devices
+        num_jobs = 1 if NO_PARALLEL else num_workers
+        Parallel(n_jobs=num_jobs, verbose=100)(
+            delayed(self._compile_all_circuits_devicewise)(
+                device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
             )
+            for device in self.devices
+        )
 
     def generate_training_data(
         self,
@@ -277,26 +272,16 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        if NO_PARALLEL:
-            results = Parallel(n_jobs=1, verbose=100)(
-                delayed(self._generate_training_sample)(
-                    filename.name,
-                    path_uncompiled_circuits,
-                    path_compiled_circuits,
-                    logger.level,
-                )
-                for filename in path_uncompiled_circuits.glob("*.qasm")
+        num_jobs = 1 if NO_PARALLEL else num_workers
+        results = Parallel(n_jobs=num_jobs, verbose=100)(
+            delayed(self._generate_training_sample)(
+                filename.name,
+                path_uncompiled_circuits,
+                path_compiled_circuits,
+                logger.level,
             )
-        else:
-            results = Parallel(n_jobs=num_workers, verbose=100)(
-                delayed(self._generate_training_sample)(
-                    filename.name,
-                    path_uncompiled_circuits,
-                    path_compiled_circuits,
-                    logger.level,
-                )
-                for filename in path_uncompiled_circuits.glob("*.qasm")
-            )
+            for filename in path_uncompiled_circuits.glob("*.qasm")
+        )
 
         for sample in results:
             training_sample, circuit_name, scores = sample
@@ -427,11 +412,10 @@ class Predictor:
         if not training_data:
             training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
-        if NO_PARALLEL:
-            mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=1).fit(training_data.X_train, training_data.y_train)
-        else:
-            mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
-
+        num_jobs = 1 if NO_PARALLEL else 8
+        mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=num_jobs).fit(
+            training_data.X_train, training_data.y_train
+        )
         joblib_dump(mdl, save_mdl_path)
         logger.info("Random Forest model is trained and saved.")
 

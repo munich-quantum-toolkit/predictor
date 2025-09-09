@@ -15,7 +15,6 @@ import signal
 import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from warnings import warn
 
 import networkx as nx
 import numpy as np
@@ -52,7 +51,7 @@ def timeout_watcher(
         TimeoutExceptionError: If the function call exceeds the timeout limit.
     """
     if sys.platform == "win32":
-        warn("Timeout is not supported on Windows.", category=RuntimeWarning, stacklevel=2)
+        logger.info("Timeout is not supported on Windows; running without timeout.")
         return func(*args) if isinstance(args, tuple | list) else func(args)
 
     class TimeoutExceptionError(Exception):  # Custom exception class
