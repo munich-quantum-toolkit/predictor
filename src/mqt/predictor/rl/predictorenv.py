@@ -24,7 +24,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
+    from qiskit.transpiler import Target
 
+    from mqt.predictor.reward import (
+        figure_of_merit,
+    )
     from mqt.predictor.rl.actions import Action
 
 
@@ -40,7 +44,7 @@ from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, PassManager, Target, TranspileLayout
+from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
@@ -51,7 +55,6 @@ from mqt.predictor.reward import (
     estimated_hellinger_distance,
     estimated_success_probability,
     expected_fidelity,
-    figure_of_merit,
 )
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample

@@ -15,9 +15,10 @@ from typing import TYPE_CHECKING
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import QuantumCircuit, transpile
+from qiskit import transpile
 
 if TYPE_CHECKING:
+    from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
 
 
