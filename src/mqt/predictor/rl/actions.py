@@ -135,7 +135,7 @@ class Action:
         ]
     )
     stochastic: bool | None = False
-    preserve: bool | None = False
+    preserve_layout: bool | None = False
 
 
 @dataclass
@@ -188,11 +188,22 @@ def remove_action(name: str) -> None:
 
 
 register_action(
-    DeviceDependentAction(
+    DeviceIndependentAction(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        preserve=True,
+        # If no basis_gates are passed, fallback 1q Euler gates:
+        # https://github.com/Qiskit/qiskit/blob/main/qiskit/synthesis/one_qubit/one_qubit_decompose.py#L46
+        [Optimize1qGatesDecomposition()],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "Optimize1qGatesDecomposition_preserve",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        preserve_layout=True,
         transpile_pass=lambda device: [Optimize1qGatesDecomposition(basis=device.operation_names)],
     )
 )
@@ -203,7 +214,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeCancellation()],
-        preserve=True,
+        preserve_layout=True,
     )
 )
 
@@ -213,7 +224,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeInverseCancellation()],
-        preserve=True,
+        preserve_layout=True,
     )
 )
 
@@ -223,7 +234,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [RemoveDiagonalGatesBeforeMeasure()],
-        preserve=True,
+        preserve_layout=True,
     )
 )
 
@@ -248,7 +259,7 @@ register_action(
                 (SXGate(), SXdgGate()),
             ])
         ],
-        preserve=True,
+        preserve_layout=True,
     )
 )
 
@@ -262,8 +273,19 @@ register_action(
 )
 
 register_action(
-    DeviceDependentAction(
+    DeviceIndependentAction(
         "Opt2qBlocks",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        # If no arguments is passed, decompose to U(θ, φ, λ) and CX
+        # https://github.com/Qiskit/qiskit/blob/stable/2.1/qiskit/transpiler/passes/synthesis/default_unitary_synth_plugin.py
+        [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "Opt2qBlocks_preserve",
         CompilationOrigin.QISKIT,
         PassType.OPT,
         transpile_pass=lambda native_gate, coupling_map: [
@@ -271,7 +293,7 @@ register_action(
             ConsolidateBlocks(basis_gates=native_gate),
             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
         ],
-        preserve=True,
+        preserve_layout=True,
     )
 )
 
@@ -336,6 +358,7 @@ register_action(
             MinimumPoint(["depth", "size"], "optimization_loop"),
         ],
         do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
+        preserve_layout=True,
     )
 )
 
