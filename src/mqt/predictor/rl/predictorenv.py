@@ -26,9 +26,7 @@ if TYPE_CHECKING:
     from bqskit import Circuit
     from qiskit.transpiler import Target
 
-    from mqt.predictor.reward import (
-        figure_of_merit,
-    )
+    from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
 
 
