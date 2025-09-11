@@ -67,7 +67,11 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
                 specific_fidelity = 1 - device[gate_type][first_qubit_idx,].error
             else:
                 second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
-                specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+                try:
+                    specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+                except KeyError:
+                    # try flipped orientation (for uni-directional devices)
+                    specific_fidelity = 1 - device[gate_type][second_qubit_idx, first_qubit_idx].error
 
             res *= specific_fidelity
 
@@ -141,7 +145,10 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
         else:  # multi-qubit gate
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
             active_qubits.add(second_qubit_idx)
-            duration = device[gate_type][first_qubit_idx, second_qubit_idx].duration
+            try:
+                duration = device[gate_type][first_qubit_idx, second_qubit_idx].duration
+            except KeyError:
+                duration = device[gate_type][second_qubit_idx, first_qubit_idx].duration
             op_times.append((gate_type, [first_qubit_idx, second_qubit_idx], duration, "s"))
             exec_time_per_qubit[first_qubit_idx] += duration
             exec_time_per_qubit[second_qubit_idx] += duration
@@ -203,12 +210,15 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 if first_qubit_idx not in active_qubits:
                     continue
 
+                dt = device.dt  # discrete time unit used in duration
                 res *= np.exp(
                     -instruction.duration
+                    * dt
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
                 )
                 continue
             res *= 1 - device[gate_type][first_qubit_idx,].error
+
         else:
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
             res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error

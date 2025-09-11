@@ -82,7 +82,6 @@ def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float6
         "num_qubits": qc.num_qubits,
         "depth": qc.depth(),
     }
-
     supermarq_features = calc_supermarq_features(qc)
     # for all dict values, put them in a list each
     feature_dict["program_communication"] = np.array([supermarq_features.program_communication], dtype=np.float32)
@@ -90,7 +89,6 @@ def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float6
     feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)
     feature_dict["parallelism"] = np.array([supermarq_features.parallelism], dtype=np.float32)
     feature_dict["liveness"] = np.array([supermarq_features.liveness], dtype=np.float32)
-
     return feature_dict
 
 

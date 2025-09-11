@@ -64,6 +64,7 @@ def _run_tests(
         "--no-dev",
         "--group",
         "test",
+        "--frozen",
         *install_args,
         "pytest",
         *pytest_run_args,
