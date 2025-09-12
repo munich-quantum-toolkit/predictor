@@ -468,8 +468,8 @@ class Predictor:
         device_obj = torch.device(device)
 
         # Hyperparameter spaces
-        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128, 256])
-        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 5)
+        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128])
+        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 6)
         mlp_depth = trial.suggest_int("mlp_depth", 1, 3)
         mlp_choices = [32, 64, 128, 256, 512, 1024]
         mlp_units = [trial.suggest_categorical(f"mlp_units_{i}", mlp_choices) for i in range(mlp_depth)]
@@ -495,7 +495,6 @@ class Predictor:
             ).to(device_obj)
 
             optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
             # Based on the task, do a training and evaluation for regression or classification
             if task == "regression":
                 train_regression_model(
@@ -513,7 +512,7 @@ class Predictor:
                     scheduler=None,
                 )
                 val_loss, val_metrics, _ = evaluate_regression_model(
-                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=False
+                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=verbose
                 )
             else:
                 train_classification_model(
@@ -543,6 +542,17 @@ class Predictor:
         # Take the mean value
         mean_val = float(np.mean(fold_val_best_losses))
         trial.set_user_attr("fold_val_best_losses", fold_val_best_losses)
+        def _to_serializable(obj):
+            # detach → cpu → convert scalars to python numbers
+            if torch.is_tensor(obj):
+                obj = obj.detach().cpu()
+                return obj.item() if obj.numel() == 1 else obj.tolist()
+            if isinstance(obj, dict):
+                return {k: _to_serializable(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_to_serializable(v) for v in obj]
+            return obj
+
         trial.set_user_attr(
             "best_hparams",
             {
@@ -551,7 +561,7 @@ class Predictor:
                 "num_resnet_layers": num_resnet_layers,
                 "mlp_units": mlp_units,
                 "num_outputs": num_outputs,
-                "val_metrics": val_metrics,
+                "val_metrics": _to_serializable(val_metrics),
             },
         )
         return mean_val

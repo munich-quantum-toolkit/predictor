@@ -314,6 +314,7 @@ def evaluate_classification_model(
     total_loss, total = 0.0, 0
     all_logits, all_targets = [], []
     arrays = None
+    need_arrays = return_arrays or verbose
 
     # --- no decorator; use context manager instead ---
     with torch.no_grad():
@@ -343,9 +344,11 @@ def evaluate_classification_model(
             all_targets.append(y.detach().cpu())
 
     avg_loss = total_loss / max(1, total)
-    logits = torch.cat(all_logits, dim=0)
-    y_true = torch.cat(all_targets, dim=0)
-
+    if need_arrays:
+        logits = torch.cat(all_logits, dim=0)
+        y_true = torch.cat(all_targets, dim=0)
+    else:
+        logits = y_true = None
     metrics: dict[str, float] = {"loss": float(avg_loss)}
     # ---- Convert logits -> probs / preds & compute sklearn metrics ----
     if verbose:
@@ -455,13 +458,13 @@ def train_classification_model(
 
         if val_loader is not None:
             val_loss, val_metrics, _ = evaluate_classification_model(
-                model, val_loader, loss_fn, task=task, device=str(device)
+                model, val_loader, loss_fn, task=task, device=str(device), verbose=verbose, return_arrays=False
             )
 
             improved = (best_metric - val_loss) > min_delta
             if improved:
                 best_metric = val_loss
-                best_state = deepcopy(model.state_dict())  # freeze best weights
+                best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()} #deepcopy(model.state_dict())  # freeze best weights
                 best_metrics_dict = {"val_" + k: v for k, v in val_metrics.items()}
                 best_metrics_dict["train_loss_at_best"] = float(train_loss)
                 epochs_no_improve = 0
@@ -472,7 +475,7 @@ def train_classification_model(
                 metrics_str = " | ".join(f"{k}={v:.6f}" for k, v in val_metrics.items())
                 print(
                     f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | {metrics_str} | "
-                    f"no_improve={epochs_no_improve}/{patience}"
+                    f"no_improve={epochs_no_improve}/{patience} | metrics={best_metrics_dict}"
                 )
 
             if epochs_no_improve >= patience:
@@ -484,7 +487,7 @@ def train_classification_model(
             improved = (best_metric - train_loss) > min_delta
             if improved:
                 best_metric = train_loss
-                best_state = deepcopy(model.state_dict())
+                best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()} #deepcopy(model.state_dict())  # freeze best weights
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
@@ -500,6 +503,7 @@ def train_classification_model(
 
     if restore_best and best_state is not None:
         model.load_state_dict(best_state)
+        model.to(device)
 
 
 def evaluate_regression_model(
