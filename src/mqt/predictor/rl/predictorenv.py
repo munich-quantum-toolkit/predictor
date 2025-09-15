@@ -204,6 +204,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             RuntimeError: If no valid actions are left.
         """
         self.used_actions.append(str(self.action_set[action].name))
+        logger.info(f"{self.action_set[action].name!s}")
         altered_qc = self.apply_action(action)
         if not altered_qc:
             return (
