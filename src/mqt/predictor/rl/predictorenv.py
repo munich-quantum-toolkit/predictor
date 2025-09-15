@@ -78,6 +78,7 @@ from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
+    prepare_noise_data,
 )
 
 logger = logging.getLogger("mqt-predictor")
@@ -430,7 +431,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 max_iteration=self.max_iter,
             )
         else:
-            if action.name in ["QiskitO3", "Opt2qBlocks"] and isinstance(action, DeviceDependentAction):
+            if action.name in ["QiskitO3", "Opt2qBlocks_preserve"] and isinstance(action, DeviceDependentAction):
                 passes = action.transpile_pass(
                     self.device.operation_names,
                     CouplingMap(self.device.build_coupling_map()) if self.layout else None,
@@ -494,32 +495,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
         if action.name == "NoiseAwarePlacement":
+            # Handle NoiseAwarePlacement separately (requires error data)
             if self.node_err is None or self.edge_err is None or self.readout_err is None:
-                node_err: dict[Node, float] = {}
-                edge_err: dict[tuple[Node, Node], float] = {}
-                readout_err: dict[Node, float] = {}
-
-                # Calculate avg node, edge and readout error
-                for op_name in self.device.operation_names:
-                    inst_props = self.device[op_name]  # this is a dict-like object
-                    for qtuple, props in inst_props.items():
-                        if props is None or not hasattr(props, "error") or props.error is None:
-                            continue
-                        if len(qtuple) == 1:  # single-qubit op
-                            q = qtuple[0]
-                            node_err[Node(q)] = props.error
-                        elif len(qtuple) == 2:  # two-qubit op
-                            q1, q2 = qtuple
-                            edge_err[Node(q1), Node(q2)] = props.error
-
-                # Readout errors (they are in the Target under "measure")
-                if "measure" in self.device:
-                    for (q,), props in self.device["measure"].items():
-                        if props is not None and hasattr(props, "error") and props.error is not None:
-                            readout_err[Node(q)] = props.error
-                self.node_err = node_err
-                self.edge_err = edge_err
-                self.readout_err = readout_err
+                self.node_err, self.edge_err, self.readout_err = prepare_noise_data(self.device)
             assert callable(action.transpile_pass)
             transpile_pass = action.transpile_pass(self.device, self.node_err, self.edge_err, self.readout_err)
         else:
@@ -527,6 +505,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
             )
         assert isinstance(transpile_pass, list)
+        # Map TKET placement into a Qiskit layout
         if action_index in self.actions_layout_indices:
             try:
                 placement = transpile_pass[0].get_placement_map(tket_qc)
@@ -609,36 +588,36 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determines and returns the valid actions for the current state."""
-        # Check if all gates are native to the device
+        """Determine the valid actions for the current circuit state."""
+        # Check if circuit uses only native gates
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-        # Check if the circuit is mapped to the device coupling graph
+
+        # Check if circuit is mapped to the device coupling map
         check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
         if not only_nat_gates:
-            # Circuit still has non-native gates
             if not mapped:
-                # Allow synthesis and optimization actions
+                # Non-native + unmapped → synthesis or optimization
                 return self.actions_synthesis_indices + self.actions_opt_indices
-            # Allow synthesis and mapping-preserving actions (to not )
+            # Non-native + mapped → synthesis or mapping-preserving
             return self.actions_synthesis_indices + self.actions_mapping_preserving_indices
-        # Circuit has only native gates
+
         if mapped:
             if self.layout is not None:
-                # The circuits is correctly compiled, terminate or do further mapping-preserving optimizations
+                # Native + fully mapped & layout assigned → terminate or fine-tune
                 return [
                     self.action_terminate_index,
                     *self.actions_mapping_preserving_indices,
                     *self.actions_final_optimization_indices,
                 ]
-            # No layout is assigned, assign a valid layout
+            # Mapped but no explicit layout yet → explore layout/mapping improvements
             return self.actions_mapping_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
         if self.layout is not None:
-            # Not mapped yet but a layout is assigned in the last step, do routing
+            # Layout chosen but not mapped → must do routing
             return self.actions_routing_indices
-        # Not mapped yet, do general optimizations/layout/mapping
+        # Not mapped and without layout → explore layout/mapping/optimizations
         return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices

@@ -241,3 +241,31 @@ def postprocess_vf2postlayout(
 
     altered_qc = apply_layout(qc)
     return altered_qc, apply_layout
+
+
+def prepare_noise_data(device: Target) -> tuple[dict[Node, float], dict[tuple[Node, Node], float], dict[Node, float]]:
+    """Extract node, edge, and readout errors from the device target."""
+    node_err: dict[Node, float] = {}
+    edge_err: dict[tuple[Node, Node], float] = {}
+    readout_err: dict[Node, float] = {}
+
+    # Collect errors from operation properties
+    for op_name in device.operation_names:
+        inst_props = device[op_name]
+        for qtuple, props in inst_props.items():
+            if props is None or not hasattr(props, "error") or props.error is None:
+                continue
+            if len(qtuple) == 1:  # single-qubit op
+                q = qtuple[0]
+                node_err[Node(q)] = props.error
+            elif len(qtuple) == 2:  # two-qubit op
+                q1, q2 = qtuple
+                edge_err[Node(q1), Node(q2)] = props.error
+
+    # Collect readout errors
+    if "measure" in device:
+        for (q,), props in device["measure"].items():
+            if props is not None and hasattr(props, "error") and props.error is not None:
+                readout_err[Node(q)] = props.error
+
+    return node_err, edge_err, readout_err
