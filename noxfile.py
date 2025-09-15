@@ -67,7 +67,6 @@ def _run_tests(
         "--frozen",
         *install_args,
         "pytest",
-        "--log-cli-level=INFO",
         *pytest_run_args,
         *session.posargs,
         "--cov-config=pyproject.toml",

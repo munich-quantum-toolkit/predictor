@@ -204,7 +204,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             RuntimeError: If no valid actions are left.
         """
         self.used_actions.append(str(self.action_set[action].name))
-        logger.info(f"{self.action_set[action].name!s}")
         altered_qc = self.apply_action(action)
         if not altered_qc:
             return (
@@ -393,14 +392,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         fom = self.calculate_reward(synth_circ)
 
                         if fom > best_fom:
-                            print(f"New best {self.reward_function}: {fom}")
                             best_fom = fom
                             best_result = out_circ
                             best_property_set = prop_set
                     else:
                         fom = self.calculate_reward(out_circ)
                         if fom < best_fom:
-                            print(f"New best {self.reward_function}: {fom}")
                             best_fom = fom
                             best_result = out_circ
                             best_property_set = prop_set
@@ -511,7 +508,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             try:
                 placement = transpile_pass[0].get_placement_map(tket_qc)
             except Exception as e:
-                print(f"[Warning] Placement failed ({action.name}): {e}. Falling back to original circuit.")
+                logger.warning(f"Placement failed ({action.name}): {e}. Falling back to original circuit.")
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
             else:
                 qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
