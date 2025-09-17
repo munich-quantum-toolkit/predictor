@@ -676,31 +676,18 @@ if sys.version_info < (3, 13):
             qc_routed = dag_to_circuit(dag_routed)
             # Build mapping from original qubits to qubits in routed circuit
             final_layout = getattr(self, "property_set", {}).get("final_layout", None)
-            if final_layout is None and hasattr(dag_routed, "property_set"):
-                final_layout = dag_routed.property_set.get("final_layout", None)
-
             assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
             qubit_map = {}
             for virt in qc_orig.qubits:
-                try:
-                    phys = final_layout[virt]
-                except KeyError as err:
-                    msg = f"Virtual qubit {virt} not found in final layout!"
-                    raise RuntimeError(msg) from err
+                assert virt in final_layout, f"Virtual qubit {virt} not found in final layout!"
+                phys = final_layout[virt]
                 if isinstance(phys, int):
-                    try:
-                        qubit_map[virt] = qc_routed.qubits[phys]
-                    except IndexError as err:
-                        msg = f"Physical index {phys} is out of range in routed circuit!"
-                        raise RuntimeError(msg) from err
+                    assert 0 <= phys < len(qc_routed.qubits), f"Physical index {phys} out of range in routed circuit!"
+                    qubit_map[virt] = qc_routed.qubits[phys]
                 else:
-                    try:
-                        idx = qc_routed.qubits.index(phys)
-                    except ValueError as err:
-                        msg = f"Physical qubit {phys} not found in output circuit!"
-                        raise RuntimeError(msg) from err
-                    qubit_map[virt] = qc_routed.qubits[idx]
-                    # Restore classical registers and measurement instructions
+                    assert phys in qc_routed.qubits, f"Physical qubit {phys} not found in output circuit!"
+                    qubit_map[virt] = qc_routed.qubits[qc_routed.qubits.index(phys)]
+            # Restore classical registers and measurement instructions
             qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
             # Return as dag
             return circuit_to_dag(qc_final)
