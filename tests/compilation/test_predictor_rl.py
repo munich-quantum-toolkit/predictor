@@ -132,8 +132,7 @@ def test_warning_for_unidirectional_device() -> None:
 
 
 def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
-    """Force calculate_reward to fail so the swap-count fallback is triggered."""
-    # A simple circuit with 2 qubits and a swap to test swap-count fallback
+    """Test fallback of the fom_aware_compile function in case of a compilation failure."""
     qc = QuantumCircuit(2)
     qc.swap(0, 1)
 
@@ -156,7 +155,7 @@ def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
 
 
 def test_tket_action_layout_failure() -> None:
-    """Force TKET layout placement to fail to hit the except branch."""
+    """Test fallback in case of TKET layout placement failure."""
     qc = QuantumCircuit(1)
 
     class FakePass:

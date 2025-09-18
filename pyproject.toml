@@ -256,5 +256,5 @@ ignore = ["GH200"]
 
 [tool.uv]
 override-dependencies = [
-  "networkx==2.8.5; python_version < '3.13'", # Required by `qiskit-ibm-transpiler`
+  "networkx==2.8.5", # Required by `qiskit-ibm-transpiler`
 ]
