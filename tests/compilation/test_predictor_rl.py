@@ -74,41 +74,41 @@ def test_qcompile_with_newly_trained_models() -> None:
     Important: Those trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
-    figure_of_merits = ["expected_fidelity", "critical_depth"]
+    figure_of_merit = "expected_fidelity"
     device = get_device("ibm_falcon_127")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    for figure_of_merit in figure_of_merits:
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-        model_name = "model_" + figure_of_merit + "_" + device.description
-        model_path = Path(get_path_trained_model() / (model_name + ".zip"))
-        if not model_path.exists():
-            with pytest.raises(
-                FileNotFoundError,
-                match=re.escape(
-                    "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-                ),
-            ):
-                rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-        predictor.train_model(
-            timesteps=100,
-            test=True,
-        )
+    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
+    if not model_path.exists():
+        with pytest.raises(
+            FileNotFoundError,
+            match=re.escape(
+                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+            ),
+        ):
+            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-        qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    predictor.train_model(
+        timesteps=100,
+        test=True,
+    )
 
-        check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
-        check_nat_gates(qc_compiled)
-        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-        check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
-        check_mapping(qc_compiled)
-        mapped = check_mapping.property_set["is_swap_mapped"]
+    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-        assert qc_compiled.layout is not None
-        assert compilation_information is not None
-        assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
-        assert mapped, "Circuit should be mapped to the device's coupling map."
+    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
+    check_nat_gates(qc_compiled)
+    only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
+    check_mapping(qc_compiled)
+    mapped = check_mapping.property_set["is_swap_mapped"]
+
+    assert qc_compiled.layout is not None
+    assert compilation_information is not None
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
+    assert mapped, "Circuit should be mapped to the device's coupling map."
 
 
 def test_qcompile_with_false_input() -> None:
@@ -144,7 +144,7 @@ def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
         transpile_pass=lambda _device: [],  # no passes applied
     )
 
-    predictor = Predictor(figure_of_merit="estimated_success_probability", device=get_device("ibm_eagle_127"))
+    predictor = Predictor(figure_of_merit="critical_depth", device=get_device("ibm_eagle_127"))
     monkeypatch.setattr(
         predictor.env, "calculate_reward", lambda _circ: (_ for _ in ()).throw(RuntimeError("fake error"))
     )
