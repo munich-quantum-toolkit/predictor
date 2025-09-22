@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🔧 Changed test circuit level for RL predictor from ALG to INDEP
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 
 ## [2.3.0] - 2025-07-29
