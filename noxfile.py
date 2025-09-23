@@ -65,7 +65,7 @@ def _cleanup(session: nox.Session) -> None:
         shutil.rmtree(venv_dir, ignore_errors=True)
         session.log(f"Cleaned up {venv_dir}")
     shutil.rmtree(pathlib.Path("~/.cache").expanduser(), ignore_errors=True)
-    session.run("uv", "cache", "clean", "--all", external=True)
+    session.run("uv", "cache", "clean", external=True)
 
 
 def _run_tests(
