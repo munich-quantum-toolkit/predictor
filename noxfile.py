@@ -65,7 +65,11 @@ def _cleanup(session: nox.Session) -> None:
         shutil.rmtree(venv_dir, ignore_errors=True)
         session.log(f"Cleaned up {venv_dir}")
     shutil.rmtree(pathlib.Path("~/.cache").expanduser(), ignore_errors=True)
-    session.run("uv", "cache", "clean", external=True)
+    # Clean GitHub Actions temp cache
+    gha_temp = pathlib.Path("/home/runner/work/_temp/setup-uv-cache")
+    if gha_temp.exists():
+        shutil.rmtree(gha_temp, ignore_errors=True)
+        session.log(f"Cleaned GitHub Actions uv temp cache at {gha_temp}")
 
 
 def _run_tests(
