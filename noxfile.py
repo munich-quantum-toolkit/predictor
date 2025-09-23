@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import pathlib
 import shutil
 import tempfile
 from typing import TYPE_CHECKING
@@ -57,6 +58,16 @@ def lint(session: nox.Session) -> None:
     session.run("pre-commit", "run", "--all-files", *session.posargs, external=True)
 
 
+def _cleanup(session: nox.Session) -> None:
+    """Remove this session's virtualenv to save disk space in CI."""
+    venv_dir = session.virtualenv.location
+    if venv_dir and pathlib.Path(venv_dir).exists():
+        shutil.rmtree(venv_dir, ignore_errors=True)
+        session.log(f"Cleaned up {venv_dir}")
+    shutil.rmtree(pathlib.Path("~/.cache").expanduser(), ignore_errors=True)
+    session.run("uv", "cache", "clean", "--all", external=True)
+
+
 def _run_tests(
     session: nox.Session,
     *,
@@ -90,6 +101,8 @@ def _run_tests(
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
+    if os.environ.get("CI"):
+        _cleanup(session)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
@@ -103,6 +116,8 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
+    if os.environ.get("CI"):
+        _cleanup(session)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
