@@ -86,7 +86,7 @@ def _run_tests(
     )
 
 
-@nox.session(reuse_venv=True, python=PYTHON_ALL_VERSIONS)
+@nox.session(reuse_venv=not os.environ.get("CI"), python=PYTHON_ALL_VERSIONS)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
