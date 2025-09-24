@@ -16,13 +16,8 @@ import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
-
-
-
-
 from qiskit.circuit.library import CXGate, Measure, XGate
 from qiskit.transpiler import InstructionProperties, Target
-
 
 from mqt.predictor.reward import crit_depth, esp_data_available, estimated_success_probability, expected_fidelity
 
@@ -37,7 +32,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
-    from qiskit.transpiler import Target
+
 
 @pytest.fixture
 def device() -> Target:
