@@ -47,6 +47,7 @@ dependencies = [
     "numpy>=1.22,<2; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict numpy v2 for macOS x86 since it is not supported anymore since torch v2.3.0
     "torch>=2.8.0,<2.9.0; sys_platform == 'darwin' and 'x86_64' in platform_machine and python_version < '3.13'",  # Restrict torch v2.3.0 for macOS x86 since it is not supported anymore.
     "typing-extensions>=4.1",  # for `assert_never`
+    "qiskit_ibm_runtime>=0.40.0,<0.42.0",
     "qiskit-ibm-transpiler==0.13.1; python_version < '3.13'", # Do not support python 3.13 yet
     "qiskit-ibm-ai-local-transpiler==0.4.2; python_version < '3.13'",
 ]
