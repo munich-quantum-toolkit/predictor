@@ -90,6 +90,7 @@ def _run_tests(
         "uv",
         "run",
         "--no-dev",
+        "--no-cache",
         "--group",
         "test",
         *install_args,
