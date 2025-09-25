@@ -60,16 +60,17 @@ def lint(session: nox.Session) -> None:
 
 def _cleanup(session: nox.Session) -> None:
     """Remove this session's virtualenv to save disk space in CI."""
-    venv_dir = session.virtualenv.location
-    if venv_dir and pathlib.Path(venv_dir).exists():
-        shutil.rmtree(venv_dir, ignore_errors=True)
-        session.log(f"Cleaned up {venv_dir}")
-    shutil.rmtree(pathlib.Path("~/.cache").expanduser(), ignore_errors=True)
-    # Clean GitHub Actions temp cache
-    gha_temp = pathlib.Path("/home/runner/work/_temp/setup-uv-cache")
-    if gha_temp.exists():
-        shutil.rmtree(gha_temp, ignore_errors=True)
-        session.log(f"Cleaned GitHub Actions uv temp cache at {gha_temp}")
+    version = session.python
+    if version != "3.13":  # keep cache for last run
+        venv_dir = session.virtualenv.location
+        if venv_dir and pathlib.Path(venv_dir).exists():
+            shutil.rmtree(venv_dir, ignore_errors=True)
+            session.log(f"Cleaned up {venv_dir}")
+        shutil.rmtree(pathlib.Path("~/.cache").expanduser(), ignore_errors=True)
+        gha_temp = pathlib.Path("/home/runner/work/_temp/setup-uv-cache")
+        if gha_temp.exists():
+            shutil.rmtree(gha_temp, ignore_errors=True)
+            session.log(f"Cleaned GitHub Actions uv temp cache at {gha_temp}")
 
 
 def _run_tests(
@@ -90,7 +91,6 @@ def _run_tests(
         "uv",
         "run",
         "--no-dev",
-        "--no-cache",
         "--group",
         "test",
         *install_args,
@@ -106,6 +106,8 @@ def _run_tests(
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
+    if os.environ.get("CI"):
+        _cleanup(session)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
@@ -119,6 +121,8 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
+    if os.environ.get("CI"):
+        _cleanup(session)
 
 
 @nox.session(reuse_venv=True)
