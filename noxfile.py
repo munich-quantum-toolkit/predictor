@@ -105,8 +105,6 @@ def _run_tests(
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
-    if os.environ.get("CI"):
-        _cleanup(session)
 
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
@@ -120,8 +118,6 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
-    if os.environ.get("CI"):
-        _cleanup(session)
 
 
 @nox.session(reuse_venv=True)
