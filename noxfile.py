@@ -124,17 +124,6 @@ def minimums(session: nox.Session) -> None:
         _cleanup(session)
 
 
-@nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
-def qiskit(session: nox.Session) -> None:
-    """Tests against the latest version of Qiskit."""
-    _run_tests(
-        session,
-        extra_command=["uv", "pip", "install", "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git"],
-    )
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    session.run("uv", "pip", "show", "qiskit", env=env)
-
-
 @nox.session(reuse_venv=True)
 def docs(session: nox.Session) -> None:
     """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
