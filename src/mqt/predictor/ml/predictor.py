@@ -61,6 +61,8 @@ plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
 
+NO_PARALLEL = sys.platform == "win32" and sys.version_info >= (3, 13)
+
 
 def setup_device_predictor(
     devices: list[Target],
@@ -227,7 +229,10 @@ class Predictor:
             with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
                 zip_ref.extractall(path_uncompiled_circuits)
 
-        Parallel(n_jobs=num_workers, verbose=100)(
+        # On Windows + Python 3.13, joblib's default "loky" process backend is broken
+        # (missing `_posixsubprocess`). Fall back to no multiprocessing.
+        num_jobs = 1 if NO_PARALLEL else num_workers
+        Parallel(n_jobs=num_jobs, verbose=100)(
             delayed(self._compile_all_circuits_devicewise)(
                 device, timeout, path_uncompiled_circuits, path_compiled_circuits, logger.level
             )
@@ -267,7 +272,8 @@ class Predictor:
         names_list = []
         scores_list = []
 
-        results = Parallel(n_jobs=num_workers, verbose=100)(
+        num_jobs = 1 if NO_PARALLEL else num_workers
+        results = Parallel(n_jobs=num_jobs, verbose=100)(
             delayed(self._generate_training_sample)(
                 filename.name,
                 path_uncompiled_circuits,
@@ -276,6 +282,7 @@ class Predictor:
             )
             for filename in path_uncompiled_circuits.glob("*.qasm")
         )
+
         for sample in results:
             training_sample, circuit_name, scores = sample
             if all(score == -1 for score in scores):
@@ -405,8 +412,10 @@ class Predictor:
         if not training_data:
             training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
-        mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
-
+        num_jobs = 1 if NO_PARALLEL else 8
+        mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=num_jobs).fit(
+            training_data.X_train, training_data.y_train
+        )
         joblib_dump(mdl, save_mdl_path)
         logger.info("Random Forest model is trained and saved.")
 
