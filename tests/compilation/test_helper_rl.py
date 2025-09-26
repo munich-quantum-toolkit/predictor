@@ -77,8 +77,6 @@ def test_vf2_layout_and_postlayout() -> None:
 
     assert pm.property_set["VF2PostLayout_stop_reason"] == VF2PostLayoutStopReason.SOLUTION_FOUND
 
-    _, pass_manager = postprocess_vf2postlayout(
-        altered_qc, pm.property_set["post_layout"], qc_transpiled.layout
-    )
+    _, pass_manager = postprocess_vf2postlayout(altered_qc, pm.property_set["post_layout"], qc_transpiled.layout)
 
     assert initial_layout_before != pass_manager.property_set["initial_layout"]

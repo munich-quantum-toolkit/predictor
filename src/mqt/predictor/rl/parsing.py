@@ -16,11 +16,10 @@ from typing import TYPE_CHECKING
 
 from bqskit.ir import gates
 from pytket import Qubit
-
-from qiskit.converters import circuit_to_dag, dag_to_circuit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
 from qiskit import QuantumRegister
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
