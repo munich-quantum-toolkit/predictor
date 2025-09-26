@@ -29,7 +29,7 @@ from pytket.passes import (
 )
 from pytket.placement import GraphPlacement, NoiseAwarePlacement
 from qiskit import QuantumCircuit
-from qiskit.circuit import ClassicalRegister, Instruction, QuantumRegister, Qubit, StandardEquivalenceLibrary
+from qiskit.circuit import ClassicalRegister, QuantumRegister, StandardEquivalenceLibrary
 from qiskit.circuit.library import (
     CXGate,
     CYGate,
@@ -93,6 +93,7 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
+    from qiskit.circuit import Instruction, Qubit
     from qiskit.dagcircuit import DAGCircuit
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 

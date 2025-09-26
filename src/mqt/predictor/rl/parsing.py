@@ -248,7 +248,8 @@ def postprocess_vf2postlayout(
 
     altered_qc = apply_layout.run(circuit_to_dag(qc))
     return dag_to_circuit(altered_qc), apply_layout
-  
+
+
 def prepare_noise_data(device: Target) -> tuple[dict[Node, float], dict[tuple[Node, Node], float], dict[Node, float]]:
     """Extract node, edge, and readout errors from the device target."""
     node_err: dict[Node, float] = {}
