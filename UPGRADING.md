@@ -8,7 +8,6 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 Starting with this release, MQT Predictor no longer supports x86 macOS systems.
 This step is necessary to ensure compatibility with PyTorch.
-Furthermore, this coincides with GitHub removing the `macos-13` runners from their infrastructure.
 x86 macOS systems are no longer tested in our CI.
 
 ## [2.3.0] - 2025-07-29

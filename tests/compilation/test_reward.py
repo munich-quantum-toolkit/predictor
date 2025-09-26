@@ -15,16 +15,23 @@ from typing import TYPE_CHECKING
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import QuantumCircuit, transpile
-
-if TYPE_CHECKING:
-    from qiskit.transpiler import Target
-
-
+from qiskit import transpile
 from qiskit.circuit.library import CXGate, Measure, XGate
 from qiskit.transpiler import InstructionProperties, Target
 
 from mqt.predictor.reward import crit_depth, esp_data_available, estimated_success_probability, expected_fidelity
+
+try:
+    from qiskit.providers.backend import QubitProperties
+
+    QISKIT_PRE_2_0 = False
+except ImportError:
+    QubitProperties = object
+
+    QISKIT_PRE_2_0 = True
+
+if TYPE_CHECKING:
+    from qiskit import QuantumCircuit
 
 
 @pytest.fixture
@@ -91,10 +98,16 @@ def make_target(
     if no_qubit_props:
         t.qubit_properties = None
     else:
-        t.qubit_properties = [
-            type("QubitProps", (), {"t1": t1, "t2": t2}),
-            type("QubitProps", (), {"t1": t1, "t2": t2}),
-        ]
+        if QISKIT_PRE_2_0:
+            t.qubit_properties = [
+                type("QubitProp", (), {"t1": t1, "t2": t2}),
+                type("QubitProps", (), {"t1": t1, "t2": t2}),
+            ]
+        else:
+            t.qubit_properties = [
+                QubitProperties(t1=t1, t2=t2),
+                QubitProperties(t1=t1, t2=t2),
+            ]
     return t
 
 

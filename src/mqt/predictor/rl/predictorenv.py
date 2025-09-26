@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from bqskit import Circuit
     from qiskit.passmanager import PropertySet
 
+    from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
 
 
@@ -61,7 +62,6 @@ from mqt.predictor.reward import (
     estimated_hellinger_distance,
     estimated_success_probability,
     expected_fidelity,
-    figure_of_merit,
 )
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
