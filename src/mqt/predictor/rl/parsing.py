@@ -19,6 +19,7 @@ from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
 from qiskit import QuantumRegister
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
@@ -245,5 +246,5 @@ def postprocess_vf2postlayout(
     apply_layout.property_set["final_layout"] = layout_before.final_layout
     apply_layout.property_set["post_layout"] = post_layout
 
-    altered_qc = apply_layout(qc)
-    return altered_qc, apply_layout
+    altered_qc = apply_layout.run(circuit_to_dag(qc))
+    return dag_to_circuit(altered_qc), apply_layout
