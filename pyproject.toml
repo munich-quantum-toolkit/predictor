@@ -35,7 +35,7 @@ dependencies = [
     "pytket_qiskit>=0.61.0",
     # TODO(denialhaag): Remove once pytket_qiskit is updated
     #   https://github.com/munich-quantum-toolkit/predictor/issues/471
-    "qiskit-ibm-runtime>=0.30.0,<0.42.0",
+    "qiskit-ibm-runtime>=0.42.0,<0.43.0",
     "sb3_contrib>=2.0.0",
     "tqdm>=4.66.0",
     "rich>=12.6.0",
