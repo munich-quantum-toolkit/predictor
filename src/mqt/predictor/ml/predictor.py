@@ -616,6 +616,7 @@ class Predictor:
         training_data: TrainingData | None = None,
         num_epochs: int = 10,
         num_trials: int = 2,
+        patience: int = 10,
         verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
@@ -674,7 +675,7 @@ class Predictor:
                 k_folds=k_folds,
                 classes=classes,
                 num_epochs=num_epochs,
-                patience=10,
+                patience=patience,
                 verbose=verbose,
             )
 
