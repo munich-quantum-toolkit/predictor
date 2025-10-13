@@ -40,10 +40,11 @@ dependencies = [
     "scikit-learn>=1.5.1",
     "tensorboard>=2.17.0",
     "bqskit>=1.2.0",
-    "numpy>=2.1; python_version >= '3.13'",
-    "numpy>=1.26; python_version >= '3.12'",
-    "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
+    "numpy>=1.24; python_version >= '3.11'",
+    "numpy>=1.26; python_version >= '3.12'",
+    "numpy>=2.1; python_version >= '3.13'",
+    "numpy>=2.3.2; python_version >= '3.14'",
 ]
 
 classifiers = [
