@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
+
 ### Changed
 
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
@@ -88,6 +92,7 @@ for previous changelogs._
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
+[#488]: https://github.com/munich-quantum-toolkit/predictor/pull/488
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
