@@ -249,4 +249,6 @@ aer = "aer"
 fom = "fom"
 
 [tool.repo-review]
-ignore = ["GH200"]
+ignore = [
+    "GH200",
+]
