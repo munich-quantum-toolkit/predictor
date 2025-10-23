@@ -251,7 +251,4 @@ fom = "fom"
 [tool.repo-review]
 ignore = [
     "GH200",
-    "NOX201",
-    "NOX202",
-    "NOX203",
 ]

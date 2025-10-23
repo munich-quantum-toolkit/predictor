@@ -1,3 +1,4 @@
+#!/usr/bin/env -S uv run --script --quiet
 # Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
 # Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
@@ -5,6 +6,10 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
+
+# /// script
+# dependencies = ["nox"]
+# ///
 
 """Nox sessions."""
 
@@ -23,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
 
-nox.needs_version = ">=2024.3.2"
+nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
 
 
@@ -136,3 +141,7 @@ def docs(session: nox.Session) -> None:
         *shared_args,
         env=env,
     )
+
+
+if __name__ == "__main__":
+    nox.main()
