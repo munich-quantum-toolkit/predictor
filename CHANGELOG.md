@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
+
 ### Changed
 
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
@@ -45,6 +49,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
+[#488]: https://github.com/munich-quantum-toolkit/predictor/pull/488
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
