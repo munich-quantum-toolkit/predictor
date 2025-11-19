@@ -94,9 +94,6 @@ def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
 
-    if os.environ.get("CI", None) is not None:
-        shutil.rmtree(session.virtualenv.location, ignore_errors=True)
-
 
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
 def minimums(session: nox.Session) -> None:
@@ -109,9 +106,7 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
-
-    if os.environ.get("CI", None) is not None:
-        shutil.rmtree(session.virtualenv.location, ignore_errors=True)
+        session.run("uv", "lock", "--refresh", env=env)
 
 
 @nox.session(reuse_venv=True)
