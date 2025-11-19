@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+"""Clean-up fixtures for the tests."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
