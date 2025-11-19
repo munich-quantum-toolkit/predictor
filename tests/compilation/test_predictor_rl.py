@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -32,20 +31,6 @@ from mqt.predictor.rl.actions import (
     remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
-
-
-@pytest.fixture
-def clean_trained_models() -> Generator[None]:
-    """Mock the training function to speed up tests."""
-    yield
-
-    zip_files = get_path_trained_model().glob("*.zip")
-    for zip_file in zip_files:
-        if zip_file.exists():
-            zip_file.unlink()
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -68,7 +53,6 @@ def test_predictor_env_esp_error() -> None:
         Predictor(figure_of_merit="estimated_success_probability", device=device)
 
 
-@pytest.mark.usefixtures("clean_trained_models")
 def test_predictor_env_hellinger_error() -> None:
     """Test the predictor environment with the Estimated Hellinger Distance as figure of merit and a missing model."""
     device = get_device("ibm_falcon_27")
@@ -78,7 +62,6 @@ def test_predictor_env_hellinger_error() -> None:
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
 
 
-@pytest.mark.usefixtures("clean_trained_models")
 def test_qcompile_with_newly_trained_models() -> None:
     """Test the qcompile function with a newly trained model.
 
@@ -117,7 +100,6 @@ def test_qcompile_with_newly_trained_models() -> None:
     assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
 
 
-@pytest.mark.usefixtures("clean_trained_models")
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)

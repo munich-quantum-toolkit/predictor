@@ -249,33 +249,6 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         assert predicted_dev.description in get_available_device_names()
 
 
-def test_remove_files(source_path: Path, target_path: Path) -> None:
-    """Remove files created during testing."""
-    if source_path.exists():
-        for file in source_path.iterdir():
-            if file.suffix == ".qasm":
-                file.unlink()
-        source_path.rmdir()
-
-    if target_path.exists():
-        for file in target_path.iterdir():
-            if file.suffix == ".qasm":
-                file.unlink()
-        target_path.rmdir()
-
-    data_path = get_path_training_data() / "training_data_aggregated"
-    if data_path.exists():
-        for file in data_path.iterdir():
-            if file.suffix == ".npy":
-                file.unlink()
-
-    model_path = get_path_training_data() / "trained_model"
-    if model_path.exists():
-        for file in model_path.iterdir():
-            if file.suffix == ".joblib":
-                file.unlink()
-
-
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
     """Test the error handling of the device selection predictor when no device is provided for the Hellinger distance model."""
     rng = np.random.default_rng()
