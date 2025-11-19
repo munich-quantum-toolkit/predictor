@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Generator
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -31,7 +31,11 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
-from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_data
+from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
 
 @pytest.fixture
 def clean_trained_models() -> Generator[None]:
@@ -42,6 +46,7 @@ def clean_trained_models() -> Generator[None]:
     for zip_file in zip_files:
         if zip_file.exists():
             zip_file.unlink()
+
 
 def test_predictor_env_reset_from_string() -> None:
     """Test the reset function of the predictor environment with a quantum circuit given as a string as input."""
