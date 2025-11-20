@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - 🔧 Changed test circuit level for RL predictor from ALG to INDEP
+- ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 
 ## [2.3.0] - 2025-07-29
@@ -44,6 +45,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
@@ -59,6 +61,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@nquetschlich**]: https://github.com/nquetschlich
 [**@flowerthrower**]: https://github.com/flowerthrower
 [**@denialhaag**]: https://github.com/denialhaag
+[**@bachase**]: https://github.com/bachase
 
 <!-- General links -->
 

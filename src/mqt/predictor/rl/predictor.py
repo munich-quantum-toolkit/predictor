@@ -87,7 +87,6 @@ class Predictor:
     def train_model(
         self,
         timesteps: int = 1000,
-        model_name: str = "model",
         verbose: int = 2,
         test: bool = False,
     ) -> None:
@@ -95,7 +94,6 @@ class Predictor:
 
         Arguments:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
-            model_name: The name of the model. Defaults to "model".
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
         """
@@ -117,7 +115,7 @@ class Predictor:
             MaskableMultiInputActorCriticPolicy,
             self.env,
             verbose=verbose,
-            tensorboard_log="./" + model_name + "_" + self.figure_of_merit + "_" + self.device_name,
+            tensorboard_log="./model_" + self.figure_of_merit + "_" + self.device_name,
             gamma=0.98,
             n_steps=n_steps,
             batch_size=batch_size,
@@ -126,7 +124,7 @@ class Predictor:
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
         model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
-        model.save(get_path_trained_model() / (model_name + "_" + self.figure_of_merit + "_" + self.device_name))
+        model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
 
 
 def load_model(model_name: str) -> MaskablePPO:

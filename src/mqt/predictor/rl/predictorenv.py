@@ -24,8 +24,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
+    from pytket.circuit import Node
     from qiskit.passmanager import PropertySet
+    from qiskit.transpiler import Target
 
+    from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
 
 
@@ -37,12 +40,12 @@ from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
-from pytket.circuit import Node, Qubit
+from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, Layout, PassManager, Target, TranspileLayout
+from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
@@ -61,7 +64,6 @@ from mqt.predictor.reward import (
     estimated_hellinger_distance,
     estimated_success_probability,
     expected_fidelity,
-    figure_of_merit,
 )
 from mqt.predictor.rl.actions import (
     CompilationOrigin,

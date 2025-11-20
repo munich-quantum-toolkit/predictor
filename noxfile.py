@@ -1,3 +1,4 @@
+#!/usr/bin/env -S uv run --script --quiet
 # Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
 # Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
@@ -5,6 +6,10 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
+
+# /// script
+# dependencies = ["nox"]
+# ///
 
 """Nox sessions."""
 
@@ -24,10 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
 
-nox.needs_version = ">=2024.3.2"
+nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
-
-nox.options.sessions = ["lint", "tests", "minimums"]
 
 
 # TODO(denialhaag): Add 3.14 when all dependencies support it
@@ -49,7 +52,7 @@ def preserve_lockfile() -> Generator[None]:
             shutil.move(f"{temp_dir_name}/uv.lock", "uv.lock")
 
 
-@nox.session(reuse_venv=True)
+@nox.session(reuse_venv=True, default=True)
 def lint(session: nox.Session) -> None:
     """Run the linter."""
     if shutil.which("pre-commit") is None:
@@ -102,7 +105,7 @@ def _run_tests(
     )
 
 
-@nox.session(reuse_venv=not os.environ.get("CI"), python=PYTHON_ALL_VERSIONS)
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _run_tests(session)
@@ -110,7 +113,7 @@ def tests(session: nox.Session) -> None:
         _cleanup(session)
 
 
-@nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
     with preserve_lockfile():
@@ -121,8 +124,7 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
-    if os.environ.get("CI"):
-        _cleanup(session)
+        session.run("uv", "lock", "--refresh", env=env)
 
 
 @nox.session(reuse_venv=True)
@@ -157,3 +159,7 @@ def docs(session: nox.Session) -> None:
         *shared_args,
         env=env,
     )
+
+
+if __name__ == "__main__":
+    nox.main()

@@ -1,6 +1,6 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:recommended", ":gitSignOff", "helpers:pinGitHubActionDigests"],
+  extends: ["config:recommended", ":gitSignOff", "helpers:pinGitHubActionDigestsToSemver"],
   prHourlyLimit: 10,
   enabledManagers: ["cargo", "github-actions", "npm", "pep621", "pre-commit"],
   "pre-commit": {
@@ -37,7 +37,8 @@
     {
       matchManagers: ["pre-commit"],
       addLabels: ["pre-commit"],
-      commitMessagePrefix: "⬆\uFE0F\uD83E\uDE9D"
+      commitMessagePrefix: "⬆\uFE0F\uD83E\uDE9D",
+      versioning: "pep440"
     },
     {
       matchUpdateTypes: ["lockFileMaintenance"],
