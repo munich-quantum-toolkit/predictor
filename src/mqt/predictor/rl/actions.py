@@ -23,6 +23,7 @@ from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
     FullPeepholeOptimise,
+    KAKDecomposition,
     PeepholeOptimise2Q,
     RemoveRedundancies,
     RoutingPass,
@@ -60,6 +61,7 @@ from qiskit.transpiler.passes import (
     ConsolidateBlocks,
     DenseLayout,
     Depth,
+    ElidePermutations,
     EnlargeWithAncilla,
     FixedPoint,
     FullAncillaAllocation,
@@ -241,6 +243,15 @@ register_action(
 
 register_action(
     DeviceIndependentAction(
+        "ElidePermutations",
+        CompilationOrigin.QISKIT,
+        PassType.OPT,
+        [ElidePermutations()],
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
         "InverseCancellation",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -313,6 +324,15 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [CliffordSimp()],
+    )
+)
+
+register_action(
+    DeviceIndependentAction(
+        "KAKDecomposition",
+        CompilationOrigin.TKET,
+        PassType.OPT,
+        [KAKDecomposition(allow_swaps=False)],
     )
 )
 

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from qiskit import QuantumCircuit
 
-from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -69,6 +69,18 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
+def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
+    """Calculates and returns a normalized feature vector of a given quantum circuit gate dictionary."""
+    res_dct = dict.fromkeys(get_openqasm_gates(), 0.0)
+    exclude_from_total = {"barrier"}
+    total = sum(val for key, val in gate_dict.items() if key not in exclude_from_total)
+
+    for key, val in gate_dict.items():
+        if key in res_dct:
+            res_dct[key] = val / total if total > 0 else 0.0
+    return res_dct
+
+
 def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float64]]:
     """Creates a feature dictionary for a given quantum circuit.
 
@@ -78,7 +90,13 @@ def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float6
     Returns:
         The feature dictionary for the given quantum circuit.
     """
+    ops_list = qc.count_ops()
+    total = sum(val for key, val in ops_list.items() if key != "barrier")
+    ops_list_dict = dict_to_featurevector(ops_list)
+
     feature_dict = {
+        **{key: np.array([val], dtype=np.float32) for key, val in ops_list_dict.items()},
+        "measure": np.array([ops_list.get("measure", 0) / total if total > 0 else 0.0], dtype=np.float32),
         "num_qubits": qc.num_qubits,
         "depth": qc.depth(),
     }

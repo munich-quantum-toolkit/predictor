@@ -82,6 +82,7 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
+from mqt.predictor.utils import get_openqasm_gates
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -177,6 +178,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
+        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates()}
+
         spaces = {
             "num_qubits": Discrete(self.device.num_qubits + 1),
             "depth": Discrete(1000000),
@@ -185,6 +188,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             "entanglement_ratio": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            "measure": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            **gate_spaces,
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
