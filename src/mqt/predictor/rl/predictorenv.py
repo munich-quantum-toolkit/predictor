@@ -137,7 +137,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
-            if getattr(elem, "preserve", False):
+            if getattr(elem, "preserve_layout", False):
                 self.actions_mapping_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.LAYOUT]:
@@ -375,7 +375,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
         """
         best_result = None
         best_property_set = None
-        best_fom = -1.0
+        maximize = self.reward_function in [
+            "expected_fidelity",
+            "estimated_success_probability",
+            "estimated_hellinger_distance",
+            "critical_depth",
+        ]
+        best_fom = -1.0 if maximize else float("inf")
         best_swap_count = float("inf")  # for fallback
 
         assert callable(action.transpile_pass), "Mapping action should be callable"
@@ -387,11 +393,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
                 try:
                     # Synthesize for lookahead fidelity (Mapping could insert non-local SWAP gates)
-                    if self.reward_function in [
-                        "expected_fidelity",
-                        "estimated_success_probability",
-                        "estimated_hellinger_distance",
-                    ]:
+                    if maximize:
                         synth_pass = PassManager([
                             BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
                         ])
@@ -412,7 +414,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 except Exception as e:
                     logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
                     swap_count = out_circ.count_ops().get("swap", 0)
-                    if best_result is None or (best_fom == -1.0 and swap_count < best_swap_count):
+                    if best_result is None or swap_count < best_swap_count:
                         best_swap_count = swap_count
                         best_result = out_circ
                         best_property_set = prop_set
@@ -424,7 +426,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if best_result is not None:
             return best_result, best_property_set
         logger.error("All attempts failed.")
-        return qc, {}
+        return qc, None
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         pm_property_set: PropertySet | None = {}
