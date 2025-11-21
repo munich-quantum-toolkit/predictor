@@ -172,8 +172,6 @@ def get_openqasm_gates() -> list[str]:
         "cy",
         "swap",
         "ch",
-        "ccx",
-        "cswap",
         "crx",
         "cry",
         "crz",
