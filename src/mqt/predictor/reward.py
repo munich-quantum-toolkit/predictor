@@ -203,8 +203,10 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 if first_qubit_idx not in active_qubits:
                     continue
 
+                dt = device.dt  # instruction durations are stored in unit dt
                 res *= np.exp(
                     -instruction.duration
+                    * dt
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
                 )
                 continue
