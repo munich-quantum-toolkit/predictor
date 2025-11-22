@@ -203,12 +203,15 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 if first_qubit_idx not in active_qubits:
                     continue
 
+                dt = device.dt  # discrete time unit used in duration
                 res *= np.exp(
                     -instruction.duration
+                    * dt
                     / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
                 )
                 continue
             res *= 1 - device[gate_type][first_qubit_idx,].error
+
         else:
             second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
             res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
