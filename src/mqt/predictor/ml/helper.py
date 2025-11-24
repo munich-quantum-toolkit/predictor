@@ -414,7 +414,6 @@ def evaluate_regression_model(
             total_loss += loss.item() * bs
             total += bs
 
-            # porta a 1D per metriche
             preds_1d = logits.view(-1).detach().cpu().numpy()
             y_1d = y.view(-1).detach().cpu().numpy()
             all_preds.append(preds_1d)
