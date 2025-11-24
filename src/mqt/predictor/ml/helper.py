@@ -206,9 +206,14 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     gate2idx = {g: i for i, g in enumerate(unique_gates)}
     number_gates = len(unique_gates)
 
-    # --- parametri come sin/cos (fino a 3 param) ---
+    # --- parameters sin/cos (max 3 param) ---
     def param_vector(node: DAGOpNode, dim: int = 3) -> list[float]:
-        """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)]."""
+        """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)].
+        Arguments:
+            node: DAG operation node
+            dim: number of parameters to consider (max 3)
+        Returns:
+            list of sin/cos values of parameters"""
         # pad the parameters with zeros if less than dim
         params = [float(val) for val in getattr(node.op, "params", [])][:dim]
         params += [0.0] * (dim - len(params))
