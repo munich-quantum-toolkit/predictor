@@ -79,9 +79,6 @@ class GraphConvolutionSage(nn.Module):
         if num_conv_wo_resnet < 1:
             msg = "num_conv_wo_resnet must be at least 1"
             raise ValueError(msg)
-        if use_sag_pool and not (0.0 < sag_ratio <= 1.0):
-            msg = "sag_ratio must be in (0, 1]"
-            raise ValueError(msg)
 
         self.conv_activation = conv_activation
         self.conv_act_kwargs = conv_act_kwargs or {}
@@ -115,6 +112,10 @@ class GraphConvolutionSage(nn.Module):
         # --- SAGPooling layer (applied once, after all convs) ---
         # Uses SAGEConv internally for attention scoring to match the stack.
         if self.use_sag_pool:
+
+            if not (0.0 < sag_ratio <= 1.0):
+                msg = "sag_ratio must be in (0, 1]"
+                raise ValueError(msg)
             self.sag_pool: SAGPooling | None = SAGPooling(
                 in_channels=self.out_dim,
                 ratio=sag_ratio,

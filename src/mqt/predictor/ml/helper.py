@@ -117,6 +117,8 @@ def get_openqasm_gates() -> list[str]:
 def get_openqasm3_gates() -> list[str]:
     """Returns a list of all quantum gates within the openQASM 3.0 standard header."""
     # according to https://openqasm.com/language/standard_library.html#standard-library
+    # Snapshot from OpenQASM 3.0 specification (version 3.0)
+    # Verify against latest spec when Qiskit or OpenQASM updates
     return [
         # Single-qubit
         # "id",
@@ -254,10 +256,19 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     for src, dst, _ in dag.edges():
         if src in idx_map and dst in idx_map:
             edges.append([idx_map[src], idx_map[dst]])
-    edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+    #edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+    if edges:
+        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+    else:
+        edge_index = torch.empty((2, 0), dtype=torch.long)
 
     # --- critical path detection ---
     topo_nodes = list(dag.topological_op_nodes())
+    if not topo_nodes:
+        # No operation nodes: return node features with zero critical flags
+        critical_flag = torch.zeros((number_nodes, 1), dtype=torch.float32)
+        node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_prop], dim=1)
+        return node_vector, edge_index, number_nodes
 
     dist_in = dict.fromkeys(topo_nodes, 0)
     for node in topo_nodes:
@@ -449,7 +460,7 @@ def train_model(
     *,
     device: str | None = None,
     verbose: bool = True,
-    val_loader: torch_geometric.loader.DataLoader = None,
+    val_loader: torch_geometric.loader.DataLoader | None = None,
     patience: int = 10,
     min_delta: float = 0.0,
     restore_best: bool = True,
