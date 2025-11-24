@@ -116,6 +116,7 @@ def get_openqasm_gates() -> list[str]:
 
 def get_openqasm3_gates() -> list[str]:
     """Returns a list of all quantum gates within the openQASM 3.0 standard header."""
+    # according to https://openqasm.com/language/standard_library.html#standard-library
     return [
         # Single-qubit
         # "id",
