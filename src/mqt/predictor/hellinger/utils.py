@@ -140,4 +140,4 @@ def get_hellinger_model_path(device: Target, *, gnn: bool = False) -> Path:
         if gnn
         else (training_data_path / ("trained_hellinger_distance_regressor_" + device.description + ".joblib"))
     )
-    return Path(model_path)
+    return model_path
