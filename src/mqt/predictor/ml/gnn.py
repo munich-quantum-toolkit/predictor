@@ -79,7 +79,7 @@ class GraphConvolutionSage(nn.Module):
         if num_conv_wo_resnet < 1:
             msg = "num_conv_wo_resnet must be at least 1"
             raise ValueError(msg)
-        if not (0.0 < sag_ratio <= 1.0):
+        if use_sag_pool and not (0.0 < sag_ratio <= 1.0):
             msg = "sag_ratio must be in (0, 1]"
             raise ValueError(msg)
 
@@ -169,8 +169,7 @@ class GraphConvolutionSage(nn.Module):
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
         for i, conv in enumerate(self.convs):
-            x_new = self._apply_conv_bidir(conv, x, edge_index) if self.bidirectional else conv(x, edge_index)
-
+            x_new = self._apply_conv_bidir(conv, x, edge_index)
             x_new = self.norms[i](x_new, batch=batch)
             x_new = self.conv_activation(x_new, **self.conv_act_kwargs)
             x_new = self.drop(x_new)
