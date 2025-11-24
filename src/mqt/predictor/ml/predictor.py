@@ -59,8 +59,7 @@ from mqt.predictor.ml.helper import (
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
-    train_classification_model,
-    train_regression_model,
+    train_model,
 )
 from mqt.predictor.reward import (
     crit_depth,
@@ -326,24 +325,32 @@ class Predictor:
                 continue
 
             if self.gnn:
-                x, y, edge_idx, n_nodes, target_label = training_sample
-                gnn_training_sample = Data(x=x, y=y, edge_index=edge_idx, num_nodes=n_nodes, target_label=target_label)
+                x, _y, edge_idx, n_nodes, target_label = training_sample
+                name_device = sorted(scores.keys())
+                value_device = [scores[i] for i in name_device]
+                gnn_training_sample = Data(
+                    x=x,
+                    y=torch.tensor(value_device, dtype=torch.float32),
+                    edge_index=edge_idx,
+                    num_nodes=n_nodes,
+                    target_label=target_label,
+                )
 
             training_data.append(gnn_training_sample if self.gnn else training_sample)
             names_list.append(circuit_name)
             scores_list.append(scores)
 
-            with resources.as_file(path_training_data) as path:
-                if self.gnn:
-                    torch.save(training_data, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
-                else:
-                    data = np.asarray(training_data, dtype=object)
-                    np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+        with resources.as_file(path_training_data) as path:
+            if self.gnn:
+                torch.save(training_data, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
+            else:
+                data = np.asarray(training_data, dtype=object)
+                np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
 
-                data = np.asarray(names_list, dtype=str)
-                np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
-                data = np.asarray(scores_list, dtype=object)
-                np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
+            data = np.asarray(names_list, dtype=str)
+            np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
+            data = np.asarray(scores_list, dtype=object)
+            np.save(str(path / ("scores_list_" + self.figure_of_merit + ".npy")), data)
 
     def _generate_training_sample(
         self,
@@ -351,7 +358,9 @@ class Predictor:
         path_uncompiled_circuit: Path,
         path_compiled_circuits: Path,
         logger_level: int = logging.INFO,
-    ) -> tuple[tuple[list[float], Any] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str], str, list[float]]:
+    ) -> tuple[
+        tuple[list[float], Any] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str], str, dict[str, float]
+    ]:
         """Handles to create a training sample from a given file.
 
         Arguments:
@@ -409,7 +418,7 @@ class Predictor:
         if num_not_empty_entries == 0:
             logger.warning("no compiled circuits found for:" + str(file))
 
-        scores_list = list(scores.values())
+        scores_list = scores  # list(scores.values())
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
@@ -433,7 +442,6 @@ class Predictor:
         num_outputs: int,
         loss_fn: nn.Module,
         k_folds: int,
-        classes: list[str] | None = None,
         batch_size: int = 32,
         num_epochs: int = 10,
         patience: int = 10,
@@ -467,12 +475,32 @@ class Predictor:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         device_obj = torch.device(device)
 
-        # Hyperparameter spaces
-        hidden_dim = trial.suggest_categorical("hidden_dim", [32, 64, 128])
-        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 6)
-        mlp_depth = trial.suggest_int("mlp_depth", 1, 3)
-        mlp_choices = [32, 64, 128, 256, 512, 1024]
-        mlp_units = [trial.suggest_categorical(f"mlp_units_{i}", mlp_choices) for i in range(mlp_depth)]
+        hidden_dim = trial.suggest_int("hidden_dim", 8, 64)
+        num_conv_wo_resnet = trial.suggest_int("num_conv_wo_resnet", 1, 3)
+        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 9)
+        dropout = trial.suggest_categorical("dropout", [0.0, 0.1, 0.2, 0.3])
+        sag_pool = trial.suggest_categorical("sag_pool", [False, True])
+        bidirectional = trial.suggest_categorical("bidirectional", [False, True])  # True, False])
+        mlp_options = [
+            "none",
+            "32",
+            "64",
+            "128",
+            "256",
+            "64,32",
+            "128,32",
+            "128,64",
+            "256,32",
+            "256,64",
+            "256,128",
+            "128,64,32",
+            "256,128,64",
+        ]
+
+        mlp_str = trial.suggest_categorical("mlp", mlp_options)
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+
+        num_outputs = max(1, len(self.devices))
 
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
@@ -487,51 +515,43 @@ class Predictor:
             # Define the GNN
             model = GNN(
                 in_feats=in_feats,
+                num_conv_wo_resnet=num_conv_wo_resnet,
                 hidden_dim=hidden_dim,
                 num_resnet_layers=num_resnet_layers,
                 mlp_units=mlp_units,
                 output_dim=num_outputs,
-                classes=classes,
+                dropout_p=dropout,
+                bidirectional=bidirectional,
+                use_sag_pool=sag_pool,
+                sag_ratio=0.7,
+                conv_activation=torch.nn.functional.leaky_relu,
+                mlp_activation=torch.nn.functional.leaky_relu,
             ).to(device_obj)
 
             optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
             # Based on the task, do a training and evaluation for regression or classification
+            train_model(
+                model,
+                train_loader,
+                optimizer,
+                loss_fn,
+                task=task,
+                num_epochs=num_epochs,
+                device=device,
+                verbose=False,
+                val_loader=val_loader,
+                patience=patience,
+                min_delta=0.0,
+                restore_best=True,
+                scheduler=None,
+            )
             if task == "regression":
-                train_regression_model(
-                    model,
-                    train_loader,
-                    optimizer,
-                    loss_fn,
-                    num_epochs=num_epochs,
-                    device=device,
-                    verbose=False,
-                    val_loader=val_loader,
-                    patience=patience,
-                    min_delta=0.0,
-                    restore_best=True,
-                    scheduler=None,
-                )
-                val_loss, val_metrics, _ = evaluate_regression_model(
+                val_loss, _, _ = evaluate_regression_model(
                     model, val_loader, loss_fn, device=device, return_arrays=False, verbose=verbose
                 )
             else:
-                train_classification_model(
-                    model,
-                    train_loader,
-                    optimizer,
-                    loss_fn,
-                    num_epochs=num_epochs,
-                    task=task,
-                    device=device,
-                    verbose=verbose,
-                    val_loader=val_loader,
-                    patience=patience,
-                    min_delta=0.0,
-                    restore_best=True,
-                    scheduler=None,
-                )
-                val_loss, val_metrics, _ = evaluate_classification_model(
-                    model, val_loader, loss_fn, task=task, device=device, return_arrays=False, verbose=verbose
+                val_loss, _, _ = evaluate_classification_model(
+                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=verbose
                 )
 
             fold_val_best_losses.append(float(val_loss))
@@ -540,31 +560,7 @@ class Predictor:
                 torch.cuda.empty_cache()
             gc.collect()
         # Take the mean value
-        mean_val = float(np.mean(fold_val_best_losses))
-        trial.set_user_attr("fold_val_best_losses", fold_val_best_losses)
-        def _to_serializable(obj):
-            # detach → cpu → convert scalars to python numbers
-            if torch.is_tensor(obj):
-                obj = obj.detach().cpu()
-                return obj.item() if obj.numel() == 1 else obj.tolist()
-            if isinstance(obj, dict):
-                return {k: _to_serializable(v) for k, v in obj.items()}
-            if isinstance(obj, (list, tuple)):
-                return [_to_serializable(v) for v in obj]
-            return obj
-
-        trial.set_user_attr(
-            "best_hparams",
-            {
-                "in_feats": in_feats,
-                "hidden_dim": hidden_dim,
-                "num_resnet_layers": num_resnet_layers,
-                "mlp_units": mlp_units,
-                "num_outputs": num_outputs,
-                "val_metrics": _to_serializable(val_metrics),
-            },
-        )
-        return mean_val
+        return float(np.mean(fold_val_best_losses))
 
     def train_gnn_model(
         self,
@@ -581,7 +577,7 @@ class Predictor:
             num_epochs: The number of epochs to train the model.
             num_trials: The number of trials to run for hyperparameter optimization.
             verbose: Whether to print verbose output during training.
-
+            patience: The patience variable for early stopping.
 
         Returns:
             The trained GNN model.
@@ -600,21 +596,15 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_data()
-        number_in_features = int(len(get_openqasm3_gates()) + 1 + 3 + 3)
-
+        number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1)
+        loss_fn = nn.MSELoss()
         if self.figure_of_merit == "hellinger_distance":
-            loss_fn = nn.MSELoss()
             task = "regression"
-            classes = None
         else:
             if num_outputs == 1:
-                loss_fn = nn.BCEWithLogitsLoss()
-                task = "binary"
-
-            else:
-                loss_fn = nn.CrossEntropyLoss()
-                task = "multiclass"
-            classes = [dev.description for dev in self.devices]
+                # task = "binary"
+                task = "classification"
+            [dev.description for dev in self.devices]
         sampler_obj = TPESampler(n_startup_trials=10)
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
@@ -628,49 +618,49 @@ class Predictor:
                 num_outputs=num_outputs,
                 loss_fn=loss_fn,
                 k_folds=k_folds,
-                classes=classes,
                 num_epochs=num_epochs,
                 patience=patience,
                 verbose=verbose,
             )
 
         study.optimize(_obj, n_trials=num_trials)
-        dict_best_hyper = study.best_trial.user_attrs.get("best_hparams")
+        dict_best_hyper = study.best_trial.params  # user_attrs.get("best_hparams")
         # Build model (ensure final layer outputs raw logits/no activation)
+        json_dict = study.best_trial.params
+        mlp_str = dict_best_hyper["mlp"]
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+
+        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
         if self.figure_of_merit != "hellinger_distance":
             model = GNN(
-                in_feats=dict_best_hyper["in_feats"],
+                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+                num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
                 hidden_dim=dict_best_hyper["hidden_dim"],
                 num_resnet_layers=dict_best_hyper["num_resnet_layers"],
-                mlp_units=dict_best_hyper["mlp_units"],
-                output_dim=num_outputs,
-                classes=[dev.description for dev in self.devices],
-            )
-            json_dict = {
-                "in_feats": dict_best_hyper["in_feats"],
-                "hidden_dim": dict_best_hyper["hidden_dim"],
-                "num_resnet_layers": dict_best_hyper["num_resnet_layers"],
-                "mlp_units": dict_best_hyper["mlp_units"],
-                "output_dim": num_outputs,
-                "classes": [dev.description for dev in self.devices],
-            }
+                mlp_units=mlp_units,
+                output_dim=len(self.devices),
+                dropout_p=dict_best_hyper["dropout"],
+                bidirectional=dict_best_hyper["bidirectional"],
+                use_sag_pool=dict_best_hyper["sag_pool"],
+                sag_ratio=0.7,
+                conv_activation=torch.nn.functional.leaky_relu,
+                mlp_activation=torch.nn.functional.leaky_relu,
+            ).to("cuda" if torch.cuda.is_available() else "cpu")
         else:
             model = GNN(
-                in_feats=dict_best_hyper["in_feats"],
+                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+                num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
                 hidden_dim=dict_best_hyper["hidden_dim"],
                 num_resnet_layers=dict_best_hyper["num_resnet_layers"],
-                mlp_units=dict_best_hyper["mlp_units"],
-                output_dim=num_outputs,
-            )
-
-            # create a json with the characteristics of the model
-            json_dict = {
-                "in_feats": dict_best_hyper["in_feats"],
-                "hidden_dim": dict_best_hyper["hidden_dim"],
-                "num_resnet_layers": dict_best_hyper["num_resnet_layers"],
-                "mlp_units": dict_best_hyper["mlp_units"],
-                "output_dim": num_outputs,
-            }
+                mlp_units=mlp_units,
+                output_dim=1,
+                dropout_p=dict_best_hyper["dropout"],
+                bidirectional=dict_best_hyper["bidirectional"],
+                use_sag_pool=dict_best_hyper["sag_pool"],
+                sag_ratio=0.7,
+                conv_activation=torch.nn.functional.leaky_relu,
+                mlp_activation=torch.nn.functional.leaky_relu,
+            ).to("cuda" if torch.cuda.is_available() else "cpu")
 
         json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
         with json_path.open("w", encoding="utf-8") as f:
@@ -688,43 +678,27 @@ class Predictor:
         train_loader = DataLoader(x_train, batch_size=32, shuffle=True)
 
         val_loader = DataLoader(x_val, batch_size=32, shuffle=False)
-        if task == "regression":
-            train_regression_model(
-                model,
-                train_loader,
-                optimizer,
-                loss_fn,
-                num_epochs=num_epochs,
-                device=device,
-                verbose=verbose,
-                val_loader=val_loader,
-                patience=10,
-                min_delta=0.0,
-                restore_best=True,
-                scheduler=None,
+        train_model(
+            model,
+            train_loader,
+            optimizer,
+            loss_fn,
+            task=task,
+            num_epochs=num_epochs,
+            device=device,
+            verbose=verbose,
+            val_loader=val_loader,
+            patience=30,
+            min_delta=0.0,
+            restore_best=True,
+            scheduler=None,
+        )
+        if verbose:
+            test_loader = DataLoader(training_data.X_test, batch_size=32, shuffle=False)
+            avg_loss_test, dict_results, _ = evaluate_classification_model(
+                model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
             )
-        else:
-            train_classification_model(
-                model,
-                train_loader,
-                optimizer,
-                loss_fn,
-                num_epochs=num_epochs,
-                task=task,
-                device=device,
-                verbose=verbose,
-                val_loader=val_loader,
-                patience=10,
-                min_delta=0.0,
-                restore_best=True,
-                scheduler=None,
-            )
-            if verbose:
-                test_loader = DataLoader(training_data.X_test, batch_size=32, shuffle=False)
-                avg_loss_test, dict_results, _ = evaluate_classification_model(
-                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose, task=task
-                )
-                print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
+            print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
 
         # Save the model
         torch.save(model.state_dict(), save_mdl_path)
@@ -866,13 +840,19 @@ def predict_device_for_figure_of_merit(
             json_dict = json.load(f)
 
         gnn_model = GNN(
-            in_feats=json_dict["in_feats"],
+            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+            num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
             hidden_dim=json_dict["hidden_dim"],
             num_resnet_layers=json_dict["num_resnet_layers"],
             mlp_units=json_dict["mlp_units"],
-            output_dim=json_dict["output_dim"],
-            classes=json_dict["classes"],
-        )
+            output_dim=json_dict["num_outputs"],
+            dropout_p=json_dict["dropout"],
+            bidirectional=json_dict["bidirectional"],
+            use_sag_pool=json_dict["sag_pool"],
+            sag_ratio=0.7,
+            conv_activation=torch.nn.functional.leaky_relu,
+            mlp_activation=torch.nn.functional.leaky_relu,
+        ).to("cuda" if torch.cuda.is_available() else "cpu")
         gnn_model.load_state_dict(torch.load(path))
         x, edge_index, number_of_gates = create_dag(qc)
         feature_vector = Data(x=x, edge_index=edge_index, num_gates=number_of_gates)

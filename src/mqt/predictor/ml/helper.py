@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -18,20 +17,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
+from qiskit import transpile
 from qiskit.converters import circuit_to_dag
+from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import RemoveBarriers
-from sklearn.metrics import (
-    accuracy_score,
-    average_precision_score,
-    f1_score,
-    mean_absolute_error,
-    mean_squared_error,
-    precision_score,
-    r2_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, mean_squared_error, r2_score
 from torch import nn
 
 from mqt.predictor.utils import calc_supermarq_features
@@ -40,7 +31,6 @@ if TYPE_CHECKING:
     import torch_geometric
     from numpy._typing import NDArray
     from qiskit import QuantumCircuit
-    from qiskit.dagcircuit import DAGOpNode
 
 
 def get_path_training_data() -> Path:
@@ -128,7 +118,7 @@ def get_openqasm3_gates() -> list[str]:
     """Returns a list of all quantum gates within the openQASM 3.0 standard header."""
     return [
         # Single-qubit
-        "id",
+        # "id",
         "x",
         "y",
         "z",
@@ -143,7 +133,6 @@ def get_openqasm3_gates() -> list[str]:
         "ry",
         "rz",
         "u",
-        # Two-qubit
         "cx",
         "cy",
         "cz",
@@ -154,13 +143,8 @@ def get_openqasm3_gates() -> list[str]:
         "crz",
         "cu",
         "swap",
-        # Three-qubit
         "ccx",
         "cswap",
-        # OpenQasm2 compatibility
-        "u1",
-        "u2",
-        "u3",
     ]
 
 
@@ -205,305 +189,180 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
 def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Creates and returns the feature-annotated DAG of the quantum circuit.
 
-    Arguments:
-        qc: the quantum circuit to be compiled
-
     Returns:
-        node_vector: node vectors, each element of the vector contains a vector
-                    which describes the type of operation, the qubits involved
-                    and the associated parameters
-        edge_index: edge_matrix describing the associated graph
-        number_of_gates: the number of nodes, and so the operations applied
+        node_vector: features per node = [one-hot gate, sin/cos params, arity, controls,
+          num_params, critical_flag, fan_prop]
+        edge_index: 2 for E tensor of edges (src, dst)
+        number_of_gates: numero di nodi operazione
     """
-    # Get the number of qubits
-    num_qubits = qc.num_qubits
-    # remove barriers
+    # 0) cleanup & DAG
     pm = PassManager(RemoveBarriers())
     qc = pm.run(qc)
-    # Transform the circuit into a DAG
+    qc = transpile(qc, optimization_level=0, basis_gates=get_openqasm3_gates())
     dag = circuit_to_dag(qc)
 
     unique_gates = [*get_openqasm3_gates(), "measure"]
     gate2idx = {g: i for i, g in enumerate(unique_gates)}
-    number_unique_gates = len(unique_gates)
+    number_gates = len(unique_gates)
 
-    def qubit_vector(node: DAGOpNode) -> list[int]:
-        """Return [target, ctrl1, ctrl2], fill -1 if missing."""
-        qinds = [qc.find_bit(q).index for q in node.qargs]
-        # from the node get the number of control qubits (if field missing, set 0)
-        n_ctrl = getattr(node.op, "num_ctrl_qubits", 0)
-        # assume controls appear first, then target:
-        ctrls = qinds[:n_ctrl]
-
-        tgt = qinds[n_ctrl:] if qinds else [-1] * (len(qinds) - n_ctrl)
-        # pad to 2 controls
-        ctrls = ctrls + [-1] * (3 - len(qinds))
-        return tgt + ctrls
-
-    # helper to extract up to 3 real-valued params
+    # --- parametri come sin/cos (fino a 3 param) ---
     def param_vector(node: DAGOpNode, dim: int = 3) -> list[float]:
-        p = [float(val) for val in node.op.params]
-        p = p[:dim]  # truncate if more than dim
-        return p + [0.0] * (dim - len(p))  # pad with zeros
+        """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)]."""
+        # pad the parameters with zeros if less than dim
+        params = [float(val) for val in getattr(node.op, "params", [])][:dim]
+        params += [0.0] * (dim - len(params))
+        out = []
+        # for each param calculate sin and cos
+        for p in params:
+            out.extend([np.sin(p), np.cos(p)])
+        return out  # len = 2*dim
 
     nodes = list(dag.op_nodes())
-    number_of_gates = len(nodes)
+    number_nodes = len(nodes)
 
-    # preallocate feature arrays
-    onehots = torch.zeros((number_of_gates, number_unique_gates), dtype=torch.float)
-    qubits = torch.full((number_of_gates, 3), -1, dtype=torch.float)
-    params = torch.zeros((number_of_gates, 3), dtype=torch.float)
+    # prealloc
+    onehots = torch.zeros((number_nodes, number_gates), dtype=torch.float32)
+    num_params = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    params = torch.zeros((number_nodes, 6), dtype=torch.float32)
+    arity = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    controls = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    fan_prop = torch.zeros((number_nodes, 1), dtype=torch.float32)
 
     for i, node in enumerate(nodes):
-        # 2a) one-hot gate
-        # check if name gate in unique_gates
-        if node.op.name not in unique_gates:
-            # otherwise raise an error
-            msg = f"Unknown gate: {node.op.name}"
+        name = node.op.name
+        if name not in unique_gates:
+            msg = f"Unknown gate: {name}"
             raise ValueError(msg)
-        onehots[i, gate2idx[node.op.name]] = 1.0
+        onehots[i, gate2idx[name]] = 1.0
+        params[i] = torch.tensor(param_vector(node), dtype=torch.float32)
+        arity[i] = float(len(node.qargs))
+        controls[i] = float(getattr(node.op, "num_ctrl_qubits", 0))
+        num_params[i] = float(len(getattr(node.op, "params", [])))
+        preds = [p for p in dag.predecessors(node) if isinstance(p, DAGOpNode)]
+        succs = [s for s in dag.successors(node) if isinstance(s, DAGOpNode)]
+        fan_prop[i] = float(len(succs)) / max(1, len(preds))
 
-        # 2b) [target, ctrl1, ctrl2]
-        val = torch.tensor(qubit_vector(node)) / num_qubits
-        qubits[i] = val.clone()
-        # 2c) up to 3 angle params
-        params[i] = torch.tensor(param_vector(node), dtype=torch.float) % (2 * np.pi)
-
-        node_vector = torch.cat([onehots, qubits, params], dim=1)
-
-    # build edges
+    # edges DAG
     idx_map = {node: i for i, node in enumerate(nodes)}
     edges = []
     for src, dst, _ in dag.edges():
         if src in idx_map and dst in idx_map:
             edges.append([idx_map[src], idx_map[dst]])
     edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
-    return node_vector, edge_index, number_of_gates
+
+    # --- critical path detection ---
+    topo_nodes = list(dag.topological_op_nodes())
+
+    dist_in = dict.fromkeys(topo_nodes, 0)
+    for node in topo_nodes:
+        preds = [p for p in dag.predecessors(node) if isinstance(p, DAGOpNode)]
+        if preds:
+            dist_in[node] = max(dist_in[p] + 1 for p in preds)
+
+    dist_out = dict.fromkeys(topo_nodes, 0)
+    for node in reversed(topo_nodes):
+        succs = [s for s in dag.successors(node) if isinstance(s, DAGOpNode)]
+        if succs:
+            dist_out[node] = max(dist_out[s] + 1 for s in succs)
+
+    critical_len = max(dist_in[n] + dist_out[n] for n in topo_nodes)
+
+    critical_flag = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    for i, node in enumerate(nodes):
+        # set critical flag to 1 if on critical path
+        if dist_in[node] + dist_out[node] == critical_len:
+            critical_flag[i] = 1.0
+
+    # final concat of features
+    node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_prop], dim=1)
+
+    return node_vector, edge_index, number_nodes
 
 
+def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return predicted  and target classes indices.
+
+    Arguments:
+        preds: model predictions
+        targets: ground truth targets
+    Returns:
+        pred_idx: predicted class indices
+        targets_idx: target class indices
+    """
+    pred_idx = torch.argmax(preds, dim=1)
+    targets_idx = torch.argmax(targets, dim=1)
+
+    return pred_idx, targets_idx
+
+
+# ---------------------------------------------------
+# Evaluation
+# ---------------------------------------------------
 def evaluate_classification_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
     *,
-    task: str = "binary",
     device: str | None = None,
     return_arrays: bool = False,
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
-    """Evaluate the classifier models, it returns a dictionary with all the metrics considered for both binary and multiclass classification.
-
-    Arguments:
-        model: the model to be evaluated, model's output must be logits
-        loader: contain the set in a minibatch approach
-        loss_fn: is the loss function used
-        task: describe which kind of classification is done
-        device: where to run the evaluation (gpu or cpu)
-        return_arrays: decide if return the probability and targets.
-        verbose: set as True if you want also the metrics results
-    Returns:
-        avg_loss: average loss measured
-        metrics: dictionary containing the metrics of the model
-        arrays: an array containing the probabilities of the targets and the actual value
-    """
+    """Evaluates a model using MSE loss and classification report."""
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
     model.eval()
     total_loss, total = 0.0, 0
-    all_logits, all_targets = [], []
-    arrays = None
-    need_arrays = return_arrays or verbose
+    all_preds, all_targets = [], []
 
-    # --- no decorator; use context manager instead ---
     with torch.no_grad():
         for batch in loader:
             batch_device = batch.to(device)
-            logits = model(batch_device)  # [B,1] or [B,K]
-            # y = batch_device.y.view_as(logits)
-            y = batch_device.y
-            # unify shapes for loss computation
-            if task == "multiclass":
-                if y.dim() > 1:
-                    y = y.squeeze(-1)
-                y_loss = y.long()
-                bs = y_loss.size(0)
-            elif task == "binary":
-                y_loss = y.float().view(-1, 1)
-                bs = y_loss.size(0)
-            else:
-                msg = f"Unknown task: {task}"
+            preds = model(batch_device)
+            preds = torch.clamp(preds, 0.0, 1.0)
+            targets = batch_device.y.float()
+            preds = torch.clamp(preds, 0.0, 1.0)
+
+            if targets.dim() == 1:
+                targets = targets.unsqueeze(1)
+            if preds.shape != targets.shape:
+                msg = f"Shape mismatch: preds {preds.shape} vs targets {targets.shape}"
                 raise ValueError(msg)
 
-            loss = loss_fn(logits, y_loss)
+            bs = targets.size(0)
+            loss = loss_fn(preds, targets)
             total_loss += loss.item() * bs
             total += bs
 
-            all_logits.append(logits.detach().cpu())
-            all_targets.append(y.detach().cpu())
+            all_preds.append(preds.detach().cpu())
+            all_targets.append(targets.detach().cpu())
 
     avg_loss = total_loss / max(1, total)
-    if need_arrays:
-        logits = torch.cat(all_logits, dim=0)
-        y_true = torch.cat(all_targets, dim=0)
-    else:
-        logits = y_true = None
-    metrics: dict[str, float] = {"loss": float(avg_loss)}
-    # ---- Convert logits -> probs / preds & compute sklearn metrics ----
+    metrics = {"loss": float(avg_loss)}
+
+    preds = torch.cat(all_preds, dim=0)
+    targets = torch.cat(all_targets, dim=0)
+
+    # --- compute custom 4-class accuracy ---
+    pred_classes, target_classes = get_results_classes(preds, targets)
+    acc = accuracy_score(target_classes, pred_classes)
+    classification_report_res = classification_report(target_classes, pred_classes)
+    metrics["custom_accuracy"] = float(acc)
+    metrics["classification_report"] = classification_report_res
+
     if verbose:
-        if task == "binary":
-            probs = torch.sigmoid(logits).squeeze(-1).numpy()  # [N]
-            y_bin = y_true.view(-1).numpy().astype(int)  # [N]
-            preds = (probs >= 0.5).astype(int)
-
-            metrics["accuracy"] = accuracy_score(y_bin, preds)
-            metrics["precision"] = precision_score(y_bin, preds, zero_division=0)
-            metrics["recall"] = recall_score(y_bin, preds, zero_division=0)
-            metrics["f1"] = f1_score(y_bin, preds, zero_division=0)
-            if np.unique(y_bin).size > 1:
-                metrics["roc_auc"] = roc_auc_score(y_bin, probs)
-                metrics["avg_prec"] = average_precision_score(y_bin, probs)
-            if return_arrays:
-                arrays = (probs, y_bin)
-
-        elif task == "multiclass":
-            probs = torch.softmax(logits, dim=1).numpy()  # [N,K]
-            preds = probs.argmax(axis=1)  # [N]
-            y_mc = y_true.view(-1).numpy().astype(int)
-            metrics["accuracy"] = accuracy_score(y_mc, preds)
-            metrics["f1_macro"] = f1_score(y_mc, preds, average="macro", zero_division=0)
-            metrics["f1_micro"] = f1_score(y_mc, preds, average="micro", zero_division=0)
-            if return_arrays:
-                arrays = (probs, y_mc)
-
-    return avg_loss, metrics, arrays
-
-
-def train_classification_model(
-    model: nn.Module,
-    train_loader: torch_geometric.loader.DataLoader,
-    optimizer: torch.optim.Optimizer,
-    loss_fn: nn.Module,
-    num_epochs: int,
-    *,
-    task: str = "binary",
-    device: str | None = None,
-    verbose: bool = True,
-    val_loader: torch_geometric.loader.DataLoader = None,
-    patience: int = 10,
-    min_delta: float = 0.0,
-    restore_best: bool = True,
-    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
-) -> None:
-    """Trains a GNN model with optional early stopping on validation loss.
-
-    Arguments:
-        model: the model to be trained
-        train_loader: training set split in mini-batch
-        optimizer: the optimizer chosen
-        loss_fn: loss function adopted
-        num_epochs: number of epochs set for training
-        task: type of classification (binary, multiclass)
-        device: if the code is run on a cpu or a gpu
-        verbose: if set true print the results obtained during the training
-        val_loader: validation set which allows also to understand if apply early-stopping methods
-        patience: variable used for saying how many epochs waiting for the early-stopping
-        min_delta: if the loss is lower that delta, patience is incremented; otherwise reset it
-        restore_best: allows to restore the best model found during training
-        scheduler: scheduler used for training (optionally)
-    """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device(device)
-    model.to(device)
-
-    best_state = None
-    best_metric = float("inf")
-    best_metrics_dict: dict[str, float] = {}
-    epochs_no_improve = 0
-
-    for epoch in range(1, num_epochs + 1):
-        model.train()
-        running_loss, total = 0.0, 0
-
-        for batch in train_loader:
-            batch_device = batch.to(device)
-            logits = model(batch_device)
-            # y = batch_device.y.view_as(logits)
-            y = batch_device.y
-            if task == "multiclass":
-                if y.dim() > 1:
-                    y = y.squeeze(-1)
-                y_loss = y.long()
-                bs = y_loss.size(0)
-            elif task == "binary":
-                y_loss = y.float().view(-1, 1)
-                bs = y_loss.size(0)
-            else:
-                msg = f"Unknown task: {task}"
-                raise ValueError(msg)
-
-            loss = loss_fn(logits, y_loss)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item() * bs
-            total += bs
-
-        train_loss = running_loss / max(1, total)
-        if scheduler is not None:
-            scheduler.step()
-
-        if val_loader is not None:
-            val_loss, val_metrics, _ = evaluate_classification_model(
-                model, val_loader, loss_fn, task=task, device=str(device), verbose=verbose, return_arrays=False
-            )
-
-            improved = (best_metric - val_loss) > min_delta
-            if improved:
-                best_metric = val_loss
-                best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()} #deepcopy(model.state_dict())  # freeze best weights
-                best_metrics_dict = {"val_" + k: v for k, v in val_metrics.items()}
-                best_metrics_dict["train_loss_at_best"] = float(train_loss)
-                epochs_no_improve = 0
-            else:
-                epochs_no_improve += 1
-
-            if verbose:
-                metrics_str = " | ".join(f"{k}={v:.6f}" for k, v in val_metrics.items())
-                print(
-                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | {metrics_str} | "
-                    f"no_improve={epochs_no_improve}/{patience} | metrics={best_metrics_dict}"
-                )
-
-            if epochs_no_improve >= patience:
-                if verbose:
-                    print(f"Early stopping at epoch {epoch} (best val_loss={best_metric:.6f}).")
-                break
+        mse = mean_squared_error(targets.numpy().reshape(-1), preds.numpy().reshape(-1))
+        mae = mean_absolute_error(targets.numpy().reshape(-1), preds.numpy().reshape(-1))
+        rmse = float(np.sqrt(mse))
+        if targets.size(0) < 2 or torch.all(targets == targets[0]):
+            r2 = float("nan")
         else:
-            # Optional early stopping on training loss only
-            improved = (best_metric - train_loss) > min_delta
-            if improved:
-                best_metric = train_loss
-                best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()} #deepcopy(model.state_dict())  # freeze best weights
-                epochs_no_improve = 0
-            else:
-                epochs_no_improve += 1
-            if verbose:
-                print(
-                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
-                    f"no_improve={epochs_no_improve}/{patience}"
-                )
-            if epochs_no_improve >= patience:
-                if verbose:
-                    print(f"Early stopping on training loss at epoch {epoch} (best train_loss={best_metric:.6f}).")
-                break
+            r2 = float(r2_score(targets.numpy().reshape(-1), preds.numpy().reshape(-1)))
+        metrics.update({"mse": float(mse), "rmse": float(rmse), "mae": float(mae), "r2": float(r2)})
 
-    if restore_best and best_state is not None:
-        model.load_state_dict(best_state)
-        model.to(device)
+    arrays = (preds.numpy(), targets.numpy()) if return_arrays else None
+    return avg_loss, metrics, arrays
 
 
 def evaluate_regression_model(
@@ -563,7 +422,10 @@ def evaluate_regression_model(
     if preds.size > 0:
         rmse = float(np.sqrt(mean_squared_error(y_true, preds)))
         mae = float(mean_absolute_error(y_true, preds))
-        r2 = float(r2_score(y_true, preds)) if np.var(y_true) > 0 else float("nan")
+        if y_true.shape[0] < 2 or np.all(y_true == y_true[0]):
+            r2 = float("nan")
+        else:
+            r2 = float(r2_score(y_true, preds)) if np.var(y_true) > 0 else float("nan")
         metrics.update({"rmse": rmse, "mae": mae, "r2": r2})
 
         if verbose:
@@ -573,22 +435,23 @@ def evaluate_regression_model(
     return avg_loss, metrics, arrays
 
 
-def train_regression_model(
+def train_model(
     model: nn.Module,
     train_loader: torch_geometric.loader.DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: nn.Module,
     num_epochs: int,
+    task: str,
     *,
     device: str | None = None,
     verbose: bool = True,
-    val_loader: torch_geometric.loader.DataLoader | None = None,
+    val_loader: torch_geometric.loader.DataLoader = None,
     patience: int = 10,
     min_delta: float = 0.0,
     restore_best: bool = True,
     scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> None:
-    """Train a regression model with optional early stopping on validation loss.
+    """Trains model using MSE loss and validates with custom class accuracy.
 
     Arguments:
         model: regression model to be trained
@@ -596,6 +459,7 @@ def train_regression_model(
         optimizer: optimizer for model training
         loss_fn: loss function for training
         num_epochs: number of training epochs
+        task: either "classification" or "regression"
         device: device to be used for training (gpu or cpu)
         verbose: whether to print progress messages
         val_loader: validation set split into mini-batch (optional)
@@ -609,9 +473,7 @@ def train_regression_model(
     device = torch.device(device)
     model.to(device)
 
-    best_state = None
-    best_metric = float("inf")
-    best_metrics_dict: dict[str, float] = {}
+    best_state, best_metric = None, float("inf")
     epochs_no_improve = 0
 
     for epoch in range(1, num_epochs + 1):
@@ -620,72 +482,63 @@ def train_regression_model(
 
         for batch in train_loader:
             batch_device = batch.to(device)
-            preds = model(batch_device)  # [B] o [B,1]
-            # align y
-            y = batch_device.y.float().view_as(preds)
+            preds = model(batch_device)
 
-            loss = loss_fn(preds, y)
+            targets = batch_device.y
+            if targets.dim() == 1:
+                targets = targets.unsqueeze(1)
+            loss = loss_fn(preds, targets)
+
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            running_loss += loss.item() * y.numel()
-            total += y.numel()
+            bs = targets.size(0)
+            running_loss += loss.item() * bs
+            total += bs
 
         train_loss = running_loss / max(1, total)
         if scheduler is not None:
             scheduler.step()
-        val_loss = float("inf")
 
         if val_loader is not None:
-            val_loss, val_metrics, _ = evaluate_regression_model(
-                model, val_loader, loss_fn, device=str(device), return_arrays=False, verbose=False
-            )
-
+            if task == "classification":
+                val_loss, val_metrics, _ = evaluate_classification_model(
+                    model, val_loader, loss_fn, device=str(device), verbose=True
+                )
+            elif task == "regression":
+                val_loss, val_metrics, _ = evaluate_regression_model(
+                    model, val_loader, loss_fn, device=str(device), verbose=True
+                )
+            else:
+                # raise an error if task not classification or regression
+                msg = "Task variable not regression or classification"
+                raise ValueError(msg)
             improved = (best_metric - val_loss) > min_delta
             if improved:
                 best_metric = val_loss
-                best_state = deepcopy(model.state_dict())
-                best_metrics_dict = {"val_" + k: float(v) for k, v in val_metrics.items()}
-                best_metrics_dict["train_loss_at_best"] = float(train_loss)
+                best_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
 
-            if verbose:
-                msg_metrics = " | ".join(f"{k}={v:.6f}" for k, v in val_metrics.items())
-                print(
-                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | {msg_metrics} | "
-                    f"no_improve={epochs_no_improve}/{patience}"
-                )
-
-            if epochs_no_improve >= patience:
-                if verbose:
-                    print(f"Early stopping at epoch {epoch} (best val_loss={best_metric:.6f}).")
-                break
-        else:
-            # early stopping opzionale on training loss
-            improved = (best_metric - train_loss) > min_delta
-            if improved:
-                best_metric = train_loss
-                best_state = deepcopy(model.state_dict())
-                best_metrics_dict["train_loss_at_best"] = float(train_loss)
-                epochs_no_improve = 0
-            else:
-                epochs_no_improve += 1
             if verbose:
                 print(
                     f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
-                    f"no_improve={epochs_no_improve}/{patience}"
+                    f"val_loss={val_loss:.6f} | acc={val_metrics.get('custom_accuracy', 0):.4f} | patience={epochs_no_improve}/{patience} | r2={val_metrics.get('r2', 0):.4f}"
                 )
+
             if epochs_no_improve >= patience:
                 if verbose:
-                    print(f"Early stopping on training loss at epoch {epoch} (best train_loss={best_metric:.6f}).")
+                    print(f"Early stopping at epoch {epoch}.")
                 break
+        else:
+            if verbose:
+                print(f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f}")
 
     if restore_best and best_state is not None:
         model.load_state_dict(best_state)
+        model.to(device)
 
 
 @dataclass
