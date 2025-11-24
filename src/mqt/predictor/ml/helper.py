@@ -328,8 +328,7 @@ def evaluate_classification_model(
             preds = model(batch_device)
             preds = torch.clamp(preds, 0.0, 1.0)
             targets = batch_device.y.float()
-            preds = torch.clamp(preds, 0.0, 1.0)
-
+ 
             if targets.dim() == 1:
                 targets = targets.unsqueeze(1)
             if preds.shape != targets.shape:
