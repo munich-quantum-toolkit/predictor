@@ -121,6 +121,7 @@ addopts = [
 ]
 log_level = "INFO"
 filterwarnings = [
+    'error',
     'ignore:.*pytorch.*:UserWarning:',
     "ignore:.*torch_geometric.*:UserWarning:",
     "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
