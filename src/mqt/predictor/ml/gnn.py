@@ -112,7 +112,6 @@ class GraphConvolutionSage(nn.Module):
         # --- SAGPooling layer (applied once, after all convs) ---
         # Uses SAGEConv internally for attention scoring to match the stack.
         if self.use_sag_pool:
-
             if not (0.0 < sag_ratio <= 1.0):
                 msg = "sag_ratio must be in (0, 1]"
                 raise ValueError(msg)

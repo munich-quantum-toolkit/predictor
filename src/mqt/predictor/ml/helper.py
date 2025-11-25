@@ -23,7 +23,6 @@ from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import RemoveBarriers
 from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, mean_squared_error, r2_score
-from torch import nn
 
 from mqt.predictor.utils import calc_supermarq_features
 
@@ -31,6 +30,7 @@ if TYPE_CHECKING:
     import torch_geometric
     from numpy._typing import NDArray
     from qiskit import QuantumCircuit
+    from torch import nn
 
 
 def get_path_training_data() -> Path:
@@ -189,13 +189,15 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
 
 def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Creates and returns the feature-annotated DAG of the quantum circuit.
+
     Arguments:
         qc: The quantum circuit to be converted to a DAG.
+
     Returns:
         node_vector: features per node = [one-hot gate, sin/cos params, arity, controls,
         num_params, critical_flag, fan_prop]
         edge_index: 2 for E tensor of edges (src, dst)
-        number_of_gates: number of nodes in the DAG
+        number_of_gates: number of nodes in the DAG.
     """
     # 0) cleanup & DAG
     pm = PassManager(RemoveBarriers())
@@ -210,11 +212,14 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     # --- parameters sin/cos (max 3 param) ---
     def param_vector(node: DAGOpNode, dim: int = 3) -> list[float]:
         """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)].
+
         Arguments:
             node: DAG operation node
             dim: number of parameters to consider (max 3)
+
         Returns:
-            list of sin/cos values of parameters"""
+            list of sin/cos values of parameters
+        """
         # pad the parameters with zeros if less than dim
         params = [float(val) for val in getattr(node.op, "params", [])][:dim]
         params += [0.0] * (dim - len(params))
@@ -251,7 +256,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     # edges DAG
     idx_map = {node: i for i, node in enumerate(nodes)}
-    edges : list[list[int]] = []
+    edges: list[list[int]] = []
     for src, dst, _ in dag.edges():
         if src in idx_map and dst in idx_map:
             edges.append([idx_map[src], idx_map[dst]])
@@ -337,7 +342,7 @@ def evaluate_classification_model(
             preds = model(batch_device)
             preds = torch.clamp(preds, 0.0, 1.0)
             targets = batch_device.y.float()
- 
+
             if targets.dim() == 1:
                 targets = targets.unsqueeze(1)
             if preds.shape != targets.shape:
