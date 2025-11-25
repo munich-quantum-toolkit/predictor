@@ -120,8 +120,6 @@ def get_openqasm3_gates() -> list[str]:
     # Snapshot from OpenQASM 3.0 specification (version 3.0)
     # Verify against latest spec when Qiskit or OpenQASM updates
     return [
-        # Single-qubit
-        # "id",
         "x",
         "y",
         "z",
@@ -191,12 +189,13 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
 
 def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Creates and returns the feature-annotated DAG of the quantum circuit.
-
+    Arguments:
+        qc: The quantum circuit to be converted to a DAG.
     Returns:
         node_vector: features per node = [one-hot gate, sin/cos params, arity, controls,
-          num_params, critical_flag, fan_prop]
+        num_params, critical_flag, fan_prop]
         edge_index: 2 for E tensor of edges (src, dst)
-        number_of_gates: numero di nodi operazione
+        number_of_gates: number of nodes in the DAG
     """
     # 0) cleanup & DAG
     pm = PassManager(RemoveBarriers())
@@ -252,11 +251,10 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     # edges DAG
     idx_map = {node: i for i, node in enumerate(nodes)}
-    edges = []
+    edges : list[list[int]] = []
     for src, dst, _ in dag.edges():
         if src in idx_map and dst in idx_map:
             edges.append([idx_map[src], idx_map[dst]])
-    #edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
     if edges:
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
     else:
@@ -356,6 +354,10 @@ def evaluate_classification_model(
 
     avg_loss = total_loss / max(1, total)
     metrics = {"loss": float(avg_loss)}
+
+    if not all_preds or not all_targets:
+        arrays = (np.array([]), np.array([])) if return_arrays else None
+        return avg_loss, metrics, arrays
 
     preds = torch.cat(all_preds, dim=0)
     targets = torch.cat(all_targets, dim=0)
