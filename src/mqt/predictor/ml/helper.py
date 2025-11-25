@@ -567,7 +567,7 @@ def train_model(
 
 @dataclass
 class TrainingData:
-    """Dataclass for the training data."""
+    """Container for training/test data for both classical (numpy) and GNN (graph) models."""
 
     X_train: NDArray[np.float64] | list[torch_geometric.data.Data]
     y_train: NDArray[np.float64] | torch.Tensor
