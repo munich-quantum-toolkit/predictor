@@ -135,6 +135,7 @@ filterwarnings = [
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
     # Windows: Python 3.13 can emit a RuntimeWarning about unsupported timeouts; keep tests strict otherwise.
     'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
+    'ignore:.*`torch_geometric\\.distributed` has been deprecated since 2\\.7\\.0.*:DeprecationWarning:',
     "ignore::DeprecationWarning:torch_geometric.distributed",
 ]
 
