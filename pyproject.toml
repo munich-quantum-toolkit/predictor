@@ -120,6 +120,7 @@ addopts = [
 log_level = "INFO"
 xfail_strict = true
 filterwarnings = [
+    'error',
     'ignore:.*pytorch.*:UserWarning:',
     "ignore:.*torch_geometric.*:UserWarning:",
     "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
@@ -131,8 +132,7 @@ filterwarnings = [
     'ignore:.*qiskit.providers.models is deprecated since Qiskit 1.2*:DeprecationWarning:',
     'ignore:.*The class ``qiskit.qobj.*`` is deprecated as of Qiskit 1.3.*:DeprecationWarning:',
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
-    'ignore:.torch_geometric.distributed has been deprecated.:DeprecationWarning:',
-    'error',
+    'ignore:.*`torch_geometric\\.distributed` has been deprecated since 2\\.7\\.0.*:DeprecationWarning',
 ]
 
 [tool.coverage]
