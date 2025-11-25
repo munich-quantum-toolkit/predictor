@@ -51,8 +51,8 @@ def get_path_trained_model(figure_of_merit: str) -> Path:
 
 
 def get_path_trained_model_gnn(figure_of_merit: str) -> Path:
-    """Returns the path to the trained model folder resulting from the GNN training."""
-    return get_path_training_data() / "trained_model" / ("trained_gnn_" + figure_of_merit + ".pth")
+    """Return the path to the GNN checkpoint file for the given figure of merit."""
+    return get_path_training_data() / "trained_model" / "trained_gnn_" + figure_of_merit + ".pth"
 
 
 def get_path_training_circuits() -> Path:
@@ -300,7 +300,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
 
 def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return predicted and target classes indices.
+    """Return predicted and target class indices.
 
     Arguments:
         preds: model predictions
@@ -327,7 +327,7 @@ def evaluate_classification_model(
     return_arrays: bool = False,
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
-    """Evaluates a model using MSE loss and classification report."""
+    """Evaluate a classification model with the given loss function and compute accuracy metrics."""
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
