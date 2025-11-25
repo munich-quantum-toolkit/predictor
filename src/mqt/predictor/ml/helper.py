@@ -52,7 +52,9 @@ def get_path_trained_model(figure_of_merit: str) -> Path:
 
 def get_path_trained_model_gnn(figure_of_merit: str) -> Path:
     """Return the path to the GNN checkpoint file for the given figure of merit."""
-    return get_path_training_data() / "trained_model" / "trained_gnn_" + figure_of_merit + ".pth"
+    base_dir = get_path_training_data() / "trained_model"
+    filename = f"trained_gnn_{figure_of_merit}.pth"
+    return base_dir / filename
 
 
 def get_path_training_circuits() -> Path:
