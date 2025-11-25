@@ -121,7 +121,6 @@ addopts = [
 ]
 log_level = "INFO"
 filterwarnings = [
-    'error',
     'ignore:.*pytorch.*:UserWarning:',
     "ignore:.*torch_geometric.*:UserWarning:",
     "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
@@ -137,6 +136,7 @@ filterwarnings = [
     'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
     'ignore:.*`torch_geometric\\.distributed` has been deprecated since 2\\.7\\.0.*:DeprecationWarning:',
     "ignore::DeprecationWarning:torch_geometric.distributed",
+    'error',
 ]
 
 
