@@ -9,6 +9,11 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Changed
+
+- ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
+- 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
+
 ## [2.3.0] - 2025-07-29
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
@@ -20,7 +25,6 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
 
 ### Changed
 
-- 🗑️ Drop support for x86 architecture on macOS ([#421]) ([**@denialhaag**])
 - 🎨 Adjust the ESP reward calculation to become Qiskit v2 compatible ([#406]) ([**@nquetschlich**])
 - ✨ Improve the ML part and its usability ([#403]) ([**@nquetschlich**])
 - 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
@@ -40,7 +44,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-[#421]: https://github.com/munich-quantum-toolkit/predictor/pull/406
+[#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
+[#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
 [#403]: https://github.com/munich-quantum-toolkit/predictor/pull/403
@@ -55,6 +60,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@nquetschlich**]: https://github.com/nquetschlich
 [**@flowerthrower**]: https://github.com/flowerthrower
 [**@denialhaag**]: https://github.com/denialhaag
+[**@bachase**]: https://github.com/bachase
 
 <!-- General links -->
 

@@ -39,7 +39,7 @@ from mqt.bench.targets import get_device
 
 device = get_device("ibm_falcon_27")
 rl_pred = RL_Predictor(device=device, figure_of_merit="expected_fidelity")
-rl_pred.train_model(timesteps=100000, model_name="ibm_falcon_27_model")
+rl_pred.train_model(timesteps=100000)
 ```
 
 Currently, the following figures of merit are supported:
