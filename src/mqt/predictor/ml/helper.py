@@ -300,7 +300,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
 
 def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return predicted  and target classes indices.
+    """Return predicted and target classes indices.
 
     Arguments:
         preds: model predictions
@@ -471,7 +471,7 @@ def train_model(
     patience: int = 10,
     min_delta: float = 0.0,
     restore_best: bool = True,
-    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
 ) -> None:
     """Trains model using MSE loss and validates with custom class accuracy.
 
