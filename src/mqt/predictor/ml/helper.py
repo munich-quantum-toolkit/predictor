@@ -362,7 +362,7 @@ def evaluate_classification_model(
     preds = torch.cat(all_preds, dim=0)
     targets = torch.cat(all_targets, dim=0)
 
-    # --- compute custom 4-class accuracy ---
+    # --- compute accuracy ---
     pred_classes, target_classes = get_results_classes(preds, targets)
     acc = accuracy_score(target_classes, pred_classes)
     classification_report_res = classification_report(target_classes, pred_classes)
