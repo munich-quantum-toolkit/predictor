@@ -220,7 +220,7 @@ def test_train_and_qcompile_with_hellinger_model(
                 dump(qc, f)
 
         # Generate compiled circuits (using trained RL model)
-        if sys.platform == "win32":
+        if sys.platform == "win32" and not gnn:
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.compile_training_circuits(
                     timeout=600,
