@@ -22,10 +22,10 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """
-    Lightweight lazy loader for deprecated direct imports from mqt.predictor.ml.
-    """
+    """Lightweight lazy loader for deprecated direct imports from mqt.predictor.ml."""
     if name in {"Predictor", "predict_device_for_figure_of_merit", "setup_device_predictor"}:
         from . import predictor as _predictor
+
         return getattr(_predictor, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
