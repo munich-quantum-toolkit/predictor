@@ -15,18 +15,15 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    from typing import assert_never
-else:
-    from typing_extensions import assert_never
+    pass
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from bqskit import Circuit
-    from pytket.circuit import Node
     from qiskit.passmanager import PropertySet
-    from qiskit.transpiler import Target
+    from qiskit.transpiler import InstructionProperties, Target
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
@@ -43,17 +40,11 @@ from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
-from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
+from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
-    ApplyLayout,
-    BasisTranslator,
     CheckMap,
-    EnlargeWithAncilla,
-    FullAncillaAllocation,
     GatesInBasis,
-    SetLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
@@ -61,7 +52,6 @@ from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
     crit_depth,
     esp_data_available,
-    estimated_hellinger_distance,
     estimated_success_probability,
     expected_fidelity,
 )
@@ -71,6 +61,7 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
 )
+from mqt.predictor.rl.cost_model import approx_estimated_success_probability, approx_expected_fidelity
 from mqt.predictor.rl.helper import (
     create_feature_dict,
     get_path_training_circuits,
@@ -80,9 +71,8 @@ from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
-    prepare_noise_data,
 )
-from mqt.predictor.utils import get_openqasm_gates
+from mqt.predictor.utils import calc_supermarq_features
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -117,7 +107,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
-        self.actions_mapping_preserving_indices = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -137,8 +126,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
-            if getattr(elem, "preserve_layout", False):
-                self.actions_mapping_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.LAYOUT]:
             self.action_set[index] = elem
@@ -178,8 +165,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates()}
-
         spaces = {
             "num_qubits": Discrete(self.device.num_qubits + 1),
             "depth": Discrete(1000000),
@@ -188,77 +173,178 @@ class PredictorEnv(Env):  # type: ignore[misc]
             "entanglement_ratio": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "measure": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            **gate_spaces,
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.max_iter = 10
-        self.node_err: dict[Node, float] | None = None
-        self.edge_err: dict[tuple[Node, Node], float] | None = None
-        self.readout_err: dict[Node, float] | None = None
+        self.reward_pos = 1
+        self.reward_neg = 0
+        self.prev_reward: float | None = None
+        self.prev_reward_kind: str | None = None
+        self._p1_avg = 0.0
+        self._p2_avg = 0.0
+        self._tau1_avg = 0.0
+        self._tau2_avg = 0.0
+        self._tbar: float | None = None
+        self._dev_avgs_cached = False
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
-        """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
+        """Run one environment step.
 
-        Arguments:
-            action: The action to be executed, represented by its index in the action set.
+        This method:
+            1. Evaluates the current circuit with the configured reward function
+            (using either the exact or approximate metric, depending on state).
+            2. Applies the selected transpiler pass (the action).
+            3. Normalizes the circuit (e.g., decompose high-level gates) so that
+            reward computation is well-defined.
+            4. Updates the internal state and valid action set.
+            5. Computes a shaped step reward based on the change in figure of merit.
 
-        Returns:
-            A tuple containing the new state as a feature dictionary, the reward value, whether the episode is done, whether the episode is truncated, and additional information.
-
-        Raises:
-            RuntimeError: If no valid actions are left.
+        Reward design:
+            - For non-terminal actions, the step reward is a scaled delta between
+            the new and previous reward (plus an optional step penalty).
+            - For the terminate action, the episode ends and the final reward is
+            the exact (calibration-aware) metric.
+            - Changes in the approximate reward for mapping actions are suppressed
+            to avoid noisy signal while the circuit is still unmapped/un-native.
         """
         self.used_actions.append(str(self.action_set[action].name))
+
+        logger.info(f"Applying {self.action_set[action].name}")
+
+        # 1) Evaluate reward for current circuit (before applying the action)
+        prev_val, prev_kind = self.calculate_reward(mode="auto")
+        self.prev_reward = prev_val
+        self.prev_reward_kind = prev_kind
+
+        # 2) Apply the selected transpiler pass
         altered_qc = self.apply_action(action)
+
         if not altered_qc:
-            return (
-                create_feature_dict(self.state),
-                0,
-                True,
-                False,
-                {},
-            )
+            return create_feature_dict(self.state), 0.0, True, False, {}
 
+        # 3) Normalize circuit: remove high-level gates that break reward assumptions
+        #    - decompose "unitary"/"clifford"
+        for gate_type in ["unitary", "clifford"]:
+            if altered_qc.count_ops().get(gate_type):
+                altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
+
+        # 4) Update state and valid actions
         self.state: QuantumCircuit = altered_qc
-
         self.num_steps += 1
-
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
+        # 5) Compute step reward and termination flag
         if action == self.action_terminate_index:
-            reward_val = self.calculate_reward()
+            # Terminal action: use the exact metric as final reward
+            final_val, final_kind = self.calculate_reward(mode="exact")
+            logger.info(f"Final reward ({final_kind}): {final_val}")
+            self.prev_reward = final_val
+            self.prev_reward_kind = final_kind
             done = True
+            reward_val = final_val
         else:
-            reward_val = 0
+            # Default step penalty; reward is purely change-based unless overridden
+            reward_val = self.reward_neg
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
-        if self.state.count_ops().get("unitary"):
-            self.state = self.state.decompose(gates_to_decompose="unitary")
-        elif self.state.count_ops().get("clifford"):
-            self.state = self.state.decompose(gates_to_decompose="clifford")
+            # Re-evaluate reward after applying the action
+            new_val, new_kind = self.calculate_reward(mode="auto")
+            delta_reward = new_val - prev_val
 
+            if prev_kind == "approx" and new_kind == "exact":
+                delta_reward = 0.0  # Delta is not defined for switch from "approx" to "exact"
+
+            if delta_reward != 0.0:
+                reward_val += self.reward_pos * delta_reward
+                logger.info(f"Reward change ({prev_kind} -> {new_kind}) of {delta_reward:.6e}")
+
+            # Track the latest reward and its type for debugging/analysis
+            self.prev_reward = new_val
+            self.prev_reward_kind = new_kind
+
+        # Preserve layout information in the circuit object
         self.state._layout = self.layout  # noqa: SLF001
-
         return create_feature_dict(self.state), reward_val, done, False, {}
 
-    def calculate_reward(self, qc: QuantumCircuit | None = None) -> float:
-        """Calculates and returns the reward for the current state."""
-        circuit = self.state if qc is None else qc
+    def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
+        """Compute the current reward and indicate whether it is exact or approximate.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, the environment's current state
+                circuit is used.
+            mode:
+                Controls how the function chooses between exact (calibration-based)
+                and approximate (cost-model-based) metrics:
+
+                - ``"auto"`` (default): use the exact metric if the circuit is
+                already native and mapped; otherwise fall back to the approximate
+                metric.
+                - ``"exact"``: always compute the exact metric (no approximation).
+                - ``"approx"``: always compute the approximate metric.
+
+        Returns:
+            A pair ``(value, kind)`` where:
+
+                - ``value`` is the scalar reward value.
+                - ``kind`` is either ``"exact"`` (exact, calibration-aware) or
+                ``"approx"`` (cost-model-based approximation).
+
+        Notes:
+            - Dual-path behavior (exact + approximate) is currently only implemented
+            for ``"expected_fidelity"`` and
+            ``"estimated_success_probability"``.
+            - Other reward functions are always computed exactly.
+        """
+        if qc is None:
+            qc = self.state
+
+        # Only these two reward functions support both exact and approximate paths.
+        if self.reward_function not in {"expected_fidelity", "estimated_success_probability"}:
+            if self.reward_function == "critical_depth":
+                return crit_depth(qc), "exact"
+            msg = f"Unsupported reward function: {self.reward_function}"
+            raise RuntimeError(msg)
+
+        # Decide which path to use (exact vs approx)
+        if mode == "exact":
+            kind = "exact"
+        elif mode == "approx":
+            kind = "approx"
+        else:  # "auto"
+            kind = "exact" if self._is_native_and_mapped(qc) else "approx"
+
+        # Exact metrics use the full circuit and device calibration data
+        if kind == "exact":
+            if self.reward_function == "expected_fidelity":
+                return expected_fidelity(qc, self.device), "exact"
+            # self.reward_function == "estimated_success_probability"
+            return estimated_success_probability(qc, self.device), "exact"
+
+        # Approximate metrics use canonical gate counts and device-wide averages
+        self._ensure_device_averages_cached()
+
         if self.reward_function == "expected_fidelity":
-            return expected_fidelity(circuit, self.device)
-        if self.reward_function == "estimated_success_probability":
-            return estimated_success_probability(circuit, self.device)
-        if self.reward_function == "estimated_hellinger_distance":
-            return estimated_hellinger_distance(circuit, self.device, self.hellinger_model)
-        if self.reward_function == "critical_depth":
-            return crit_depth(circuit)
-        assert_never(circuit)
+            val = approx_expected_fidelity(qc, self._p1_avg, self._p2_avg)
+            return val, "approx"
+
+        # self.reward_function == "estimated_success_probability"
+        feats = calc_supermarq_features(qc)
+        val = approx_estimated_success_probability(
+            qc,
+            p1_avg=self._p1_avg,
+            p2_avg=self._p2_avg,
+            tau1_avg=self._tau1_avg,
+            tau2_avg=self._tau2_avg,
+            tbar=self._tbar,
+            par_feature=feats.parallelism,
+            liv_feature=feats.liveness,
+            n_qubits=qc.num_qubits,
+        )
+        return val, "approx"
 
     def render(self) -> None:
         """Renders the current state."""
@@ -359,75 +445,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         raise ValueError(msg)
 
-    def fom_aware_compile(
-        self, action: Action, device: Target, qc: QuantumCircuit, max_iteration: int = 4
-    ) -> tuple[QuantumCircuit, PropertySet | None]:
-        """Run a stochastic pass multiple times optimizing for the given figure of merit.
-
-        Args:
-            action: The action containing the transpile pass.
-            device: The compilation target device.
-            qc: The input quantum circuit.
-            max_iteration: Maximum number of attempts to run the pass.
-
-        Returns:
-            A tuple of the best circuit found and its property set (if available).
-        """
-        best_result = None
-        best_property_set = None
-        maximize = self.reward_function in [
-            "expected_fidelity",
-            "estimated_success_probability",
-            "estimated_hellinger_distance",
-            "critical_depth",
-        ]
-        best_fom = -1.0 if maximize else float("inf")
-        best_swap_count = float("inf")  # for fallback
-
-        assert callable(action.transpile_pass), "Mapping action should be callable"
-        for i in range(max_iteration):
-            pm = PassManager(action.transpile_pass(device))
-            try:
-                out_circ = pm.run(qc)
-                prop_set = dict(pm.property_set)
-
-                try:
-                    # Synthesize for lookahead fidelity (Mapping could insert non-local SWAP gates)
-                    if maximize:
-                        synth_pass = PassManager([
-                            BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
-                        ])
-                        synth_circ = synth_pass.run(out_circ.copy())
-                        fom = self.calculate_reward(synth_circ)
-
-                        if fom > best_fom:
-                            best_fom = fom
-                            best_result = out_circ
-                            best_property_set = prop_set
-                    else:
-                        fom = self.calculate_reward(out_circ)
-                        if fom < best_fom:
-                            best_fom = fom
-                            best_result = out_circ
-                            best_property_set = prop_set
-
-                except Exception as e:
-                    logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
-                    swap_count = out_circ.count_ops().get("swap", 0)
-                    if best_result is None or swap_count < best_swap_count:
-                        best_swap_count = swap_count
-                        best_result = out_circ
-                        best_property_set = prop_set
-
-            except Exception:
-                logger.exception(f"[Error] Pass failed at iteration {i + 1}")
-                continue
-
-        if best_result is not None:
-            return best_result, best_property_set
-        logger.error("All attempts failed.")
-        return qc, None
-
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         pm_property_set: PropertySet | None = {}
         if getattr(action, "stochastic", False):  # Wrap stochastic action to optimize for the used figure of merit
@@ -501,56 +518,16 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
-        if action.name == "NoiseAwarePlacement":
-            # Handle NoiseAwarePlacement separately (requires error data)
-            if self.node_err is None or self.edge_err is None or self.readout_err is None:
-                self.node_err, self.edge_err, self.readout_err = prepare_noise_data(self.device)
-            assert callable(action.transpile_pass)
-            transpile_pass = action.transpile_pass(self.device, self.node_err, self.edge_err, self.readout_err)
-        else:
-            transpile_pass = (
-                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-            )
+        transpile_pass = (
+            action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+        )
         assert isinstance(transpile_pass, list)
-        # Map TKET placement into a Qiskit layout
-        if action_index in self.actions_layout_indices:
-            try:
-                placement = transpile_pass[0].get_placement_map(tket_qc)
-            except Exception as e:
-                logger.warning(f"Placement failed ({action.name}): {e}. Falling back to original circuit.")
-                return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
-            else:
-                qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
-
-                qiskit_mapping = {
-                    qc_tmp.qubits[i]: placement[list(placement.keys())[i]].index[0] for i in range(len(placement))
-                }
-                layout = Layout(qiskit_mapping)
-
-                pm = PassManager([
-                    SetLayout(layout),
-                    FullAncillaAllocation(coupling_map=CouplingMap(self.device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ])
-                altered_qc = pm.run(qc_tmp)
-
-                self.layout = TranspileLayout(
-                    initial_layout=pm.property_set.get("layout"),
-                    input_qubit_mapping=pm.property_set["original_qubit_indices"],
-                    final_layout=pm.property_set["final_layout"],
-                    _output_qubit_list=altered_qc.qubits,
-                    _input_qubit_count=self.num_qubits_uncompiled_circuit,
-                )
-                return altered_qc
-
-        else:
-            for p in transpile_pass:
-                p.apply(tket_qc)
+        for p in transpile_pass:
+            p.apply(tket_qc)
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
+        altered_qc = tk_to_qiskit(tket_qc)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
@@ -595,36 +572,145 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine the valid actions for the current circuit state."""
-        # Check if circuit uses only native gates
+        """Determines and returns the valid actions for the current state."""
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
-        # Check if circuit is mapped to the device coupling map
-        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
+        if not only_nat_gates:
+            actions = self.actions_synthesis_indices + self.actions_opt_indices
+            if self.layout is not None:
+                actions += self.actions_routing_indices
+            return actions
+
+        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
         check_mapping(self.state)
         mapped = check_mapping.property_set["is_swap_mapped"]
 
-        if not only_nat_gates:
-            if not mapped:
-                # Non-native + unmapped → synthesis or optimization
-                return self.actions_synthesis_indices + self.actions_opt_indices
-            # Non-native + mapped → synthesis or mapping-preserving
-            return self.actions_synthesis_indices + self.actions_mapping_preserving_indices
+        if mapped and self.layout is not None:  # The circuit is correctly mapped.
+            return [self.action_terminate_index, *self.actions_opt_indices]
 
-        if mapped:
-            if self.layout is not None:
-                # Native + fully mapped & layout assigned → terminate or fine-tune
-                return [
-                    self.action_terminate_index,
-                    *self.actions_mapping_preserving_indices,
-                    *self.actions_final_optimization_indices,
-                ]
-            # Mapped but no explicit layout yet → explore layout/mapping improvements
-            return self.actions_mapping_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
-        if self.layout is not None:
-            # Layout chosen but not mapped → must do routing
+        if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
             return self.actions_routing_indices
-        # Not mapped and without layout → explore layout/mapping/optimizations
-        return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices
+
+        # No layout applied yet
+        return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
+
+    def _ensure_device_averages_cached(self) -> None:
+        """Cache device-wide averages for 1q/2q errors, durations, and coherence.
+
+        Backend-dependent preprocessing step used by the approximate reward model.
+        It computes and caches:
+
+            - _p1_avg: average single-qubit gate error probability
+            - _p2_avg: average two-qubit gate error probability
+            - _tau1_avg: average single-qubit gate duration (seconds)
+            - _tau2_avg: average two-qubit gate duration (seconds)
+            - _tbar: median of min(T1, T2) over all qubits (seconds), if available
+
+        Assumes a modern Qiskit Target (e.g. IBM backends) and raises a RuntimeError
+        if the required calibration data is not available.
+        """
+        if getattr(self, "_dev_avgs_cached", False):
+            return
+
+        target = self.device
+
+        # Hard requirements: these must exist for the approximate model to make sense
+        try:
+            num_qubits = target.num_qubits
+            op_names = list(target.operation_names)
+            coupling_map = target.build_coupling_map()
+            qubit_props = target.qubit_properties
+        except AttributeError as exc:
+            msg = "Device target does not expose the required Target API for approximate reward computation."
+            raise RuntimeError(msg) from exc
+
+        dt = getattr(target, "dt", None)
+        twoq_edges = coupling_map.get_edges()  # list[(i, j)]
+
+        p1: list[float] = []
+        p2: list[float] = []
+        t1: list[float] = []
+        t2: list[float] = []
+
+        # Exclude non-gate operations from gate error/duration averages
+        gate_blacklist = {"measure", "reset", "delay", "barrier"}
+
+        def _get_props(name: str, qargs: tuple[int, ...]) -> InstructionProperties | None:
+            """Return calibration properties for (name, qargs) or None if unavailable."""
+            return target.instruction_properties(name, qargs)
+
+        # --- Aggregate error and duration statistics over all 1q/2q gates --------
+        for name in op_names:
+            if name in gate_blacklist:
+                continue
+
+            # Determine arity (number of qubits) of the operation
+            try:
+                op = target.operation_from_name(name)
+                arity = op.num_qubits
+            except Exception:
+                # If we can't get a proper operation object, skip this op
+                continue
+
+            if arity == 1:
+                # Collect single-qubit gate error/duration over all qubits
+                for q in range(num_qubits):
+                    props = _get_props(name, (q,))
+                    if props is None:
+                        continue
+                    err = getattr(props, "error", None)
+                    if err is not None:
+                        p1.append(float(err))
+                    dur = getattr(props, "duration", None)
+                    if dur is not None:
+                        dur_s = float(dur if dt is None else dur * dt)
+                        t1.append(dur_s)
+
+            elif arity == 2:
+                # Collect two-qubit gate error/duration over all supported edges
+                for i, j in twoq_edges:
+                    props = _get_props(name, (i, j))
+                    if props is None:
+                        # Try flipped orientation for uni-directional couplings
+                        props = _get_props(name, (j, i))
+                    if props is None:
+                        continue
+                    err = getattr(props, "error", None)
+                    if err is not None:
+                        p2.append(float(err))
+                    dur = getattr(props, "duration", None)
+                    if dur is not None:
+                        dur_s = float(dur if dt is None else dur * dt)
+                        t2.append(dur_s)
+
+            else:
+                # Ignore gates with arity > 2; extend here if you ever need them
+                continue
+
+        if not p1 and not p2:
+            msg = "No valid 1q/2q calibration data found in Target; cannot compute approximate reward."
+            raise RuntimeError(msg)
+
+        self._p1_avg = float(np.mean(p1)) if p1 else 0.0
+        self._p2_avg = float(np.mean(p2)) if p2 else 0.0
+        self._tau1_avg = float(np.mean(t1)) if t1 else 0.0
+        self._tau2_avg = float(np.mean(t2)) if t2 else 0.0
+
+        # --- Compute a single coherence scale tbar from T1/T2 ---------------------
+        tmins: list[float] = []
+        if qubit_props:
+            for i in range(num_qubits):
+                props = qubit_props[i]
+                if props is None:
+                    continue
+                t1v = getattr(props, "t1", None)
+                t2v = getattr(props, "t2", None)
+                vals = [v for v in (t1v, t2v) if v is not None]
+                if vals:
+                    tmins.append(float(min(vals)))
+
+        self._tbar = float(np.median(tmins)) if tmins else None
+
+        self._dev_avgs_cached = True
