@@ -9,9 +9,9 @@
 """MQT Predictor - Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing."""
 
 from __future__ import annotations
-
+from typing import Any
 from mqt.predictor.ml import helper
-from mqt.predictor.ml.predictor import Predictor, predict_device_for_figure_of_merit, setup_device_predictor
+#from mqt.predictor.ml.predictor import Predictor, predict_device_for_figure_of_merit, setup_device_predictor
 
 __all__ = [
     "Predictor",
