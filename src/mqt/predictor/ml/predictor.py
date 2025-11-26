@@ -598,7 +598,7 @@ class Predictor:
             training_data = self._get_prepared_training_data()
         number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1)
         loss_fn = nn.MSELoss()
-        if self.figure_of_merit == "hellinger_distance":
+        if self.figure_of_merit == "estimated_hellinger_distance" or self.figure_of_merit == "hellinger_distance":
             task = "regression"
         else:
             if num_outputs == 1:
@@ -675,9 +675,9 @@ class Predictor:
             training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
         )
         # Dataloader
-        train_loader = DataLoader(x_train, batch_size=32, shuffle=True)
+        train_loader = DataLoader(x_train, batch_size=16, shuffle=True)
 
-        val_loader = DataLoader(x_val, batch_size=32, shuffle=False)
+        val_loader = DataLoader(x_val, batch_size=16, shuffle=False)
         train_model(
             model,
             train_loader,
@@ -694,7 +694,7 @@ class Predictor:
             scheduler=None,
         )
         if verbose:
-            test_loader = DataLoader(training_data.X_test, batch_size=32, shuffle=False)
+            test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
             avg_loss_test, dict_results, _ = evaluate_classification_model(
                 model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
             )
@@ -859,13 +859,13 @@ def predict_device_for_figure_of_merit(
         gnn_model.eval()
         class_labels = gnn_model.classes
         with torch.no_grad():
-            probabilities = torch.softmax(gnn_model(feature_vector), dim=1)
+            outputs = gnn_model(feature_vector)
         assert class_labels is not None
-        if len(class_labels) != len(probabilities):
-            msg = "probabilities and class_labels must be same length"
+        if len(class_labels) != len(outputs):
+            msg = "outputs and class_labels must be same length"
             raise ValueError(msg)
 
-        pairs = sorted(zip(probabilities.tolist(), class_labels, strict=False), reverse=True)
+        pairs = sorted(zip(outputs.tolist(), class_labels, strict=False), reverse=True)
         sorted_devices = np.array([label for _, label in pairs])
 
     for dev_name in sorted_devices:
