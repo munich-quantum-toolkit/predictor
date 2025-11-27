@@ -375,13 +375,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         """
         best_result = None
         best_property_set = None
-        maximize = self.reward_function in [
-            "expected_fidelity",
-            "estimated_success_probability",
-            "estimated_hellinger_distance",
-            "critical_depth",
-        ]
-        best_fom = -1.0 if maximize else float("inf")
+        best_fom = -1.0
         best_swap_count = float("inf")  # for fallback
 
         assert callable(action.transpile_pass), "Mapping action should be callable"
@@ -401,23 +395,16 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     # - This isolates the effect of mapping (inserted SWAPs) on fidelity
                     #   without conflating it with further optimizations.
 
-                    if maximize:
-                        synth_pass = PassManager([
-                            BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
-                        ])
-                        synth_circ = synth_pass.run(out_circ.copy())
-                        fom = self.calculate_reward(synth_circ)
+                    synth_pass = PassManager([
+                        BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
+                    ])
+                    synth_circ = synth_pass.run(out_circ.copy())
+                    fom = self.calculate_reward(synth_circ)
 
-                        if fom > best_fom:
-                            best_fom = fom
-                            best_result = out_circ
-                            best_property_set = prop_set
-                    else:
-                        fom = self.calculate_reward(out_circ)
-                        if fom < best_fom:
-                            best_fom = fom
-                            best_result = out_circ
-                            best_property_set = prop_set
+                    if fom > best_fom:
+                        best_fom = fom
+                        best_result = out_circ
+                        best_property_set = prop_set
 
                 except Exception as e:
                     logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
@@ -525,7 +512,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             try:
                 placement = transpile_pass[0].get_placement_map(tket_qc)
             except Exception as e:
-                logger.warning(f"Placement failed ({action.name}): {e}. Falling back to original circuit.")
+                logger.warning("Placement failed (%s): %s. Falling back to original circuit.", action.name, e)
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
             else:
                 qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
