@@ -324,12 +324,24 @@ def evaluate_classification_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
+    device: str,
     *,
-    device: str | None = None,
     return_arrays: bool = False,
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
-    """Evaluate a classification model with the given loss function and compute accuracy metrics."""
+    """Evaluate a classification model with the given loss function and compute accuracy metrics.
+    Arguments:
+        model: classification model to be evaluated
+        loader: data loader for the evaluation dataset
+        loss_fn: loss function for evaluation
+        device: device to be used for evaluation (cuda or cpu)
+        return_arrays: whether to return prediction and target arrays
+        verbose: whether to print the metrics results.
+    Returns:
+        avg_loss: average loss over the loader
+        metrics:  {"custom_accuracy": ..., "classification_report": ..., "mse": ..., "rmse": ..., "mae": ..., "r2": ...}
+        arrays:   (preds, y_true) if return_arrays=True, else None
+    """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
@@ -394,8 +406,8 @@ def evaluate_regression_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
+    device: str,
     *,
-    device: str | None = None,
     return_arrays: bool = False,
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
@@ -405,7 +417,7 @@ def evaluate_regression_model(
         model: regression model to be evaluated
         loader: data loader for the evaluation dataset
         loss_fn: loss function for evaluation
-        device: device to be used for evaluation (gpu or cpu)
+        device: device to be used for evaluation (cuda or cpu)
         return_arrays: whether to return prediction and target arrays
         verbose: whether to print the metrics results.
 
@@ -473,7 +485,6 @@ def train_model(
     patience: int = 10,
     min_delta: float = 0.0,
     restore_best: bool = True,
-    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
 ) -> None:
     """Trains model using MSE loss and validates with custom class accuracy.
 
@@ -522,8 +533,6 @@ def train_model(
             total += bs
 
         train_loss = running_loss / max(1, total)
-        if scheduler is not None:
-            scheduler.step()
 
         if val_loader is not None:
             if task == "classification":

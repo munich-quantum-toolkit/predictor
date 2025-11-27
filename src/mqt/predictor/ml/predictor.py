@@ -538,7 +538,7 @@ class Predictor:
                 task=task,
                 num_epochs=num_epochs,
                 device=device,
-                verbose=False,
+                verbose=verbose,
                 val_loader=val_loader,
                 patience=patience,
                 min_delta=0.0,
