@@ -588,7 +588,6 @@ class Predictor:
                 patience=patience,
                 min_delta=0.0,
                 restore_best=True,
-                scheduler=None,
             )
             if task == "regression":
                 val_loss, _, _ = evaluate_regression_model(
@@ -736,7 +735,6 @@ class Predictor:
             patience=30,
             min_delta=0.0,
             restore_best=True,
-            scheduler=None,
         )
         if verbose:
             test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
