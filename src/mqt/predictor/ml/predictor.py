@@ -582,7 +582,7 @@ class Predictor:
             The trained GNN model.
         """
         # Figure out outputs and save path
-        if self.figure_of_merit == "hellinger_distance":
+        if self.figure_of_merit == "hellinger_distance" or self.figure_of_merit == "estimated_hellinger_distance":
             if len(self.devices) != 1:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
@@ -629,8 +629,8 @@ class Predictor:
         mlp_str = dict_best_hyper["mlp"]
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
-        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
-        if self.figure_of_merit != "hellinger_distance":
+        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance" else 1
+        if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance":
             model = GNN(
                 in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
                 num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
@@ -727,7 +727,7 @@ class Predictor:
             },
         ]
         # Device-specific regression model for Hellinger distance
-        if self.figure_of_merit == "hellinger_distance":
+        if self.figure_of_merit == "hellinger_distance" or self.figure_of_merit == "estimated_hellinger_distance":
             if len(self.devices) != 1:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
