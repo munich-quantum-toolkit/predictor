@@ -60,6 +60,7 @@ def test_setup_device_predictor_with_prediction(
         path_uncompiled_circuits=path_uncompiled_circuits,
         path_compiled_circuits=path_compiled_circuits,
         gnn=gnn,
+        verbose=verbose,
     )
     assert success
 

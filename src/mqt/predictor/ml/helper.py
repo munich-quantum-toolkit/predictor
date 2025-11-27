@@ -344,7 +344,6 @@ def evaluate_classification_model(
         metrics:  {"custom_accuracy": ..., "classification_report": ..., "mse": ..., "rmse": ..., "mae": ..., "r2": ...}
         arrays:   (preds, y_true) if return_arrays=True, else None.
     """
-        
     device = torch.device(device)
 
     model.eval()
