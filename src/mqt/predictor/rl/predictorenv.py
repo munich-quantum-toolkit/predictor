@@ -647,7 +647,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         def _get_props(name: str, qargs: tuple[int, ...]) -> InstructionProperties | None:
             """Return calibration properties for (name, qargs) or None if unavailable."""
-            return target.instruction_properties(name, qargs)
+            try:
+                props_map = target[name]
+            except KeyError:
+                return None
+
+            return props_map.get(qargs, None)
 
         # --- Aggregate error and duration statistics over all 1q/2q gates --------
         for name in op_names:
