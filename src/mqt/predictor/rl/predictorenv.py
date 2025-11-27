@@ -82,7 +82,7 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
-from mqt.predictor.utils import get_openqasm_gates
+from mqt.predictor.utils import get_rl_openqasm_gates
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -178,7 +178,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates()}
+        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_rl_openqasm_gates()}
 
         spaces = {
             "num_qubits": Discrete(self.device.num_qubits + 1),
@@ -392,7 +392,15 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 prop_set = dict(pm.property_set)
 
                 try:
-                    # Synthesize for lookahead fidelity (Mapping could insert non-local SWAP gates)
+                    # For fidelity-based metrics, do a cheap "lookahead" synthesis step:
+                    # routing may have introduced non-native SWAPs, so we translate the
+                    # circuit into the device's native basis before evaluating the metric.
+                    #
+                    # Note:
+                    # - BasisTranslator *only* performs basis conversion; it does not optimize.
+                    # - This isolates the effect of mapping (inserted SWAPs) on fidelity
+                    #   without conflating it with further optimizations.
+
                     if maximize:
                         synth_pass = PassManager([
                             BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)

@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 🔧 Changed test circuit level for RL predictor from ALG to INDEP
+- 🔧 Changed test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 

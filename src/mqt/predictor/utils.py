@@ -145,7 +145,7 @@ def calc_supermarq_features(
     )
 
 
-def get_openqasm_gates() -> list[str]:
+def get_rl_openqasm_gates() -> list[str]:
     """Returns a list of all quantum gates within the openQASM 2.0 standard header."""
     # according to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
     # u,u0,u1,u2,u3 gates are excluded as they are not meaningful as RL features
