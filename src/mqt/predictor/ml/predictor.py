@@ -629,7 +629,11 @@ class Predictor:
         mlp_str = dict_best_hyper["mlp"]
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
-        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance" else 1
+        json_dict["num_outputs"] = (
+            len(self.devices)
+            if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance"
+            else 1
+        )
         if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance":
             model = GNN(
                 in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
