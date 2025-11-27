@@ -302,12 +302,20 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if qc is None:
             qc = self.state
 
-        # Only these two reward functions support both exact and approximate paths.
+        # Reward functions that are always computed exactly, regardless of `mode`.
         if self.reward_function not in {"expected_fidelity", "estimated_success_probability"}:
             if self.reward_function == "critical_depth":
                 return crit_depth(qc), "exact"
-            msg = f"Unsupported reward function: {self.reward_function}"
-            raise RuntimeError(msg)
+            # Fallback for other unknown / not-yet-implemented reward functions:
+            logger.warning(
+                "Reward function '%s' is not supported in PredictorEnv. Returning 0.0 as a fallback reward.",
+                self.reward_function,
+            )
+            return 0.0, "exact"
+
+        # ------------------------------------------------------------------
+        # From here on: dual-path rewards (exact vs approx) for EF / ESP.
+        # ------------------------------------------------------------------
 
         # Decide which path to use (exact vs approx)
         if mode == "exact":
