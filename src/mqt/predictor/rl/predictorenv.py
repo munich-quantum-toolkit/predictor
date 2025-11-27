@@ -722,3 +722,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self._tbar = float(np.median(tmins)) if tmins else None
 
         self._dev_avgs_cached = True
+
+    def _is_native_and_mapped(self, qc: QuantumCircuit) -> bool:
+        check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
+        check_nat_gates(qc)
+        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+
+        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
+        check_mapping(qc)
+        mapped = check_mapping.property_set["is_swap_mapped"]
+
+        return bool(only_nat_gates and mapped)
