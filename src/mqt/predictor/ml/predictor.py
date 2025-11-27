@@ -582,7 +582,7 @@ class Predictor:
             The trained GNN model.
         """
         # Figure out outputs and save path
-        if self.figure_of_merit == "hellinger_distance" or self.figure_of_merit == "estimated_hellinger_distance":
+        if self.figure_of_merit == "hellinger_distance":
             if len(self.devices) != 1:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
@@ -597,7 +597,7 @@ class Predictor:
             training_data = self._get_prepared_training_data()
         number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1)
         loss_fn = nn.MSELoss()
-        if self.figure_of_merit == "estimated_hellinger_distance" or self.figure_of_merit == "hellinger_distance":
+        if self.figure_of_merit == "hellinger_distance":
             task = "regression"
         else:
             if num_outputs == 1:
@@ -629,12 +629,8 @@ class Predictor:
         mlp_str = dict_best_hyper["mlp"]
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
-        json_dict["num_outputs"] = (
-            len(self.devices)
-            if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance"
-            else 1
-        )
-        if self.figure_of_merit != "hellinger_distance" and self.figure_of_merit != "estimated_hellinger_distance":
+        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
+        if self.figure_of_merit != "hellinger_distance":
             model = GNN(
                 in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
                 num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
@@ -666,6 +662,7 @@ class Predictor:
             ).to("cuda" if torch.cuda.is_available() else "cpu")
 
         json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
+        json_dict["class_labels"] = [dev.description for dev in self.devices]
         with json_path.open("w", encoding="utf-8") as f:
             json.dump(json_dict, f, indent=4)
 
@@ -731,7 +728,7 @@ class Predictor:
             },
         ]
         # Device-specific regression model for Hellinger distance
-        if self.figure_of_merit == "hellinger_distance" or self.figure_of_merit == "estimated_hellinger_distance":
+        if self.figure_of_merit == "hellinger_distance":
             if len(self.devices) != 1:
                 msg = "A single device must be provided for Hellinger distance model training."
                 raise ValueError(msg)
@@ -841,12 +838,15 @@ def predict_device_for_figure_of_merit(
         with Path.open(path.with_suffix(".json"), encoding="utf-8") as f:
             json_dict = json.load(f)
 
+        mlp_str = json_dict["mlp"]
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+
         gnn_model = GNN(
             in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
             num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
             hidden_dim=json_dict["hidden_dim"],
             num_resnet_layers=json_dict["num_resnet_layers"],
-            mlp_units=json_dict["mlp_units"],
+            mlp_units=mlp_units,
             output_dim=json_dict["num_outputs"],
             dropout_p=json_dict["dropout"],
             bidirectional=json_dict["bidirectional"],
@@ -857,9 +857,11 @@ def predict_device_for_figure_of_merit(
         ).to("cuda" if torch.cuda.is_available() else "cpu")
         gnn_model.load_state_dict(torch.load(path))
         x, edge_index, number_of_gates = create_dag(qc)
-        feature_vector = Data(x=x, edge_index=edge_index, num_gates=number_of_gates)
+        feature_vector = Data(x=x, edge_index=edge_index, num_gates=number_of_gates).to(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         gnn_model.eval()
-        class_labels = gnn_model.classes
+        class_labels = json_dict["class_labels"]
         with torch.no_grad():
             outputs = gnn_model(feature_vector)
         assert class_labels is not None

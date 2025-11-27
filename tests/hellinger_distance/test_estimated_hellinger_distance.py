@@ -18,15 +18,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
 from mqt.predictor.ml import Predictor as ml_Predictor
 from mqt.predictor.ml import predict_device_for_figure_of_merit
-from mqt.predictor.ml.helper import TrainingData, get_path_training_data
+from mqt.predictor.ml.helper import TrainingData, create_dag, get_path_training_data
 from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
@@ -152,20 +154,22 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-def test_train_random_forest_regressor_and_predict(device: Target) -> None:
+@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
+def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
-    # Setup the training environment
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
     for i in range(1, device.num_qubits):
         qc.cz(0, i)
 
-    # 1. Feature Extraction
-    feature_vector = calc_device_specific_features(qc, device)
-    feature_vector_list = [feature_vector] * n_circuits
+    if not gnn:
+        feature_vector = calc_device_specific_features(qc, device)
+        feature_vector_list = [feature_vector] * n_circuits
+    else:
+        x, edge_index, number_of_gates = create_dag(qc)
+        training_sample = [(x, edge_index, number_of_gates)] * n_circuits
 
-    # 2. Label Generation
     rng = np.random.default_rng()
     noisy = rng.random(device.num_qubits)
     noisy /= np.sum(noisy)
@@ -173,13 +177,40 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
     labels_list = [distance_label] * n_circuits
-    training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    if not gnn:
+        training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    else:
+        training_data_list = []
+        for i in range(n_circuits):
+            x, edge_idx, n_nodes = training_sample[i]
+            gnn_training_sample = Data(
+                x=x,
+                y=torch.tensor(labels_list[i], dtype=torch.float32),
+                edge_index=edge_idx,
+                num_nodes=torch.tensor([n_nodes]),
+            )
+            training_data_list.append(gnn_training_sample)
+        training_data = TrainingData(X_train=training_data_list, y_train=labels_list)
 
     # 3. Model Training
-    pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device])
-    trained_model = pred.train_random_forest_model(training_data)
+    pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)
+    if gnn:
+        trained_model = pred.train_gnn_model(training_data, num_epochs=100, patience=20)
+    else:
+        trained_model = pred.train_random_forest_model(training_data)
 
-    assert np.isclose(trained_model.predict([feature_vector]), distance_label)
+    if not gnn:
+        assert np.isclose(trained_model.predict([feature_vector]), distance_label)
+    else:
+        trained_model.eval()
+        model_device = next(trained_model.parameters()).device
+        with torch.no_grad():
+            batch = Batch.from_data_list(training_data.X_train).to(model_device)
+            out = trained_model(batch)
+            out = out.squeeze(-1)
+            predicted_values = out.cpu().numpy()
+            labels = np.asarray(labels_list, dtype=np.float32)
+        assert np.allclose(predicted_values, labels, atol=1e-2)
 
 
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
@@ -255,7 +286,7 @@ def test_train_and_qcompile_with_hellinger_model(
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
-        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit)
+        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit, gnn=gnn)
         assert predicted_dev.description in get_available_device_names()
 
 
