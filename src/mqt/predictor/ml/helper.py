@@ -342,8 +342,7 @@ def evaluate_classification_model(
         metrics:  {"custom_accuracy": ..., "classification_report": ..., "mse": ..., "rmse": ..., "mae": ..., "r2": ...}
         arrays:   (preds, y_true) if return_arrays=True, else None
     """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
     device = torch.device(device)
 
     model.eval()
@@ -426,8 +425,6 @@ def evaluate_regression_model(
         metrics:  {"rmse": ..., "mae": ..., "r2": ...}
         arrays:   (preds, y_true) if return_arrays=True, else None
     """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
     model.eval()
@@ -501,7 +498,6 @@ def train_model(
         patience: number of epochs with no improvement after which training will be stopped
         min_delta: minimum change in the monitored quantity to qualify as an improvement
         restore_best: whether to restore model weights from the epoch with the best validation loss
-        scheduler: learning rate scheduler (optional)
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
