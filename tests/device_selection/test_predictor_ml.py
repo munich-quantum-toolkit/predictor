@@ -35,7 +35,9 @@ def path_compiled_circuits() -> Path:
     return Path("./test_compiled_circuits")
 
 
-@pytest.mark.parametrize("gnn,verbose", [(False, False), (True, False), (True, True)], ids=["rf", "gnn", "gnn_verbose"])
+@pytest.mark.parametrize(
+    ("gnn", "verbose"), [(False, False), (True, False), (True, True)], ids=["rf", "gnn", "gnn_verbose"]
+)
 def test_setup_device_predictor_with_prediction(
     path_uncompiled_circuits: Path, path_compiled_circuits: Path, gnn: bool, verbose: bool
 ) -> None:

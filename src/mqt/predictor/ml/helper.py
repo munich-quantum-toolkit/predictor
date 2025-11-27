@@ -330,6 +330,7 @@ def evaluate_classification_model(
     verbose: bool = False,
 ) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
     """Evaluate a classification model with the given loss function and compute accuracy metrics.
+
     Arguments:
         model: classification model to be evaluated
         loader: data loader for the evaluation dataset
@@ -337,10 +338,11 @@ def evaluate_classification_model(
         device: device to be used for evaluation (cuda or cpu)
         return_arrays: whether to return prediction and target arrays
         verbose: whether to print the metrics results.
+
     Returns:
         avg_loss: average loss over the loader
         metrics:  {"custom_accuracy": ..., "classification_report": ..., "mse": ..., "rmse": ..., "mae": ..., "r2": ...}
-        arrays:   (preds, y_true) if return_arrays=True, else None
+        arrays:   (preds, y_true) if return_arrays=True, else None.
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
