@@ -1809,7 +1809,7 @@ dev = [
     { name = "pytest", specifier = ">=9.0.1" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.14.6" },
-    { name = "ty", specifier = ">=0.0.1a27" },
+    { name = "ty", specifier = "==0.0.1a28" },
 ]
 docs = [
     { name = "furo", specifier = ">=2025.9.25" },
