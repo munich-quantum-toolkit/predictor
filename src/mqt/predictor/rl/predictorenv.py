@@ -204,8 +204,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             the new and previous reward (plus an optional step penalty).
             - For the terminate action, the episode ends and the final reward is
             the exact (calibration-aware) metric.
-            - Changes in the approximate reward for mapping actions are suppressed
-            to avoid noisy signal while the circuit is still unmapped/un-native.
         """
         self.used_actions.append(str(self.action_set[action].name))
 
@@ -246,8 +244,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             done = True
             reward_val = final_val
         else:
-            # Default step penalty; reward is purely change-based unless overridden
-            reward_val = self.reward_neg
             done = False
 
             # Re-evaluate reward after applying the action
@@ -257,15 +253,19 @@ class PredictorEnv(Env):  # type: ignore[misc]
             if prev_kind == "approx" and new_kind == "exact":
                 delta_reward = 0.0  # Delta is not defined for switch from "approx" to "exact"
 
-            if delta_reward != 0.0:
-                reward_val += self.reward_pos * delta_reward
-                logger.info(f"Reward change ({prev_kind} -> {new_kind}) of {delta_reward:.6e}")
+            if delta_reward > 0.0:
+                # Positive change: reward proportional to improvement
+                reward_val = self.reward_pos * delta_reward
+            elif delta_reward < 0.0:
+                # Negative change: proportional penalty
+                reward_val = self.reward_pos * delta_reward
+            else:
+                # No change: small step penalty for "doing nothing"
+                reward_val = self.reward_neg
 
-            # Track the latest reward and its type for debugging/analysis
             self.prev_reward = new_val
             self.prev_reward_kind = new_kind
 
-        # Preserve layout information in the circuit object
         self.state._layout = self.layout  # noqa: SLF001
         return create_feature_dict(self.state), reward_val, done, False, {}
 
