@@ -311,7 +311,6 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
             if file.suffix in (".npy", ".pt"):
                 file.unlink()
 
-
     model_path = get_path_training_data() / "trained_model"
     if model_path.exists():
         for file in model_path.iterdir():
