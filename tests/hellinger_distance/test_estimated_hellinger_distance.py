@@ -155,7 +155,7 @@ def test_hellinger_distance_error() -> None:
 
 
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
-def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) -> None:
+def test_train_model_and_predict(device: Target, gnn: bool) -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     n_circuits = 20
 
@@ -187,7 +187,7 @@ def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) ->
                 x=x,
                 y=torch.tensor(labels_list[i], dtype=torch.float32),
                 edge_index=edge_idx,
-                num_nodes=torch.tensor([n_nodes]),
+                num_nodes=n_nodes,
             )
             training_data_list.append(gnn_training_sample)
         training_data = TrainingData(X_train=training_data_list, y_train=labels_list)
@@ -210,6 +210,7 @@ def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) ->
             out = out.squeeze(-1)
             predicted_values = out.cpu().numpy()
             labels = np.asarray(labels_list, dtype=np.float32)
+        # it is set a tolerance value of 2e-1 just because of the small number of training samples
         assert np.allclose(predicted_values, labels, atol=2e-1)
 
 
@@ -217,7 +218,7 @@ def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) ->
 def test_train_and_qcompile_with_hellinger_model(
     source_path: Path, target_path: Path, device: Target, gnn: bool
 ) -> None:
-    """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
+    """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
 
     with warnings.catch_warnings():
@@ -307,19 +308,14 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
     data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
         for file in data_path.iterdir():
-            if file.suffix == ".npy":
+            if file.suffix in (".npy", ".pt"):
                 file.unlink()
 
-    data_path = get_path_training_data() / "training_data_aggregated"
-    if data_path.exists():
-        for file in data_path.iterdir():
-            if file.suffix == ".pt":
-                file.unlink()
 
     model_path = get_path_training_data() / "trained_model"
     if model_path.exists():
         for file in model_path.iterdir():
-            if file.suffix == ".joblib" or file.suffix == ".pth" or file.suffix == ".json":
+            if file.suffix in (".joblib", ".pth", ".json"):
                 file.unlink()
 
 

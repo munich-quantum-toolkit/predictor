@@ -67,6 +67,8 @@ def test_setup_device_predictor_with_prediction(
     data_path = get_path_training_data() / "training_data_aggregated"
     if gnn:
         assert (data_path / "graph_dataset_expected_fidelity.pt").exists()
+        assert (data_path / "names_list_expected_fidelity.npy").exists()
+        assert (data_path / "scores_list_expected_fidelity.npy").exists()
     else:
         assert (data_path / "training_data_expected_fidelity.npy").exists()
         assert (data_path / "names_list_expected_fidelity.npy").exists()
@@ -95,7 +97,7 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
     data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
         for file in data_path.iterdir():
-            if file.suffix == ".npy" or file.suffix == ".pt":
+            if file.suffix in (".npy", ".pt"):
                 file.unlink()
 
 
