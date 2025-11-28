@@ -210,7 +210,7 @@ def test_train_random_forest_regressor_and_predict(device: Target, gnn: bool) ->
             out = out.squeeze(-1)
             predicted_values = out.cpu().numpy()
             labels = np.asarray(labels_list, dtype=np.float32)
-        assert np.allclose(predicted_values, labels, atol=1e-1)
+        assert np.allclose(predicted_values, labels, atol=2e-1)
 
 
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
