@@ -156,7 +156,7 @@ def test_hellinger_distance_error() -> None:
 
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
 def test_train_model_and_predict(device: Target, gnn: bool) -> None:
-    """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
+    """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
