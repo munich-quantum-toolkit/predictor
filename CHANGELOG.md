@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 🐛 Fix instruction duration unit in estimated success probability calculation ([#445])([**@Shaobo-Zhou])
+- 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 
@@ -45,6 +45,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
@@ -62,6 +63,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@flowerthrower**]: https://github.com/flowerthrower
 [**@denialhaag**]: https://github.com/denialhaag
 [**@bachase**]: https://github.com/bachase
+[**@Shaobo-Zhou**]: https://github.com/Shaobo-Zhou
 
 <!-- General links -->
 
