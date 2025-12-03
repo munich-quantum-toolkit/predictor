@@ -195,8 +195,6 @@ register_action(
         "Optimize1qGatesDecomposition",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        # If no basis_gates are passed, fallback 1q Euler gates:
-        # https://github.com/Qiskit/qiskit/blob/main/qiskit/synthesis/one_qubit/one_qubit_decompose.py#L46
         [Optimize1qGatesDecomposition()],
     )
 )
