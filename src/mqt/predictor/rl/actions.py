@@ -30,7 +30,7 @@ from pytket.passes import (
 )
 from pytket.placement import GraphPlacement, NoiseAwarePlacement
 from qiskit import QuantumCircuit
-from qiskit.circuit import ClassicalRegister, QuantumRegister, StandardEquivalenceLibrary
+from qiskit.circuit import ClassicalRegister, StandardEquivalenceLibrary
 from qiskit.circuit.library import (
     CXGate,
     CYGate,
@@ -95,7 +95,7 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
-    from qiskit.circuit import Instruction, Qubit
+    from qiskit.circuit import ClassicalRegister, Clbit, Instruction, Qubit
     from qiskit.dagcircuit import DAGCircuit
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
@@ -609,22 +609,40 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
 
 def extract_cregs_and_measurements(
     qc: QuantumCircuit,
-) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Qubit], list[ClassicalRegister]]]]:
-    """Extracts classical registers and measurement operations from a quantum circuit.
+) -> tuple[list[ClassicalRegister], list[tuple[Instruction, list[Qubit], list[Clbit]]]]:
+    """Extract classical registers and measurement operations from a quantum circuit.
 
     Args:
         qc: The input QuantumCircuit.
 
     Returns:
-        A tuple containing a list of classical registers and a list of measurement operations.
+        A tuple ``(cregs, measurements)`` where:
+            - ``cregs`` is a list of the circuit's ClassicalRegister objects.
+            - ``measurements`` is a list of tuples ``(instr, qargs, cargs)`` for each
+              measurement, where:
+                * ``instr`` is the measurement Instruction,
+                * ``qargs`` is the list of Qubit objects measured,
+                * ``cargs`` is the list of Clbit objects written to.
     """
-    cregs = [ClassicalRegister(cr.size, name=cr.name) for cr in qc.cregs]
-    measurements = [(item.operation, item.qubits, item.clbits) for item in qc.data if item.operation.name == "measure"]
+    # IMPORTANT: reuse the original registers, do NOT clone them
+    cregs = list(qc.cregs)
+
+    measurements: list[tuple[Instruction, list[Qubit], list[Clbit]]] = []
+    for item in qc.data:
+        if item.operation.name == "measure":
+            instr = item.operation
+            qargs = list(item.qubits)
+            cargs = list(item.clbits)  # these are Clbit, not ClassicalRegister
+            measurements.append((instr, qargs, cargs))
+
     return cregs, measurements
 
 
 def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
-    """Removes classical registers and measurement operations from the circuit.
+    """Return a copy of ``qc`` without classical registers and measurements.
+
+    Classical registers and measurement operations are removed, but quantum
+    registers and qubit *identity* are preserved.
 
     Args:
         qc: The input QuantumCircuit.
@@ -632,42 +650,52 @@ def remove_cregs(qc: QuantumCircuit) -> QuantumCircuit:
     Returns:
         A new QuantumCircuit with only quantum operations (no cregs or measurements).
     """
-    qregs = [QuantumRegister(qr.size, name=qr.name) for qr in qc.qregs]
-    new_qc = QuantumCircuit(*qregs)
-    old_to_new = {}
-    for orig_qr, new_qr in zip(qc.qregs, new_qc.qregs, strict=False):
-        for idx in range(orig_qr.size):
-            old_to_new[orig_qr[idx]] = new_qr[idx]
+    # Reuse the original QuantumRegister objects to preserve Qubit identity
+    new_qc = QuantumCircuit(*qc.qregs)
+
     for item in qc.data:
         instr = item.operation
-        qargs = [old_to_new[q] for q in item.qubits]
-        if instr.name not in ("measure", "barrier"):
-            new_qc.append(instr, qargs)
+        if instr.name in ("measure", "barrier"):
+            continue
+        # Use the original Qubit objects directly; no remapping
+        qargs = list(item.qubits)
+        new_qc.append(instr, qargs)
+
     return new_qc
 
 
 def add_cregs_and_measurements(
     qc: QuantumCircuit,
     cregs: list[ClassicalRegister],
-    measurements: list[tuple[Instruction, list[Qubit], list[ClassicalRegister]]],
+    measurements: list[tuple[Instruction, list[Qubit], list[Clbit]]],
     qubit_map: dict[Qubit, Qubit] | None = None,
 ) -> QuantumCircuit:
-    """Adds classical registers and measurement operations back to the quantum circuit.
+    """Add classical registers and measurement operations back to a circuit.
 
     Args:
-        qc: The quantum circuit to which cregs and measurements are added.
-        cregs: List of ClassicalRegister to add.
-        measurements: List of measurement instructions as tuples (Instruction, qubits, clbits).
-        qubit_map: Optional dictionary mapping original qubits to new qubits.
+        qc:
+            The quantum circuit to which cregs and measurements are added.
+        cregs:
+            List of ClassicalRegister objects to add (typically taken from
+            :func:`extract_cregs_and_measurements`).
+        measurements:
+            List of measurement tuples ``(instr, qargs, cargs)`` as returned by
+            :func:`extract_cregs_and_measurements`.
+        qubit_map:
+            Optional mapping from original Qubit objects to new Qubit objects.
+            If provided, measurement qubits are remapped via this dictionary.
 
     Returns:
         The modified QuantumCircuit with cregs and measurements added.
     """
+    # Attach the original ClassicalRegister objects so their Clbits are valid in this circuit
     for cr in cregs:
         qc.add_register(cr)
+
     for instr, qargs, cargs in measurements:
-        new_qargs = [qubit_map[q] for q in qargs] if qubit_map else qargs
+        new_qargs = [qubit_map[q] for q in qargs] if qubit_map is not None else qargs
         qc.append(instr, new_qargs, cargs)
+
     return qc
 
 
