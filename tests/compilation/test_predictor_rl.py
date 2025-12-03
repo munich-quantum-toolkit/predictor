@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
+from qiskit import transpile
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import CouplingMap, InstructionProperties, Target
@@ -171,22 +172,43 @@ def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> No
     qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
     device = get_device("ibm_heron_133")
 
-    # ------------------------------------------------------------------
-    # 1) estimated_success_probability: exact + approx (via auto)
-    # ------------------------------------------------------------------
-    predictor_esp = Predictor(figure_of_merit="estimated_success_probability", device=device)
+    # Make a native + mapped version of the circuit for exact metrics
+    coupling = CouplingMap(device.build_coupling_map())
+    qc_native = transpile(
+        qc,
+        basis_gates=device.operation_names,
+        coupling_map=coupling,
+        optimization_level=3,
+    )
 
-    # Test approximate computation
+    # ------------------------------------------------------------------
+    # 1) estimated_success_probability: exact + approx (all modes)
+    # ------------------------------------------------------------------
+    predictor_esp = Predictor(
+        figure_of_merit="estimated_success_probability",
+        device=device,
+    )
+
+    # a) Explicit exact mode on a native, mapped circuit
+    val_exact, kind_exact = predictor_esp.env.calculate_reward(qc=qc_native, mode="exact")
+    assert kind_exact == "exact"
+    assert 0.0 <= val_exact <= 1.0
+
+    # b) Explicit approx mode (forces approximate path regardless of nativeness)
+    val_approx, kind_approx = predictor_esp.env.calculate_reward(qc=qc, mode="approx")
+    assert kind_approx == "approx"
+    assert 0.0 <= val_approx <= 1.0
+
+    # c) Auto mode → approx (force "not native & not mapped")
     monkeypatch.setattr(predictor_esp.env, "_is_native_and_mapped", lambda _qc: False)
-    val_auto, kind_auto = predictor_esp.env.calculate_reward(qc=qc, mode="auto")
-    assert kind_auto == "approx"
-    assert 0.0 <= val_auto <= 1.0
+    val_auto_approx, kind_auto_approx = predictor_esp.env.calculate_reward(qc=qc, mode="auto")
+    assert kind_auto_approx == "approx"
+    assert 0.0 <= val_auto_approx <= 1.0
 
     # ------------------------------------------------------------------
     # 2) critical_depth: always exact, regardless of mode
     # ------------------------------------------------------------------
     predictor_cd = Predictor(figure_of_merit="critical_depth", device=device)
     val_cd, kind_cd = predictor_cd.env.calculate_reward(qc=qc, mode="auto")
-
     assert kind_cd == "exact"
     assert 0.0 <= val_cd <= 1.0
