@@ -48,8 +48,10 @@ TORINO_CANONICAL_COSTS: CanonicalCostTable = {
     # native 2q
     "cz": (0, 1),
     "rzz": (0, 1),
-    # common non-natives mapped to natives (approximate but consistent)
-    "u": (3, 0),  # Euler on {rz,rx} ~ 3 singles
+    # ------------------------------------------------------------------
+    # Common 1q non-natives decomposed into {rz, rx, sx, x}
+    # ------------------------------------------------------------------
+    "u": (3, 0),  # generic U(θ, φ, λ) ~ 3 Euler angles
     "u3": (3, 0),
     "u2": (2, 0),
     "h": (3, 0),  # H ≈ Rz(π) • SX • Rz(π) up to phase
@@ -57,14 +59,81 @@ TORINO_CANONICAL_COSTS: CanonicalCostTable = {
     "sdg": (1, 0),
     "t": (1, 0),  # T = Rz(π/4)
     "tdg": (1, 0),
-    # two-qubit non-natives expressed via CZ/H or RZZ variants
-    "cx": (6, 1),  # CX = H(t) • CZ • H(t)  => ~2*H + 1*CZ => ~6 singles + 1 two-qubit
-    "czx": (6, 1),  # (if it appears; same spirit)
-    "swap": (12, 3),  # SWAP ~ 3*CNOT; with CZ basis ~ 3*CZ plus Hs => ~3 two-qubit + many 1q
+    # ------------------------------------------------------------------
+    # Common 2q gates expressed in a CZ + 1q basis (approximate)
+    # ------------------------------------------------------------------
+    "rxx": (4, 1),  # ~4 single-qubit rotations + 1 entangler (rzz/cz)
+    # Controlled-1q rotations / phases:
+    #   roughly: 1 CZ + a few single-qubit rotations on control/target.
+    "crx": (4, 1),
+    "cry": (4, 1),
+    "crz": (4, 1),
+    "cp": (4, 1),
+    "cu1": (4, 1),
+    # More general controlled-U gates: a bit heavier
+    "cu3": (6, 1),
+    "cu": (6, 1),
+    # Controlled H / Y / SX variants
+    "ch": (6, 1),
+    "cy": (6, 1),
+    "csx": (4, 1),
+    # CNOT-style and aliases
+    "cx": (6, 1),  # CX = H(t) • CZ • H(t) -> ~2*H + 1*CZ => ~6 singles + 1 two-qubit
+    "czx": (6, 1),  # if it appears; treated similar to CX
+    # SWAP is still expensive: 3 entanglers plus many 1q gates
+    "swap": (12, 3),  # SWAP ≈ 3 CX; in a CZ basis still ~3 two-qubit gates
+}
+
+ANKAA3_CANONICAL_COSTS: CanonicalCostTable = {
+    "rx": (1, 0),
+    "rz": (1, 0),
+    "iswap": (0, 1),
+    "rzz": (4, 2),  # ~2 iSWAP + ~4 1q rotations
+    "rxx": (4, 2),
+    # controlled gates: ~ 2 iSWAP + some 1q each (very rough)
+    "crx": (6, 2),
+    "cry": (6, 2),
+    "crz": (6, 2),
+    "cp": (6, 2),
+    "cu1": (6, 2),
+    "cu3": (8, 2),
+    "cu": (8, 2),
+    "ch": (8, 2),
+    "cy": (8, 2),
+    "csx": (6, 2),
+    "swap": (12, 3),  # ≈ 3 entanglers still a decent upper bound
+}
+
+EMERALD_CANONICAL_COSTS: CanonicalCostTable = {
+    # native
+    "rz": (1, 0),
+    "rx": (1, 0),
+    "r": (1, 0),  # whatever you use here
+    "cz": (0, 1),
+    # simple "Ising" style gates
+    "rzz": (4, 2),  # ~2 CZ + a few 1q rotations
+    "rxx": (4, 2),
+    # controlled 1q gates (all ~ 1 CZ + several rotations)
+    "crx": (4, 1),
+    "cry": (4, 1),
+    "crz": (4, 1),
+    "cp": (4, 1),
+    "cu1": (4, 1),
+    # more general controlled-U gates (a bit heavier)
+    "cu3": (6, 1),
+    "cu": (6, 1),
+    # controlled-H / controlled-Y also reasonably approximated this way
+    "ch": (6, 1),
+    "cy": (6, 1),
+    "csx": (4, 1),
+    # swap still expensive: 3 CZ plus some 1q
+    "swap": (12, 3),
 }
 
 DEVICE_CANONICAL_COSTS: dict[str, CanonicalCostTable] = {
     "ibm_torino": TORINO_CANONICAL_COSTS,
+    "ankaa_3": ANKAA3_CANONICAL_COSTS,
+    "emerald": EMERALD_CANONICAL_COSTS,
 }
 
 
@@ -112,7 +181,7 @@ def estimate_counts(
     """Estimate canonical (n_1q, n_2q) counts for a circuit.
 
     Uses the provided ``cost_table`` where available and a simple, conservative
-    fallback otherwise (3*1q for unknown 1q gates, 1*2q for unknown 2q gates).
+    fallback otherwise (3*1q for unknown 1q gates, 1*2q + 4*1q for unknown 2q gates).
     """
     n_1q = 0
     n_2q = 0
@@ -131,6 +200,7 @@ def estimate_counts(
                 n_1q += 3
             elif len(qargs) == 2:
                 n_2q += 1
+                n_1q += 4
         else:
             n_1q += cost[0]
             n_2q += cost[1]
