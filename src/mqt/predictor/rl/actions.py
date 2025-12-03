@@ -459,9 +459,9 @@ register_action(
         transpile_pass=lambda device, node_err, edge_err, readout_err: [
             NoiseAwarePlacement(
                 Architecture(list(device.build_coupling_map())),
-                node_err,
-                edge_err,
-                readout_err,
+                node_errors=node_err,
+                link_errors=edge_err,
+                readout_errors=readout_err,
                 timeout=5000,
                 maximum_matches=5000,
             )
