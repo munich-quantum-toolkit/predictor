@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -30,7 +31,15 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
+from mqt.predictor.rl.cost_model import (
+    TORINO_CANONICAL_COSTS,
+    canonical_cost,
+    get_cost_table,
+)
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from _pytest.monkeypatch import MonkeyPatch
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -141,3 +150,43 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
+
+
+def test_cost_model_unknown_device_and_gate() -> None:
+    """Cover unknown-device fallback and unknown-gate default in cost model."""
+    # --- Unknown device: triggers warning + Torino fallback ---
+    msg = "No canonical cost table defined for device 'my_custom_device'"
+    with pytest.warns(UserWarning, match=re.escape(msg)):
+        table = get_cost_table("my_custom_device")
+
+    # The returned table must be exactly the Torino table
+    assert table is TORINO_CANONICAL_COSTS
+
+    # --- Unknown gate on a known device: (0, 0) fallback ---
+    assert canonical_cost("some_weird_gate", device_id="ibm_torino") == (0, 0)
+
+
+def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> None:
+    """Cover ESP (exact + approx) and critical_depth branches in calculate_reward."""
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+    device = get_device("ibm_heron_133")
+
+    # ------------------------------------------------------------------
+    # 1) estimated_success_probability: exact + approx (via auto)
+    # ------------------------------------------------------------------
+    predictor_esp = Predictor(figure_of_merit="estimated_success_probability", device=device)
+
+    # Test approximate computation
+    monkeypatch.setattr(predictor_esp.env, "_is_native_and_mapped", lambda _qc: False)
+    val_auto, kind_auto = predictor_esp.env.calculate_reward(qc=qc, mode="auto")
+    assert kind_auto == "approx"
+    assert 0.0 <= val_auto <= 1.0
+
+    # ------------------------------------------------------------------
+    # 2) critical_depth: always exact, regardless of mode
+    # ------------------------------------------------------------------
+    predictor_cd = Predictor(figure_of_merit="critical_depth", device=device)
+    val_cd, kind_cd = predictor_cd.env.calculate_reward(qc=qc, mode="auto")
+
+    assert kind_cd == "exact"
+    assert 0.0 <= val_cd <= 1.0
