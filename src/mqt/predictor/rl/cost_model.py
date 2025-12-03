@@ -68,7 +68,7 @@ DEVICE_CANONICAL_COSTS: dict[str, CanonicalCostTable] = {
 }
 
 
-def _get_cost_table(device_id: str) -> CanonicalCostTable:
+def get_cost_table(device_id: str) -> CanonicalCostTable:
     """Return the canonical cost table for ``device_id``, with a safe fallback.
 
     If the device is unknown, a warning is emitted and the Torino table is used
@@ -100,11 +100,11 @@ def canonical_cost(
         Currently only a hand-crafted model for IBM "torino" is provided.
         For additional devices, extend ``DEVICE_CANONICAL_COSTS`` accordingly.
     """
-    table = _get_cost_table(device_id)
+    table = get_cost_table(device_id)
     return table.get(gate_name, (0, 0))
 
 
-def _estimate_counts_fast(
+def estimate_counts(
     qc: QuantumCircuit,
     *,
     cost_table: CanonicalCostTable,
@@ -156,8 +156,8 @@ def approx_expected_fidelity(
     Returns:
         Approximate expected fidelity in [0, 1].
     """
-    cost_table = _get_cost_table(device_id)
-    n_1q, n_2q = _estimate_counts_fast(qc, cost_table=cost_table)
+    cost_table = get_cost_table(device_id)
+    n_1q, n_2q = estimate_counts(qc, cost_table=cost_table)
 
     f_1q = (1.0 - p1_avg) ** max(n_1q, 0)
     f_2q = (1.0 - p2_avg) ** max(n_2q, 0)
@@ -205,10 +205,10 @@ def approx_estimated_success_probability(
     Returns:
         Approximate ESP in [0, 1].
     """
-    cost_table = _get_cost_table(device_id)
+    cost_table = get_cost_table(device_id)
 
     # Fidelity part from gate errors
-    n_1q, n_2q = _estimate_counts_fast(qc, cost_table=cost_table)
+    n_1q, n_2q = estimate_counts(qc, cost_table=cost_table)
     f_1q = (1.0 - p1_avg) ** max(n_1q, 0)
     f_2q = (1.0 - p2_avg) ** max(n_2q, 0)
     f = f_1q * f_2q
