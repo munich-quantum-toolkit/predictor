@@ -186,8 +186,9 @@ def estimate_counts(
     n_1q = 0
     n_2q = 0
 
-    for instr, qargs, _ in qc.data:
-        name = instr.name
+    for circuit_instr in qc.data:
+        name = circuit_instr.operation.name
+        qargs = circuit_instr.qubits
 
         # Ignore non-unitary / timing-only ops for this count
         if name in ("barrier", "delay", "measure"):
@@ -204,7 +205,6 @@ def estimate_counts(
         else:
             n_1q += cost[0]
             n_2q += cost[1]
-
     return n_1q, n_2q
 
 
