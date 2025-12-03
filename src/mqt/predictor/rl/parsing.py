@@ -18,9 +18,9 @@ from bqskit.ir import gates
 from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
-from qiskit import QuantumCircuit, QuantumRegister
+from qiskit import QuantumRegister
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.transpiler import Layout, PassManager, Target, TranspileLayout
+from qiskit.transpiler import Layout, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
 if TYPE_CHECKING:

@@ -55,6 +55,7 @@ TORINO_CANONICAL_COSTS: CanonicalCostTable = {
     "u3": (3, 0),
     "u2": (2, 0),
     "h": (3, 0),  # H ≈ Rz(π) • SX • Rz(π) up to phase
+    "ry": (3, 0),  # Ry ≈ Rz(-π/2) • Rx(θ) • Rz(π/2)
     "s": (1, 0),  # S = Rz(π/2)
     "sdg": (1, 0),
     "t": (1, 0),  # T = Rz(π/4)
@@ -70,17 +71,13 @@ TORINO_CANONICAL_COSTS: CanonicalCostTable = {
     "crz": (4, 1),
     "cp": (4, 1),
     "cu1": (4, 1),
-    # More general controlled-U gates: a bit heavier
     "cu3": (6, 1),
     "cu": (6, 1),
-    # Controlled H / Y / SX variants
     "ch": (6, 1),
     "cy": (6, 1),
     "csx": (4, 1),
-    # CNOT-style and aliases
     "cx": (6, 1),  # CX = H(t) • CZ • H(t) -> ~2*H + 1*CZ => ~6 singles + 1 two-qubit
-    "czx": (6, 1),  # if it appears; treated similar to CX
-    # SWAP is still expensive: 3 entanglers plus many 1q gates
+    "czx": (6, 1),
     "swap": (12, 3),  # SWAP ≈ 3 CX; in a CZ basis still ~3 two-qubit gates
 }
 
@@ -88,9 +85,18 @@ ANKAA3_CANONICAL_COSTS: CanonicalCostTable = {
     "rx": (1, 0),
     "rz": (1, 0),
     "iswap": (0, 1),
+    "u": (3, 0),
+    "u3": (3, 0),
+    "u2": (2, 0),
+    "h": (3, 0),
+    "ry": (3, 0),
+    "s": (1, 0),
+    "sdg": (1, 0),
+    "t": (1, 0),
+    "tdg": (1, 0),
     "rzz": (4, 2),  # ~2 iSWAP + ~4 1q rotations
     "rxx": (4, 2),
-    # controlled gates: ~ 2 iSWAP + some 1q each (very rough)
+    # controlled gates: ~ 2 iSWAP + some 1q each
     "crx": (6, 2),
     "cry": (6, 2),
     "crz": (6, 2),
@@ -101,32 +107,36 @@ ANKAA3_CANONICAL_COSTS: CanonicalCostTable = {
     "ch": (8, 2),
     "cy": (8, 2),
     "csx": (6, 2),
-    "swap": (12, 3),  # ≈ 3 entanglers still a decent upper bound
+    "swap": (12, 3),
 }
 
 EMERALD_CANONICAL_COSTS: CanonicalCostTable = {
     # native
     "rz": (1, 0),
     "rx": (1, 0),
-    "r": (1, 0),  # whatever you use here
+    "r": (1, 0),
     "cz": (0, 1),
-    # simple "Ising" style gates
-    "rzz": (4, 2),  # ~2 CZ + a few 1q rotations
+    "u": (1, 0),
+    "u3": (1, 0),
+    "u2": (1, 0),
+    "h": (1, 0),
+    "ry": (1, 0),
+    "s": (1, 0),
+    "sdg": (1, 0),
+    "t": (1, 0),
+    "tdg": (1, 0),
+    "rzz": (4, 2),
     "rxx": (4, 2),
-    # controlled 1q gates (all ~ 1 CZ + several rotations)
     "crx": (4, 1),
     "cry": (4, 1),
     "crz": (4, 1),
     "cp": (4, 1),
     "cu1": (4, 1),
-    # more general controlled-U gates (a bit heavier)
     "cu3": (6, 1),
     "cu": (6, 1),
-    # controlled-H / controlled-Y also reasonably approximated this way
     "ch": (6, 1),
     "cy": (6, 1),
     "csx": (4, 1),
-    # swap still expensive: 3 CZ plus some 1q
     "swap": (12, 3),
 }
 
@@ -284,12 +294,11 @@ def approx_estimated_success_probability(
     f = f_1q * f_2q
 
     # Effective duration via parallelism (par_feature ∈ [0, 1])
-    n_qubits = max(n_qubits, 1)
-    k_eff = 1.0 + (n_qubits - 1.0) * float(par_feature)  # ∈ [1, n_qubits]
+    n_q = max(n_qubits, 1)
+    k_eff = 1.0 + (n_q - 1.0) * float(par_feature)  # ∈ [1, n_qubits]
 
     t_hat = 0.0
-    if k_eff > 0.0:
-        t_hat = (n_1q * tau1_avg + n_2q * tau2_avg) / k_eff
+    t_hat = (n_1q * tau1_avg + n_2q * tau2_avg) / k_eff
 
     # Idle-time penalty via (1 - liveness)
     idle_frac = max(0.0, 1.0 - float(liv_feature))

@@ -194,6 +194,11 @@ def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> No
     assert kind_exact == "exact"
     assert 0.0 <= val_exact <= 1.0
 
+    # a2) Auto mode on native, mapped circuit → should select exact
+    val_auto_exact, kind_auto_exact = predictor_esp.env.calculate_reward(qc=qc_native, mode="auto")
+    assert kind_auto_exact == "exact"
+    assert 0.0 <= val_auto_exact <= 1.0
+
     # b) Explicit approx mode (forces approximate path regardless of nativeness)
     val_approx, kind_approx = predictor_esp.env.calculate_reward(qc=qc, mode="approx")
     assert kind_approx == "approx"

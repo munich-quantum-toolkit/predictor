@@ -176,8 +176,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.reward_pos = 1
-        self.reward_neg = 0
+        self.reward_scale = 1
+        self.no_effect_penalty = 0.001
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
         self._p1_avg = 0.0
@@ -255,13 +255,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
             if delta_reward > 0.0:
                 # Positive change: reward proportional to improvement
-                reward_val = self.reward_pos * delta_reward
+                reward_val = self.reward_scale * delta_reward
             elif delta_reward < 0.0:
                 # Negative change: proportional penalty
-                reward_val = self.reward_pos * delta_reward
+                reward_val = self.reward_scale * delta_reward
             else:
                 # No change: small step penalty for "doing nothing"
-                reward_val = self.reward_neg
+                reward_val = self.no_effect_penalty
 
             self.prev_reward = new_val
             self.prev_reward_kind = new_kind
@@ -336,7 +336,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self._ensure_device_averages_cached()
 
         if self.reward_function == "expected_fidelity":
-            val = approx_expected_fidelity(qc, self._p1_avg, self._p2_avg)
+            val = approx_expected_fidelity(qc, self._p1_avg, self._p2_avg, device_id=self.device.description)
             return val, "approx"
 
         # self.reward_function == "estimated_success_probability"
@@ -351,6 +351,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             par_feature=feats.parallelism,
             liv_feature=feats.liveness,
             n_qubits=qc.num_qubits,
+            device_id=self.device.description,
         )
         return val, "approx"
 
@@ -663,7 +664,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             try:
                 op = target.operation_from_name(name)
                 arity = op.num_qubits
-            except Exception:
+            except (KeyError, AttributeError):
                 # If we can't get a proper operation object, skip this op
                 continue
 
