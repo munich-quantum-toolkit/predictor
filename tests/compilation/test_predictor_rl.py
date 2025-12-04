@@ -211,6 +211,22 @@ def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> No
     assert 0.0 <= val_auto_approx <= 1.0
 
     # ------------------------------------------------------------------
+    # 1d) Broken Target API → RuntimeError in ensure_device_averages_cached
+    # ------------------------------------------------------------------
+    # Use a fresh predictor so _dev_avgs_cached is not yet set
+    broken_predictor = Predictor(
+        figure_of_merit="estimated_success_probability",
+        device=device,
+    )
+    broken_predictor.env.device = object()
+
+    with pytest.raises(
+        RuntimeError,
+        match=re.escape("Device target does not expose the required Target API for approximate reward computation."),
+    ):
+        broken_predictor.env._ensure_device_averages_cached()  # noqa: SLF001
+
+    # ------------------------------------------------------------------
     # 2) critical_depth: always exact, regardless of mode
     # ------------------------------------------------------------------
     predictor_cd = Predictor(figure_of_merit="critical_depth", device=device)

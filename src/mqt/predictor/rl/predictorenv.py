@@ -329,10 +329,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if kind == "exact":
             if self.reward_function == "expected_fidelity":
                 return expected_fidelity(qc, self.device), "exact"
-            # self.reward_function == "estimated_success_probability"
+
             return estimated_success_probability(qc, self.device), "exact"
 
-        # Approximate metrics use canonical gate counts and device-wide averages
+        # Approximate metrics use canonical gate counts and device-specific averages
         self._ensure_device_averages_cached()
 
         if self.reward_function == "expected_fidelity":
