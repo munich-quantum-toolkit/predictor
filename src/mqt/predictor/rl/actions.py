@@ -517,7 +517,7 @@ if sys.version_info < (3, 13):
             PassType.MAPPING,
             stochastic=True,
             transpile_pass=lambda device: [
-                ### Requires a initial layout, but "optimize" mode overwrites it
+                ### Requires an initial layout, but "optimize" mode overwrites it
                 SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=True, max_iterations=1),
                 FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
                 EnlargeWithAncilla(),
