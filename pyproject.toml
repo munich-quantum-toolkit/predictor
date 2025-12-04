@@ -94,6 +94,9 @@ Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
+[tool.check-sdist]
+sdist-only = ["src/mqt/predictor/_version.py"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mqt"]
 
@@ -124,6 +127,8 @@ filterwarnings = [
     'ignore:.*qiskit.providers.models is deprecated since Qiskit 1.2*:DeprecationWarning:',
     'ignore:.*The class ``qiskit.qobj.*`` is deprecated as of Qiskit 1.3.*:DeprecationWarning:',
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
+    "ignore:.*No canonical cost table defined for device.*:UserWarning:",
+
 ]
 
 
