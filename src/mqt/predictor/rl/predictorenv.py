@@ -193,7 +193,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.max_iter = 10
+        self.max_iter = 20
         self.node_err: dict[Node, float] | None = None
         self.edge_err: dict[tuple[Node, Node], float] | None = None
         self.readout_err: dict[Node, float] | None = None
@@ -237,7 +237,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
+        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator)
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
         elif self.state.count_ops().get("clifford"):
@@ -360,7 +360,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         raise ValueError(msg)
 
     def fom_aware_compile(
-        self, action: Action, device: Target, qc: QuantumCircuit, max_iteration: int = 4
+        self, action: Action, device: Target, qc: QuantumCircuit, max_iteration: int = 20
     ) -> tuple[QuantumCircuit, PropertySet | None]:
         """Run a stochastic pass multiple times optimizing for the given figure of merit.
 
@@ -368,7 +368,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             action: The action containing the transpile pass.
             device: The compilation target device.
             qc: The input quantum circuit.
-            max_iteration: Maximum number of attempts to run the pass.
+            max_iteration: Number of iterations to run the pass.
 
         Returns:
             A tuple of the best circuit found and its property set (if available).
