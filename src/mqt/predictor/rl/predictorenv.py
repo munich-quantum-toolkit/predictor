@@ -679,7 +679,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                         p1.append(float(err))
                     dur = getattr(props, "duration", None)
                     if dur is not None:
-                        dur_s = float(dur if dt is None else dur * dt)
+                        dur_s = float(dur)
                         t1.append(dur_s)
 
             elif arity == 2:
