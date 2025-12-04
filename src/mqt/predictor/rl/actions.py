@@ -287,8 +287,6 @@ register_action(
         "Opt2qBlocks",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        # If no arguments is passed, decompose to U(θ, φ, λ) and CX
-        # https://github.com/Qiskit/qiskit/blob/stable/2.1/qiskit/transpiler/passes/synthesis/default_unitary_synth_plugin.py
         [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
     )
 )
@@ -632,7 +630,7 @@ def extract_cregs_and_measurements(
         if item.operation.name == "measure":
             instr = item.operation
             qargs = list(item.qubits)
-            cargs = list(item.clbits)  # these are Clbit, not ClassicalRegister
+            cargs = list(item.clbits)
             measurements.append((instr, qargs, cargs))
 
     return cregs, measurements
