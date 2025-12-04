@@ -704,7 +704,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 continue
 
         if not p1 and not p2:
-            msg = "No valid 1q/2q calibration data found in Target; cannot compute approximate reward."
+            msg = "No valid 1q/2q calibration data found in Target, cannot compute approximate reward."
             raise RuntimeError(msg)
 
         self._p1_avg = float(np.mean(p1)) if p1 else 0.0
