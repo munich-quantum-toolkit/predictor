@@ -85,6 +85,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         device: Target,
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
+        reward_scale: float = 1.0,
+        no_effect_penalty: float = -0.001,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -92,6 +94,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             device: The target device to be used for compilation.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
+            reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
+            no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
@@ -176,8 +180,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.reward_scale = 1
-        self.no_effect_penalty = 0.001
+        self.reward_scale = reward_scale
+        self.no_effect_penalty = no_effect_penalty
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
         self._p1_avg = 0.0
@@ -251,7 +255,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             delta_reward = new_val - prev_val
 
             if prev_kind == "approx" and new_kind == "exact":
-                delta_reward = 0.0  # Delta is not defined for switch from "approx" to "exact"
+                # Metrics aren't comparable across regimes; suppress delta to avoid misleading reward signal
+                delta_reward = 0.0
 
             if delta_reward > 0.0:
                 # Positive change: reward proportional to improvement
