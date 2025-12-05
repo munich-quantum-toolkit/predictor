@@ -82,7 +82,7 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
-from mqt.predictor.utils import get_rl_openqasm_gates
+from mqt.predictor.utils import get_openqasm_gates_without_u
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -117,7 +117,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
-        self.actions_mapping_preserving_indices = []
+        self.actions_structure_preserving_indices = []  # Actions that preserves the mapping and native gates
         self.used_actions: list[str] = []
         self.device = device
 
@@ -138,7 +138,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
             if getattr(elem, "preserve_layout", False):
-                self.actions_mapping_preserving_indices.append(index)
+                self.actions_structure_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.LAYOUT]:
             self.action_set[index] = elem
@@ -178,7 +178,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_rl_openqasm_gates()}
+        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates_without_u()}
 
         spaces = {
             "num_qubits": Discrete(self.device.num_qubits + 1),
@@ -605,19 +605,21 @@ class PredictorEnv(Env):  # type: ignore[misc]
             if not mapped:
                 # Non-native + unmapped → synthesis or optimization
                 return self.actions_synthesis_indices + self.actions_opt_indices
-            # Non-native + mapped → synthesis or mapping-preserving
-            return self.actions_synthesis_indices + self.actions_mapping_preserving_indices
+            # Non-native + mapped → synthesis or structure-preserving (native gates & mapping)
+            return self.actions_synthesis_indices + self.actions_structure_preserving_indices
 
         if mapped:
             if self.layout is not None:
                 # Native + fully mapped & layout assigned → terminate or fine-tune
                 return [
                     self.action_terminate_index,
-                    *self.actions_mapping_preserving_indices,
+                    *self.actions_structure_preserving_indices,
                     *self.actions_final_optimization_indices,
                 ]
             # Mapped but no explicit layout yet → explore layout/mapping improvements
-            return self.actions_mapping_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
+            return (
+                self.actions_structure_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
+            )
         if self.layout is not None:
             # Layout chosen but not mapped → must do routing
             return self.actions_routing_indices

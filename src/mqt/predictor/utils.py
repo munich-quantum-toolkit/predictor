@@ -145,9 +145,57 @@ def calc_supermarq_features(
     )
 
 
-def get_rl_openqasm_gates() -> list[str]:
+def get_openqasm_gates() -> list[str]:
     """Returns a list of all quantum gates within the openQASM 2.0 standard header."""
     # according to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
+    return [
+        "u3",
+        "u2",
+        "u1",
+        "cx",
+        "id",
+        "u0",
+        "u",
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "rx",
+        "ry",
+        "rz",
+        "sx",
+        "sxdg",
+        "cz",
+        "cy",
+        "swap",
+        "ch",
+        "ccx",
+        "cswap",
+        "crx",
+        "cry",
+        "crz",
+        "cu1",
+        "cp",
+        "cu3",
+        "csx",
+        "cu",
+        "rxx",
+        "rzz",
+        "rccx",
+        "rc3x",
+        "c3x",
+        "c3sqrtx",
+        "c4x",
+    ]
+
+
+def get_openqasm_gates_without_u() -> list[str]:
+    """Returns a list of all quantum gates within the openQASM 2.0 standard header that are used as RL features."""
     # u,u0,u1,u2,u3 gates are excluded as they are not meaningful as RL features
     # Drop multi-qubit gates with more than two qubits, since Qiskit's `basis_gates` argument does not support them.
     return [

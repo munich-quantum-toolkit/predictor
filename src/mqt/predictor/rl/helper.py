@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from qiskit import QuantumCircuit
 
-from mqt.predictor.utils import calc_supermarq_features, get_rl_openqasm_gates
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_without_u
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -71,7 +71,7 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
 
 def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
     """Calculates and returns a normalized feature vector of a given quantum circuit gate dictionary."""
-    res_dct = dict.fromkeys(get_rl_openqasm_gates(), 0.0)
+    res_dct = dict.fromkeys(get_openqasm_gates_without_u(), 0.0)
     exclude_from_total = {"barrier"}
     total = sum(val for key, val in gate_dict.items() if key not in exclude_from_total)
 
