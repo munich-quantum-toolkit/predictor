@@ -248,7 +248,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return create_feature_dict(self.state), reward_val, done, False, {}
 
     def calculate_reward(self, qc: QuantumCircuit | None = None) -> float:
-        """Calculates and returns the reward for the current state."""
+        """Calculates and returns the reward for either the current state or a quantum circuit (if provided)."""
         circuit = self.state if qc is None else qc
         if self.reward_function == "expected_fidelity":
             return expected_fidelity(circuit, self.device)
