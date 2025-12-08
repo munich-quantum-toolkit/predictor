@@ -95,6 +95,7 @@ class TrainGNNKwargs(TypedDict, total=False):
     num_epochs: int
     num_trials: int
     verbose: bool
+    patience: int
 
 
 def setup_device_predictor(
@@ -595,7 +596,7 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_data()
-        number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1)
+        number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1)
         loss_fn = nn.MSELoss()
         if self.figure_of_merit == "hellinger_distance":
             task = "regression"
@@ -647,7 +648,7 @@ class Predictor:
             ).to("cuda" if torch.cuda.is_available() else "cpu")
         else:
             model = GNN(
-                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
                 num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
                 hidden_dim=dict_best_hyper["hidden_dim"],
                 num_resnet_layers=dict_best_hyper["num_resnet_layers"],
@@ -842,7 +843,7 @@ def predict_device_for_figure_of_merit(
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
         gnn_model = GNN(
-            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
             num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
             hidden_dim=json_dict["hidden_dim"],
             num_resnet_layers=json_dict["num_resnet_layers"],
