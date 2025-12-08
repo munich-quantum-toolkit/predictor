@@ -379,7 +379,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc)
+        # added replace_implicit_swaps=True for a warning to make sure that implicit swaps are also replaced
+        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None

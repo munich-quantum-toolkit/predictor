@@ -633,7 +633,7 @@ class Predictor:
         json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
         if self.figure_of_merit != "hellinger_distance":
             model = GNN(
-                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1),
+                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
                 num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
                 hidden_dim=dict_best_hyper["hidden_dim"],
                 num_resnet_layers=dict_best_hyper["num_resnet_layers"],
@@ -865,6 +865,7 @@ def predict_device_for_figure_of_merit(
         class_labels = json_dict["class_labels"]
         with torch.no_grad():
             outputs = gnn_model(feature_vector)
+            outputs = outputs.squeeze(0)
         assert class_labels is not None
         if len(class_labels) != len(outputs):
             msg = "outputs and class_labels must be same length"

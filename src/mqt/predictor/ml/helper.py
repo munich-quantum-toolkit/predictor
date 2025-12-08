@@ -240,7 +240,8 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     params = torch.zeros((number_nodes, 6), dtype=torch.float32)
     arity = torch.zeros((number_nodes, 1), dtype=torch.float32)
     controls = torch.zeros((number_nodes, 1), dtype=torch.float32)
-    fan_prop = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    fan_in = torch.zeros((number_nodes, 1), dtype=torch.float32)
+    fan_out = torch.zeros((number_nodes, 1), dtype=torch.float32)
 
     for i, node in enumerate(nodes):
         name = node.op.name
@@ -254,7 +255,8 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
         num_params[i] = float(len(getattr(node.op, "params", [])))
         preds = [p for p in dag.predecessors(node) if isinstance(p, DAGOpNode)]
         succs = [s for s in dag.successors(node) if isinstance(s, DAGOpNode)]
-        fan_prop[i] = float(len(succs)) / max(1, len(preds))
+        fan_in[i] = len(preds)
+        fan_out[i] = len(succs)
 
     # edges DAG
     idx_map = {node: i for i, node in enumerate(nodes)}
@@ -272,7 +274,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     if not topo_nodes:
         # No operation nodes: return node features with zero critical flags
         critical_flag = torch.zeros((number_nodes, 1), dtype=torch.float32)
-        node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_prop], dim=1)
+        node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_in, fan_out], dim=1)
         return node_vector, edge_index, number_nodes
 
     dist_in = dict.fromkeys(topo_nodes, 0)
@@ -296,7 +298,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
             critical_flag[i] = 1.0
 
     # final concat of features
-    node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_prop], dim=1)
+    node_vector = torch.cat([onehots, params, arity, controls, num_params, critical_flag, fan_in, fan_out], dim=1)
 
     return node_vector, edge_index, number_nodes
 
