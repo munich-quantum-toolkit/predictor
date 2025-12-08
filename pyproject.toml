@@ -173,10 +173,6 @@ implicit_reexport = true
 module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*"]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = ["mqt.predictor.ml.*"]
-disallow_subclassing_any = false
-
 [tool.ruff]
 line-length = 120
 extend-include = ["*.ipynb"]
