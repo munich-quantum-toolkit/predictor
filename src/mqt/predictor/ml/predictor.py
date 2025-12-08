@@ -865,6 +865,7 @@ def predict_device_for_figure_of_merit(
         class_labels = json_dict["class_labels"]
         with torch.no_grad():
             outputs = gnn_model(feature_vector)
+            outputs = outputs.squeeze(0)
         assert class_labels is not None
         if len(class_labels) != len(outputs):
             msg = "outputs and class_labels must be same length"
