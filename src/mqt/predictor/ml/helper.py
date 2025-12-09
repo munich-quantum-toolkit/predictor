@@ -323,7 +323,8 @@ def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[tor
 
     Arguments:
         preds: model predictions
-        targets: ground truth targets
+        targets: ground truth targets (one-hot encoded or integer class labels)
+
     Returns:
         pred_idx: predicted class indices
         targets_idx: target class indices
@@ -345,7 +346,7 @@ def evaluate_classification_model(
     *,
     return_arrays: bool = False,
     verbose: bool = False,
-) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
+) -> tuple[float, dict[str, float | str], tuple[np.ndarray, np.ndarray] | None]:
     """Evaluate a classification model with the given loss function and compute accuracy metrics.
 
     Arguments:
@@ -362,7 +363,7 @@ def evaluate_classification_model(
         arrays:   (preds, y_true) if return_arrays=True, else None.
     """
     device = torch.device(device)
-
+    metrics: dict[str, float | str] = {}
     model.eval()
     total_loss, total = 0.0, 0
     all_preds, all_targets = [], []
@@ -427,7 +428,7 @@ def evaluate_regression_model(
     *,
     return_arrays: bool = False,
     verbose: bool = False,
-) -> tuple[float, dict[str, float], tuple[np.ndarray, np.ndarray] | None]:
+) -> tuple[float, dict[str, float | str], tuple[np.ndarray, np.ndarray] | None]:
     """Evaluate a regression model (logits = scalar predictions).
 
     Arguments:
@@ -444,7 +445,6 @@ def evaluate_regression_model(
         arrays:   (preds, y_true) if return_arrays=True, else None
     """
     device = torch.device(device)
-
     model.eval()
     total_loss, total = 0.0, 0
     all_preds, all_targets = [], []
@@ -469,7 +469,7 @@ def evaluate_regression_model(
     preds = np.concatenate(all_preds, axis=0) if all_preds else np.array([])
     y_true = np.concatenate(all_targets, axis=0) if all_targets else np.array([])
 
-    metrics: dict[str, float] = {"loss": float(avg_loss)}
+    metrics: dict[str, float | str] = {"loss": float(avg_loss)}
     if preds.size > 0:
         rmse = float(np.sqrt(mean_squared_error(y_true, preds)))
         mae = float(mean_absolute_error(y_true, preds))
@@ -551,11 +551,11 @@ def train_model(
         if val_loader is not None:
             if task == "classification":
                 val_loss, val_metrics, _ = evaluate_classification_model(
-                    model, val_loader, loss_fn, device=str(device), verbose=True
+                    model, val_loader, loss_fn, device=str(device), verbose=False
                 )
             elif task == "regression":
                 val_loss, val_metrics, _ = evaluate_regression_model(
-                    model, val_loader, loss_fn, device=str(device), verbose=True
+                    model, val_loader, loss_fn, device=str(device), verbose=False
                 )
             else:
                 # raise an error if task not classification or regression

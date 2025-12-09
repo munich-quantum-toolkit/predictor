@@ -573,6 +573,7 @@ class Predictor:
         num_epochs: int = 10,
         num_trials: int = 2,
         patience: int = 10,
+        *,
         verbose: bool = False,
     ) -> nn.Module:
         """Train the GNN model(s) and return the trained model.
@@ -656,13 +657,13 @@ class Predictor:
         model.to(device)
         # Optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=dict_best_hyper["lr"])
-        # Train-validation split (needed for early stopping and hyperparameter optimization)
+        # Train-validation split (needed for early stopping)
+        # This portion is separated from test set
         x_train, x_val, _y_train, _y_val = train_test_split(
             training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
         )
         # Dataloader
         train_loader = DataLoader(x_train, batch_size=16, shuffle=True)
-
         val_loader = DataLoader(x_val, batch_size=16, shuffle=False)
         train_model(
             model,
@@ -674,7 +675,7 @@ class Predictor:
             device=device,
             verbose=verbose,
             val_loader=val_loader,
-            patience=30,
+            patience=50,
             min_delta=0.0,
             restore_best=True,
         )
@@ -756,6 +757,7 @@ class Predictor:
             )
 
             if file_data.is_file() and file_names.is_file() and file_scores.is_file():
+                # Loading the dataset, for this reason weights_only=False
                 training_data = (
                     np.load(file_data, allow_pickle=True) if not self.gnn else torch.load(file_data, weights_only=False)
                 )
