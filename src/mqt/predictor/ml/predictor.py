@@ -78,7 +78,6 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
-import json
 
 GNNSample = tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str]
 FeatureSample = tuple[list[float], str]
@@ -104,6 +103,7 @@ def setup_device_predictor(
     path_uncompiled_circuits: Path | None = None,
     path_compiled_circuits: Path | None = None,
     path_training_data: Path | None = None,
+    *,
     timeout: int = 600,
     gnn: bool = False,
     **gnn_kwargs: Unpack[TrainGNNKwargs],
@@ -327,8 +327,7 @@ class Predictor:
 
             if self.gnn:
                 x, _y, edge_idx, n_nodes, target_label = training_sample
-                name_device = sorted(scores.keys())
-                value_device = [scores[i] for i in name_device]
+                value_device = [scores.get(dev.description, -1.0) for dev in self.devices]
                 gnn_training_sample = Data(
                     x=x,
                     y=torch.tensor(value_device, dtype=torch.float32),
@@ -419,15 +418,14 @@ class Predictor:
         if num_not_empty_entries == 0:
             logger.warning("no compiled circuits found for:" + str(file))
 
-        scores_list = scores  # list(scores.values())
+        scores_list = scores
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
         training_sample: TrainingSample
         if self.gnn:
             x, edge_index, number_of_gates = create_dag(qc)
-            y = torch.tensor([[dev.description for dev in self.devices].index(target_label)], dtype=torch.float)
-            training_sample = (x, y, edge_index, number_of_gates, target_label)
+            training_sample = (x, None, edge_index, number_of_gates, target_label)
         else:
             feature_vec = create_feature_vector(qc)
             training_sample = (feature_vec, target_label)
@@ -500,9 +498,8 @@ class Predictor:
 
         mlp_str = trial.suggest_categorical("mlp", mlp_options)
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
-
-        num_outputs = max(1, len(self.devices))
-
+        # Ensure at least 2 folds
+        k_folds = max(2, k_folds)
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
@@ -601,10 +598,7 @@ class Predictor:
         if self.figure_of_merit == "hellinger_distance":
             task = "regression"
         else:
-            if num_outputs == 1:
-                # task = "binary"
-                task = "classification"
-            [dev.description for dev in self.devices]
+            task = "classification"
         sampler_obj = TPESampler(n_startup_trials=10)
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
@@ -672,6 +666,7 @@ class Predictor:
         model.to(device)
         # Optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        # Train-validation split (needed for early stopping and hyperparameter optimization)
         x_train, x_val, _y_train, _y_val = train_test_split(
             training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
         )
@@ -695,9 +690,14 @@ class Predictor:
         )
         if verbose:
             test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
-            avg_loss_test, dict_results, _ = evaluate_classification_model(
-                model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
-            )
+            if task == "regression":
+                avg_loss_test, dict_results, _ = evaluate_regression_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                )
+            else:
+                avg_loss_test, dict_results, _ = evaluate_classification_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                )
             print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
 
         # Save the model
@@ -856,9 +856,9 @@ def predict_device_for_figure_of_merit(
             conv_activation=torch.nn.functional.leaky_relu,
             mlp_activation=torch.nn.functional.leaky_relu,
         ).to("cuda" if torch.cuda.is_available() else "cpu")
-        gnn_model.load_state_dict(torch.load(path))
+        gnn_model.load_state_dict(torch.load(path, weights_only=True))
         x, edge_index, number_of_gates = create_dag(qc)
-        feature_vector = Data(x=x, edge_index=edge_index, num_gates=number_of_gates).to(
+        feature_vector = Data(x=x, edge_index=edge_index, num_nodes=number_of_gates).to(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
         gnn_model.eval()
