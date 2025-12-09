@@ -303,6 +303,21 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     return node_vector, edge_index, number_nodes
 
 
+def get_gnn_input_features() -> int:
+    """Calculate GNN input feature dimension.
+
+    Components:
+    - len(get_openqasm3_gates()) + 1: one-hot gate encoding (including 'measure')
+    - 6: sin/cos for up to 3 parameters
+    - 1: arity
+    - 1: controls
+    - 1: num_params
+    - 1: critical_flag
+    - 2: fan_in, fan_out
+    """
+    return len(get_openqasm3_gates()) + 1 + 6 + 1 + 1 + 1 + 1 + 2
+
+
 def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Return predicted and target class indices.
 

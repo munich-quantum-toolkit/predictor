@@ -54,7 +54,7 @@ from mqt.predictor.ml.helper import (
     create_feature_vector,
     evaluate_classification_model,
     evaluate_regression_model,
-    get_openqasm3_gates,
+    get_gnn_input_features,
     get_path_trained_model,
     get_path_trained_model_gnn,
     get_path_training_circuits,
@@ -505,7 +505,7 @@ class Predictor:
         k_folds = min(max(2, k_folds), max_splits)
         if k_folds < 2:
             msg = f"Not enough samples ({len(dataset)}) for k-folds (k={k_folds})."
-            raise ValueError(msg) 
+            raise ValueError(msg)
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
@@ -599,7 +599,7 @@ class Predictor:
         # Prepare data
         if training_data is None:
             training_data = self._get_prepared_training_data()
-        number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1)
+        number_in_features = get_gnn_input_features()
         loss_fn = nn.MSELoss()
         task = "regression" if self.figure_of_merit == "hellinger_distance" else "classification"
         sampler_obj = TPESampler(n_startup_trials=10)
@@ -628,9 +628,9 @@ class Predictor:
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
         json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
-        
+
         model = GNN(
-            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
+            in_feats=get_gnn_input_features(),
             num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
             hidden_dim=dict_best_hyper["hidden_dim"],
             num_resnet_layers=dict_best_hyper["num_resnet_layers"],
@@ -643,7 +643,6 @@ class Predictor:
             conv_activation=torch.nn.functional.leaky_relu,
             mlp_activation=torch.nn.functional.leaky_relu,
         ).to("cuda" if torch.cuda.is_available() else "cpu")
-        
 
         json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
         json_dict["class_labels"] = [dev.description for dev in self.devices]
@@ -788,7 +787,7 @@ class Predictor:
 
 
 def predict_device_for_figure_of_merit(
-    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity", gnn: bool = False
+    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity", *, gnn: bool = False
 ) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
@@ -832,7 +831,7 @@ def predict_device_for_figure_of_merit(
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
         gnn_model = GNN(
-            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
+            in_feats=get_gnn_input_features(),
             num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
             hidden_dim=json_dict["hidden_dim"],
             num_resnet_layers=json_dict["num_resnet_layers"],
