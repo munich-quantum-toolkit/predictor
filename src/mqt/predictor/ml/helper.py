@@ -330,8 +330,12 @@ def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[tor
         targets_idx: target class indices
     """
     pred_idx = torch.argmax(preds, dim=1)
-    targets_idx = torch.argmax(targets, dim=1)
-
+    if targets.dim() == 1:
+        targets_idx = targets.long()
+    elif targets.size(1) == 1:
+        targets_idx = targets.view(-1).long()
+    else:
+        targets_idx = torch.argmax(targets, dim=1)
     return pred_idx, targets_idx
 
 

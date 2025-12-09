@@ -15,7 +15,7 @@ import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from joblib import dump as joblib_dump
 from torch import nn
@@ -80,7 +80,7 @@ if TYPE_CHECKING:
     from mqt.predictor.reward import figure_of_merit
 
 
-GNNSample = tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str]
+GNNSample = tuple[torch.Tensor, torch.Tensor | None, torch.Tensor, int, str]
 FeatureSample = tuple[list[float], str]
 TrainingSample = GNNSample | FeatureSample
 
@@ -360,9 +360,7 @@ class Predictor:
         path_uncompiled_circuit: Path,
         path_compiled_circuits: Path,
         logger_level: int = logging.INFO,
-    ) -> tuple[
-        tuple[list[float], Any] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, str], str, dict[str, float]
-    ]:
+    ) -> tuple[TrainingSample, str, dict[str, float]]:
         """Handles to create a training sample from a given file.
 
         Arguments:
@@ -454,23 +452,20 @@ class Predictor:
 
         Arguments:
             trial: The Optuna trial object.
-            dataset: The dataset to use for training and validation.
-            task: The task to optimize (e.g., "binary", "multiclass", or "regression").
-            in_feats: number of input features.
-            num_outputs: number of output features.
-            device: device to use for training.
-            loss_fn: loss function to use.
-            optimizer: optimizer to use.
-            k_folds: number of folds for cross-validation.
-            classes: list of class names (for classification tasks).
-            batch_size: batch size for training.
-            num_epochs: number of epochs for training.
-            patience: patience for early stopping.
-            verbose: whether to print verbose output during training.
-
+            dataset: Dataset used for training and validation (classical or GNN).
+            task: Task type, e.g. "classification", or "regression".
+            in_feats: Number of input node features.
+            num_outputs: Number of model outputs (classes or regression targets).
+            loss_fn: Loss function to optimize.
+            k_folds: Number of cross-validation folds.
+            batch_size: Batch size for training.
+            num_epochs: Maximum number of training epochs per fold.
+            patience: Early-stopping patience (epochs without improvement).
+            device: Device to use for training (e.g. "cpu" or "cuda"), or None.
+            verbose: Whether to print verbose output during training.
 
         Returns:
-            mean_val: The mean value in validation considering the k-folds.
+            mean_val: The mean validation metric considering the k-folds.
         """
         # Type of device used
         if device is None:
@@ -675,7 +670,7 @@ class Predictor:
             device=device,
             verbose=verbose,
             val_loader=val_loader,
-            patience=50,
+            patience=patience,
             min_delta=0.0,
             restore_best=True,
         )
