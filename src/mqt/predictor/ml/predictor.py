@@ -505,7 +505,7 @@ class Predictor:
         k_folds = min(max(2, k_folds), max_splits)
         if k_folds < 2:
             msg = f"Not enough samples ({len(dataset)}) for k-folds (k={k_folds})."
-            raise ValueError(msg) 
+            raise ValueError(msg)
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
@@ -628,7 +628,7 @@ class Predictor:
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
         json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
-        
+
         model = GNN(
             in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
             num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
@@ -643,7 +643,6 @@ class Predictor:
             conv_activation=torch.nn.functional.leaky_relu,
             mlp_activation=torch.nn.functional.leaky_relu,
         ).to("cuda" if torch.cuda.is_available() else "cpu")
-        
 
         json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
         json_dict["class_labels"] = [dev.description for dev in self.devices]
