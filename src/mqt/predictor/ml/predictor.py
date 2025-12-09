@@ -595,10 +595,7 @@ class Predictor:
             training_data = self._get_prepared_training_data()
         number_in_features = int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1)
         loss_fn = nn.MSELoss()
-        if self.figure_of_merit == "hellinger_distance":
-            task = "regression"
-        else:
-            task = "classification"
+        task = "regression" if self.figure_of_merit == "hellinger_distance" else "classification"
         sampler_obj = TPESampler(n_startup_trials=10)
         study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
         k_folds = min(len(training_data.y_train), 5)
