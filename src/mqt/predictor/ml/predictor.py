@@ -499,6 +499,7 @@ class Predictor:
 
         mlp_str = trial.suggest_categorical("mlp", mlp_options)
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+        lr = trial.suggest_categorical("lr", [1e-2, 1e-3, 1e-4])
         # Ensure at least 2 folds
         k_folds = max(2, k_folds)
         # Split into k-folds
@@ -527,7 +528,7 @@ class Predictor:
                 mlp_activation=torch.nn.functional.leaky_relu,
             ).to(device_obj)
 
-            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
             # Based on the task, do a training and evaluation for regression or classification
             train_model(
                 model,
@@ -663,7 +664,7 @@ class Predictor:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
         # Optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(model.parameters(), lr=dict_best_hyper["lr"])
         # Train-validation split (needed for early stopping and hyperparameter optimization)
         x_train, x_val, _y_train, _y_val = train_test_split(
             training_data.X_train, training_data.y_train, test_size=0.2, random_state=5

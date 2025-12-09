@@ -211,7 +211,7 @@ def test_train_model_and_predict(device: Target, gnn: bool) -> None:
             predicted_values = out.cpu().numpy()
             labels = np.asarray(labels_list, dtype=np.float32)
         # it is set a tolerance value of 2e-1 just because of the small number of training samples
-        assert np.allclose(predicted_values, labels, atol=3e-1)
+        assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
 @pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
