@@ -104,8 +104,8 @@ def setup_device_predictor(
     path_uncompiled_circuits: Path | None = None,
     path_compiled_circuits: Path | None = None,
     path_training_data: Path | None = None,
-    *,
     timeout: int = 600,
+    *,
     gnn: bool = False,
     **gnn_kwargs: Unpack[TrainGNNKwargs],
 ) -> bool:
@@ -501,7 +501,11 @@ class Predictor:
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
         lr = trial.suggest_categorical("lr", [1e-2, 1e-3, 1e-4])
         # Ensure at least 2 folds
-        k_folds = max(2, k_folds)
+        max_splits = len(dataset)
+        k_folds = min(max(2, k_folds), max_splits)
+        if k_folds < 2:
+            msg = f"Not enough samples ({len(dataset)}) for k-folds (k={k_folds})."
+            raise ValueError(msg) 
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
@@ -624,36 +628,22 @@ class Predictor:
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
 
         json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
-        if self.figure_of_merit != "hellinger_distance":
-            model = GNN(
-                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
-                num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
-                hidden_dim=dict_best_hyper["hidden_dim"],
-                num_resnet_layers=dict_best_hyper["num_resnet_layers"],
-                mlp_units=mlp_units,
-                output_dim=len(self.devices),
-                dropout_p=dict_best_hyper["dropout"],
-                bidirectional=dict_best_hyper["bidirectional"],
-                use_sag_pool=dict_best_hyper["sag_pool"],
-                sag_ratio=0.7,
-                conv_activation=torch.nn.functional.leaky_relu,
-                mlp_activation=torch.nn.functional.leaky_relu,
-            ).to("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            model = GNN(
-                in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
-                num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
-                hidden_dim=dict_best_hyper["hidden_dim"],
-                num_resnet_layers=dict_best_hyper["num_resnet_layers"],
-                mlp_units=mlp_units,
-                output_dim=1,
-                dropout_p=dict_best_hyper["dropout"],
-                bidirectional=dict_best_hyper["bidirectional"],
-                use_sag_pool=dict_best_hyper["sag_pool"],
-                sag_ratio=0.7,
-                conv_activation=torch.nn.functional.leaky_relu,
-                mlp_activation=torch.nn.functional.leaky_relu,
-            ).to("cuda" if torch.cuda.is_available() else "cpu")
+        
+        model = GNN(
+            in_feats=int(len(get_openqasm3_gates()) + 1 + 6 + 3 + 1 + 1 + 1),
+            num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
+            hidden_dim=dict_best_hyper["hidden_dim"],
+            num_resnet_layers=dict_best_hyper["num_resnet_layers"],
+            mlp_units=mlp_units,
+            output_dim=json_dict["num_outputs"],
+            dropout_p=dict_best_hyper["dropout"],
+            bidirectional=dict_best_hyper["bidirectional"],
+            use_sag_pool=dict_best_hyper["sag_pool"],
+            sag_ratio=0.7,
+            conv_activation=torch.nn.functional.leaky_relu,
+            mlp_activation=torch.nn.functional.leaky_relu,
+        ).to("cuda" if torch.cuda.is_available() else "cpu")
+        
 
         json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
         json_dict["class_labels"] = [dev.description for dev in self.devices]
@@ -687,7 +677,7 @@ class Predictor:
             min_delta=0.0,
             restore_best=True,
         )
-        if verbose:
+        if verbose and training_data.X_test is not None and len(training_data.X_test) > 0:
             test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
             if task == "regression":
                 avg_loss_test, dict_results, _ = evaluate_regression_model(
