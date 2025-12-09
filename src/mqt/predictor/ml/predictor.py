@@ -178,6 +178,7 @@ class Predictor:
         self,
         devices: list[Target],
         figure_of_merit: figure_of_merit = "expected_fidelity",
+        *,
         gnn: bool = False,
         logger_level: int = logging.INFO,
     ) -> None:
@@ -454,8 +455,9 @@ class Predictor:
         batch_size: int = 32,
         num_epochs: int = 10,
         patience: int = 10,
-        verbose: bool = False,
         device: str | None = None,
+        *,
+        verbose: bool = False,
     ) -> float:
         """Objective function for Optuna GNN hyperparameter optimization.
 
