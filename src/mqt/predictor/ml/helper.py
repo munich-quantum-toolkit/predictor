@@ -208,7 +208,11 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     # 0) cleanup & DAG
     pm = PassManager(RemoveBarriers())
     qc = pm.run(qc)
-    qc = transpile(qc, optimization_level=0, basis_gates=get_openqasm3_gates())
+    try:
+        qc = transpile(qc, optimization_level=0, basis_gates=get_openqasm3_gates())
+    except Exception as e:
+        msg = f"Transpilation failed: {e}"
+        raise ValueError(msg) from e
     dag = circuit_to_dag(qc)
 
     unique_gates = [*get_openqasm3_gates(), "measure"]
@@ -581,10 +585,18 @@ def train_model(
                 epochs_no_improve += 1
 
             if verbose:
-                print(
-                    f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
-                    f"val_loss={val_loss:.6f} | acc={val_metrics.get('custom_accuracy', 0):.4f} | patience={epochs_no_improve}/{patience} | r2={val_metrics.get('r2', 0):.4f}"
-                )
+                if task == "classification":
+                    print(
+                        f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
+                        f"val_loss={val_loss:.6f} | acc={val_metrics.get('custom_accuracy', 0):.4f} | patience={epochs_no_improve}/{patience}"
+                    )
+                else:
+                    r2 = val_metrics.get("r2", 0)
+
+                    print(
+                        f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
+                        f"val_loss={val_loss:.6f} | r2={r2:.4f} | patience={epochs_no_improve}/{patience} | r2={val_metrics.get('r2', 0):.4f}"
+                    )
 
             if epochs_no_improve >= patience:
                 if verbose:
