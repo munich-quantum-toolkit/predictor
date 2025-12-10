@@ -191,6 +191,9 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
 
 def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Creates and returns the feature-annotated DAG of the quantum circuit.
+    This is particularly useful for GNN-based models. It is needed to convert the quantum circuit
+    into a graph representation. Then, each node is annotated with features such as one-hot gate encoding,
+    sin/cos of parameters, arity, number of controls, number of parameters, critical path flag, fan-in and fan-out.
 
     Arguments:
         qc: The quantum circuit to be converted to a DAG.
@@ -505,7 +508,7 @@ def train_model(
     min_delta: float = 0.0,
     restore_best: bool = True,
 ) -> None:
-    """Trains model using MSE loss and validates with custom class accuracy.
+    """Trains a GNN model with optional early stopping based on validation loss (MSE Loss).
 
     Arguments:
         model: regression model to be trained

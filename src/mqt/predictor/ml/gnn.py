@@ -264,7 +264,6 @@ class GNN(nn.Module):
             sag_nonlinearity=sag_nonlinearity,
         )
 
-        # MLP head
         self.mlp_activation = mlp_activation
         self.mlp_act_kwargs = mlp_act_kwargs or {}
         last_dim = self.graph_conv.graph_emb_dim
