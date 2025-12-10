@@ -214,13 +214,13 @@ def test_train_model_and_predict(device: Target, gnn: bool) -> None:
         assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
-@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
+@pytest.mark.parametrize("model_type", ids=["rf", "gnn"])
 def test_train_and_qcompile_with_hellinger_model(
-    source_path: Path, target_path: Path, device: Target, gnn: bool
+    source_path: Path, target_path: Path, device: Target, model_type: str
 ) -> None:
     """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
-
+    gnn = model_type == "gnn"
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",

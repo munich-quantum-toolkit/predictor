@@ -294,7 +294,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     critical_flag = torch.zeros((number_nodes, 1), dtype=torch.float32)
     for i, node in enumerate(nodes):
         # set critical flag to 1 if on critical path
-        if dist_in[node] + dist_out[node] == critical_len:
+        if dist_in.get(node, 0) + dist_out.get(node, 0) == critical_len:
             critical_flag[i] = 1.0
 
     # final concat of features

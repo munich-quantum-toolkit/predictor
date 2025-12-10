@@ -126,29 +126,29 @@ def setup_device_predictor(
     """
     predictor = Predictor(figure_of_merit=figure_of_merit, devices=devices, gnn=gnn)
     try:
-        logger.info(f"Start the training for the figure of merit: {figure_of_merit}")
+        logger.info("Start the training for the figure of merit: %s", figure_of_merit)
         # Step 1: Generate compiled circuits for all devices
         predictor.compile_training_circuits(
             path_uncompiled_circuits=path_uncompiled_circuits,
             path_compiled_circuits=path_compiled_circuits,
             timeout=timeout,
         )
-        logger.info(f"Generated compiled circuit for {figure_of_merit}")
+        logger.info("Generated compiled circuit for %s", figure_of_merit)
         # Step 2: Generate training data from the compiled circuits
         predictor.generate_training_data(
             path_uncompiled_circuits=path_uncompiled_circuits,
             path_compiled_circuits=path_compiled_circuits,
             path_training_data=path_training_data,
         )
-        logger.info(f"Generated training data for {figure_of_merit}")
+        logger.info("Generated training data for %s", figure_of_merit)
 
         # Step 3: Train the random forest classifier
         if not predictor.gnn:
             predictor.train_random_forest_model()
-            logger.info(f"Trained random forest classifier for {figure_of_merit}")
+            logger.info("Trained random forest classifier for %s", figure_of_merit)
         else:
             predictor.train_gnn_model(**gnn_kwargs)
-            logger.info(f"Trained random GNN for {figure_of_merit}")
+            logger.info("Trained random GNN for %s", figure_of_merit)
 
     except FileNotFoundError:
         logger.exception("File not found during setup.")
@@ -757,7 +757,16 @@ class Predictor:
                     np.load(file_data, allow_pickle=True) if not self.gnn else torch.load(file_data, weights_only=False)
                 )
                 names_list = list(np.load(file_names, allow_pickle=True))
-                scores_list = [list(scores) for scores in np.load(file_scores, allow_pickle=True)]
+                raw_scores = np.load(file_scores, allow_pickle=True)
+                scores_list: list[list[float]] = []
+                for scores in raw_scores:
+                    if isinstance(scores, dict):
+                        # Legacy format: dict[device_name, score]
+                        scores_list.append(list(scores.values()))
+                    else:
+                        # New format: list/array of per-device scores
+                        scores_list.append(list(scores))
+
             else:
                 msg = "Training data not found."
                 raise FileNotFoundError(msg)
@@ -828,7 +837,7 @@ def predict_device_for_figure_of_merit(
 
         mlp_str = json_dict["mlp"]
         mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
-
+        device_str = "cuda" if torch.cuda.is_available() else "cpu"
         gnn_model = GNN(
             in_feats=get_gnn_input_features(),
             num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
@@ -842,12 +851,10 @@ def predict_device_for_figure_of_merit(
             sag_ratio=0.7,
             conv_activation=torch.nn.functional.leaky_relu,
             mlp_activation=torch.nn.functional.leaky_relu,
-        ).to("cuda" if torch.cuda.is_available() else "cpu")
-        gnn_model.load_state_dict(torch.load(path, weights_only=True))
+        ).to(device_str)
+        gnn_model.load_state_dict(torch.load(path, weights_only=True, map_location=device_str))
         x, edge_index, number_of_gates = create_dag(qc)
-        feature_vector = Data(x=x, edge_index=edge_index, num_nodes=number_of_gates).to(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        feature_vector = Data(x=x, edge_index=edge_index, num_nodes=number_of_gates).to(device_str)
         gnn_model.eval()
         class_labels = json_dict["class_labels"]
         with torch.no_grad():
