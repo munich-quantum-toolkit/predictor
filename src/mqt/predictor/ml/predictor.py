@@ -332,7 +332,7 @@ class Predictor:
         )
         for sample in results:
             training_sample, circuit_name, scores = sample
-            if all(score == -1 for score in scores):
+            if all(score == -1 for score in scores.values()):
                 continue
 
             if self.gnn:
