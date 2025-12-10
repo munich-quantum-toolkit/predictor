@@ -234,7 +234,7 @@ class GNN(nn.Module):
                 Defaults to torch.nn.functional.leaky_relu.
             mlp_act_kwargs: Additional keyword arguments passed to
                 mlp_activation. Defaults to None.
-            dropout_p: Dropout probability applied in the graph encoder.
+            dropout_p: Dropout probability applied in the model (graph encoder and the MLP).
                 Defaults to 0.2.
             bidirectional: If True, apply bidirectional message passing in
                 the encoder. Defaults to True.
