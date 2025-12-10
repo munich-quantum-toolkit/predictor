@@ -37,19 +37,19 @@ if TYPE_CHECKING:
     from qiskit.transpiler import Target
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def source_path() -> Path:
     """Return the source path."""
     return Path("./test_uncompiled_circuits")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def target_path() -> Path:
     """Return the target path."""
     return Path("./test_compiled_circuits")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def device() -> Path:
     """Return the target device."""
     return get_device("quantinuum_h2_56")
@@ -317,7 +317,7 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         pred.train_random_forest_model(training_data)
 
 
-@pytest.fixture(scope="function", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
     """Remove files and directories created during testing in this module."""
     # Let the tests run
