@@ -317,7 +317,7 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         pred.train_random_forest_model(training_data)
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
     """Remove files and directories created during testing in this module."""
     # Let the tests run
