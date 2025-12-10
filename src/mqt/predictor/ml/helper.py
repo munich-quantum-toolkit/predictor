@@ -591,7 +591,7 @@ def train_model(
 
                     print(
                         f"Epoch {epoch:03d}/{num_epochs} | train_loss={train_loss:.6f} | "
-                        f"val_loss={val_loss:.6f} | r2={r2:.4f} | patience={epochs_no_improve}/{patience} | r2={val_metrics.get('r2', 0):.4f}"
+                        f"val_loss={val_loss:.6f} | r2={r2:.4f} | patience={epochs_no_improve}/{patience}"
                     )
 
             if epochs_no_improve >= patience:
