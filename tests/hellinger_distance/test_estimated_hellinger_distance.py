@@ -32,6 +32,8 @@ from mqt.predictor.ml.helper import TrainingData, create_dag, get_path_training_
 from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from qiskit.transpiler import Target
 
 
@@ -294,37 +296,6 @@ def test_train_and_qcompile_with_hellinger_model(
         assert predicted_dev.description in get_available_device_names()
 
 
-def test_remove_files(source_path: Path, target_path: Path) -> None:
-    """Remove files created during testing."""
-    if source_path.exists():
-        for file in source_path.iterdir():
-            if file.suffix == ".qasm":
-                file.unlink()
-        source_path.rmdir()
-
-    if target_path.exists():
-        for file in target_path.iterdir():
-            if file.suffix == ".qasm":
-                file.unlink()
-        target_path.rmdir()
-
-    data_path = get_path_training_data() / "training_data_aggregated"
-    if data_path.exists():
-        for file in list(data_path.iterdir()):
-            if file.is_file() and file.suffix in (".npy", ".pt", ".safetensors", ".label"):
-                file.unlink()
-            elif file.is_dir() and file.name.startswith("graph_dataset_"):
-                for sub in file.iterdir():
-                    sub.unlink()
-                file.rmdir()
-
-    model_path = get_path_training_data() / "trained_model"
-    if model_path.exists():
-        for file in model_path.iterdir():
-            if file.suffix in (".joblib", ".pth", ".json"):
-                file.unlink()
-
-
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
     """Test the error handling of the device selection predictor when no device is provided for the Hellinger distance model."""
     rng = np.random.default_rng()
@@ -344,3 +315,41 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")
     ):
         pred.train_random_forest_model(training_data)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
+    """Remove files and directories created during testing in this module."""
+    # Let the tests run
+    yield
+
+    # Cleanup compiled/uncompiled circuit files and directories
+    if source_path.exists():
+        for file in source_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        source_path.rmdir()
+
+    if target_path.exists():
+        for file in target_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        target_path.rmdir()
+
+    # Cleanup training data artifacts
+    data_path = get_path_training_data() / "training_data_aggregated"
+    if data_path.exists():
+        for file in list(data_path.iterdir()):
+            if file.is_file() and file.suffix in (".npy", ".pt", ".safetensors", ".label"):
+                file.unlink()
+            elif file.is_dir() and file.name.startswith("graph_dataset_"):
+                for sub in file.iterdir():
+                    sub.unlink()
+                file.rmdir()
+
+    # Cleanup trained model artifacts
+    model_path = get_path_training_data() / "trained_model"
+    if model_path.exists():
+        for file in model_path.iterdir():
+            if file.suffix in (".joblib", ".pth", ".json"):
+                file.unlink()
