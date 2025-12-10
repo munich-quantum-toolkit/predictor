@@ -214,7 +214,7 @@ def test_train_model_and_predict(device: Target, gnn: bool) -> None:
         assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
-@pytest.mark.parametrize("model_type", ids=["rf", "gnn"])
+@pytest.mark.parametrize("model_type", ["rf", "gnn"])
 def test_train_and_qcompile_with_hellinger_model(
     source_path: Path, target_path: Path, device: Target, model_type: str
 ) -> None:
