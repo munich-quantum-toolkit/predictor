@@ -43,6 +43,7 @@ from optuna.samplers import TPESampler
 # cspell:disable-next-line
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
+from safetensors.torch import load_file, save_file
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, KFold, train_test_split
 from torch_geometric.data import Data
@@ -71,8 +72,6 @@ from mqt.predictor.reward import (
 from mqt.predictor.rl import Predictor as rl_Predictor
 from mqt.predictor.rl import rl_compile
 from mqt.predictor.utils import timeout_watcher
-from safetensors.torch import save_file, load_file
-
 
 if TYPE_CHECKING:
     import torch_geometric
@@ -771,9 +770,8 @@ class Predictor:
                 # New safetensors directory for GNN data
                 dataset_dir = path / f"graph_dataset_{self.figure_of_merit}"
 
-            if (
-                (file_names.is_file() and file_scores.is_file())
-                and ((not self.gnn and file_data.is_file()) or (self.gnn and dataset_dir.is_dir()))
+            if (file_names.is_file() and file_scores.is_file()) and (
+                (not self.gnn and file_data.is_file()) or (self.gnn and dataset_dir.is_dir())
             ):
                 if not self.gnn:
                     training_data = np.load(file_data, allow_pickle=True)

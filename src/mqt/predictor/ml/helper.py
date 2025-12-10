@@ -350,7 +350,7 @@ def evaluate_classification_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
-    device: str,
+    device: str | torch.device,
     *,
     return_arrays: bool = False,
     verbose: bool = False,
@@ -370,7 +370,8 @@ def evaluate_classification_model(
         metrics:  {"custom_accuracy": ..., "classification_report": ..., "mse": ..., "rmse": ..., "mae": ..., "r2": ...}
         arrays:   (preds, y_true) if return_arrays=True, else None.
     """
-    device = torch.device(device)
+    if isinstance(device, str):
+        device = torch.device(device)
     metrics: dict[str, float | str] = {}
     model.eval()
     total_loss, total = 0.0, 0
@@ -432,7 +433,7 @@ def evaluate_regression_model(
     model: nn.Module,
     loader: torch_geometric.loader.DataLoader,
     loss_fn: nn.Module,
-    device: str,
+    device: str | torch.device,
     *,
     return_arrays: bool = False,
     verbose: bool = False,
@@ -452,7 +453,8 @@ def evaluate_regression_model(
         metrics:  {"rmse": ..., "mae": ..., "r2": ...}
         arrays:   (preds, y_true) if return_arrays=True, else None
     """
-    device = torch.device(device)
+    if isinstance(device, str):
+        device = torch.device(device)
     model.eval()
     total_loss, total = 0.0, 0
     all_preds, all_targets = [], []
@@ -502,7 +504,7 @@ def train_model(
     num_epochs: int,
     task: str,
     *,
-    device: str | None = None,
+    device: str | torch.device | None = None,
     verbose: bool = True,
     val_loader: torch_geometric.loader.DataLoader | None = None,
     patience: int = 10,
@@ -527,7 +529,8 @@ def train_model(
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device(device)
+    elif isinstance(device, str):
+        device = torch.device(device)
     model.to(device)
 
     best_state, best_metric = None, float("inf")
