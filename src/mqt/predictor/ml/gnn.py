@@ -268,6 +268,7 @@ class GNN(nn.Module):
         self.mlp_activation = mlp_activation
         self.mlp_act_kwargs = mlp_act_kwargs or {}
         last_dim = self.graph_conv.graph_emb_dim
+        self.mlp_drop = nn.Dropout(dropout_p)
         self.fcs: nn.ModuleList[nn.Linear] = nn.ModuleList()
         for out_dim_ in mlp_units:
             self.fcs.append(nn.Linear(last_dim, out_dim_))
@@ -291,5 +292,5 @@ class GNN(nn.Module):
         """
         x = self.graph_conv(data)
         for fc in self.fcs:
-            x = self.mlp_activation(fc(x), **self.mlp_act_kwargs)
+            x = self.mlp_drop(self.mlp_activation(fc(x), **self.mlp_act_kwargs))
         return self.out(x)
