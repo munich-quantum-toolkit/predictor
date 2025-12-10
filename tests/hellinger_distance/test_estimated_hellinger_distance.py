@@ -271,11 +271,10 @@ def test_train_and_qcompile_with_hellinger_model(
         )
         if gnn:
             dataset_dir = (
-                get_path_training_data()
-                / "training_data_aggregated"
-                / "graph_dataset_estimated_hellinger_distance"
+                get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance"
             )
-            assert dataset_dir.exists() and dataset_dir.is_dir()
+            assert dataset_dir.exists()
+            assert dataset_dir.is_dir()
             assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
         else:
             for file in [
