@@ -47,6 +47,7 @@ dependencies = [
     "torch>=2.8.0",
     "optuna>=4.5.0",
     "torch-geometric>=2.6.1",
+    "safetensors>=0.4.0",
     "typing-extensions>=4.1",  # for `assert_never`
     "qiskit-ibm-transpiler>=0.15.0; sys_platform != 'win32' or python_version != '3.13'", # pulls qiskit-serverless, which pulls ray[default], and the resolved ray 2.54.0 has no win_amd64 cp313 wheel
     "qiskit-ibm-ai-local-transpiler>=0.5.5",
