@@ -67,7 +67,8 @@ def test_setup_device_predictor_with_prediction(
     data_path = get_path_training_data() / "training_data_aggregated"
     if gnn:
         dataset_dir = data_path / "graph_dataset_expected_fidelity"
-        assert dataset_dir.exists() and dataset_dir.is_dir()
+        assert dataset_dir.exists()
+        assert dataset_dir.is_dir()
         assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
         assert (data_path / "names_list_expected_fidelity.npy").exists()
         assert (data_path / "scores_list_expected_fidelity.npy").exists()
@@ -105,7 +106,6 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
                 for sub in file.iterdir():
                     sub.unlink()
                 file.rmdir()
-
 
 
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
