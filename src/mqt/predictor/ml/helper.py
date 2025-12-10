@@ -486,10 +486,7 @@ def evaluate_regression_model(
     if preds.size > 0:
         rmse = float(np.sqrt(mean_squared_error(y_true, preds)))
         mae = float(mean_absolute_error(y_true, preds))
-        if y_true.shape[0] < 2 or np.all(y_true == y_true[0]):
-            r2 = float("nan")
-        else:
-            r2 = float(r2_score(y_true, preds))
+        r2 = float("nan") if y_true.shape[0] < 2 or np.all(y_true == y_true[0]) else float(r2_score(y_true, preds))
         metrics.update({"rmse": rmse, "mae": mae, "r2": r2})
 
         if verbose:
