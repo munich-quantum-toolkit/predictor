@@ -172,6 +172,9 @@ implicit_reexport = true
 module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*", "safetensors", "safetensors.torch", "safetensors.*" ]
 ignore_missing_imports = true
 
+# Relax type checking for the GNN module since torch and torch_geometric expose
+# many APIs as Any due to incomplete type stubs; the GNN implementation must
+# work with these untyped returns and may need to subclass Any-typed classes.
 [[tool.mypy.overrides]]
 module = ["mqt.predictor.ml.gnn"]
 disallow_subclassing_any = false

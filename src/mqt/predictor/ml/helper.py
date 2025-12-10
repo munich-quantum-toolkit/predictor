@@ -404,7 +404,6 @@ def evaluate_classification_model(
 
     avg_loss = total_loss / max(1, total)
     metrics = {"loss": float(avg_loss)}
-    arrays = None
     if not all_preds or not all_targets:
         arrays = (np.array([]), np.array([])) if return_arrays else None
         return avg_loss, metrics, arrays
