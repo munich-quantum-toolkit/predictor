@@ -197,7 +197,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     Returns:
         node_vector: features per node = [one-hot gate, sin/cos params, arity, controls,
-        num_params, critical_flag, fan_prop]
+        num_params, critical_flag, fan_in, fan_out]
         edge_index: 2 for E tensor of edges (src, dst)
         number_of_gates: number of nodes in the DAG.
     """
@@ -395,7 +395,7 @@ def evaluate_classification_model(
 
     avg_loss = total_loss / max(1, total)
     metrics = {"loss": float(avg_loss)}
-
+    arrays = None
     if not all_preds or not all_targets:
         arrays = (np.array([]), np.array([])) if return_arrays else None
         return avg_loss, metrics, arrays

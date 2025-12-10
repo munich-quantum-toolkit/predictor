@@ -120,7 +120,7 @@ log_level = "INFO"
 filterwarnings = [
     'error',
     'ignore:.*pytorch.*:UserWarning:',
-    "ignore:.*torch_geometric.*:UserWarning:",
+    "ignore:`torch_geometric.distributed` has been deprecated:DeprecationWarning:torch_geometric",
     "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
     'ignore:.*Values in x.*:RuntimeWarning:',
     'ignore:.*The least populated class in y has only 3 members, which is less than n_splits=5.*:UserWarning:',
