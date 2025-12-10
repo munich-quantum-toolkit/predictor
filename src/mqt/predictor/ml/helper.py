@@ -490,7 +490,7 @@ def evaluate_regression_model(
         if y_true.shape[0] < 2 or np.all(y_true == y_true[0]):
             r2 = float("nan")
         else:
-            r2 = float(r2_score(y_true, preds)) if np.var(y_true) > 0 else float("nan")
+            r2 = float(r2_score(y_true, preds))
         metrics.update({"rmse": rmse, "mae": mae, "r2": r2})
 
         if verbose:
