@@ -270,9 +270,13 @@ def test_train_and_qcompile_with_hellinger_model(
             path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
         )
         if gnn:
-            assert (
-                get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance.pt"
-            ).exists()
+            dataset_dir = (
+                get_path_training_data()
+                / "training_data_aggregated"
+                / "graph_dataset_estimated_hellinger_distance"
+            )
+            assert dataset_dir.exists() and dataset_dir.is_dir()
+            assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
         else:
             for file in [
                 "training_data_estimated_hellinger_distance.npy",
@@ -307,9 +311,13 @@ def test_remove_files(source_path: Path, target_path: Path) -> None:
 
     data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
-        for file in data_path.iterdir():
-            if file.suffix in (".npy", ".pt"):
+        for file in list(data_path.iterdir()):
+            if file.is_file() and file.suffix in (".npy", ".pt", ".safetensors", ".label"):
                 file.unlink()
+            elif file.is_dir() and file.name.startswith("graph_dataset_"):
+                for sub in file.iterdir():
+                    sub.unlink()
+                file.rmdir()
 
     model_path = get_path_training_data() / "trained_model"
     if model_path.exists():

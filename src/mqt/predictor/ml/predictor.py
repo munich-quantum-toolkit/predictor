@@ -71,6 +71,8 @@ from mqt.predictor.reward import (
 from mqt.predictor.rl import Predictor as rl_Predictor
 from mqt.predictor.rl import rl_compile
 from mqt.predictor.utils import timeout_watcher
+from safetensors.torch import save_file, load_file
+
 
 if TYPE_CHECKING:
     import torch_geometric
@@ -344,7 +346,22 @@ class Predictor:
 
         with resources.as_file(path_training_data) as path:
             if self.gnn:
-                torch.save(training_data, str(path / ("graph_dataset_" + self.figure_of_merit + ".pt")))
+                dataset_dir = path / f"graph_dataset_{self.figure_of_merit}"
+                dataset_dir.mkdir(parents=True, exist_ok=True)
+
+                for idx, data in enumerate(training_data):
+                    # data is a torch_geometric.data.Data object
+                    tensors = {
+                        "x": data.x,  # node features
+                        "y": data.y,  # target values per device
+                        "edge_index": data.edge_index,
+                        "num_nodes": torch.tensor([data.num_nodes], dtype=torch.int64),
+                    }
+                    save_file(tensors, str(dataset_dir / f"{idx}.safetensors"))
+
+                    # target_label is a string; save it separately
+                    label_path = dataset_dir / f"{idx}.label"
+                    label_path.write_text(str(data.target_label), encoding="utf-8")
             else:
                 data = np.asarray(training_data, dtype=object)
                 np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
@@ -747,15 +764,43 @@ class Predictor:
             prefix = f"{self.figure_of_merit}.npy"
             file_names = path / f"names_list_{prefix}"
             file_scores = path / f"scores_list_{prefix}"
-            file_data = (
-                path / f"training_data_{prefix}" if not self.gnn else path / f"graph_dataset_{self.figure_of_merit}.pt"
-            )
 
-            if file_data.is_file() and file_names.is_file() and file_scores.is_file():
-                # Loading the dataset, for this reason weights_only=False
-                training_data = (
-                    np.load(file_data, allow_pickle=True) if not self.gnn else torch.load(file_data, weights_only=False)
-                )
+            if not self.gnn:
+                file_data = path / f"training_data_{prefix}"
+            else:
+                # New safetensors directory for GNN data
+                dataset_dir = path / f"graph_dataset_{self.figure_of_merit}"
+
+            if (
+                (file_names.is_file() and file_scores.is_file())
+                and ((not self.gnn and file_data.is_file()) or (self.gnn and dataset_dir.is_dir()))
+            ):
+                if not self.gnn:
+                    training_data = np.load(file_data, allow_pickle=True)
+                else:
+                    # Reconstruct list[Data] from safetensors files
+                    training_data = []
+                    # assume files are named 0.safetensors, 1.safetensors, ...
+                    for sf in sorted(dataset_dir.glob("*.safetensors")):
+                        idx = sf.stem
+                        tensors = load_file(str(sf))
+
+                        data = Data(
+                            x=tensors["x"],
+                            y=tensors["y"],
+                            edge_index=tensors["edge_index"],
+                            num_nodes=int(tensors["num_nodes"][0].item()),
+                        )
+
+                        # restore string label
+                        label_path = dataset_dir / f"{idx}.label"
+                        if label_path.is_file():
+                            data.target_label = label_path.read_text(encoding="utf-8").strip()
+                        else:
+                            data.target_label = ""  # or raise error if you prefer
+
+                        training_data.append(data)
+
                 names_list = list(np.load(file_names, allow_pickle=True))
                 raw_scores = np.load(file_scores, allow_pickle=True)
                 scores_list: list[list[float]] = []
@@ -766,10 +811,10 @@ class Predictor:
                     else:
                         # New format: list/array of per-device scores
                         scores_list.append(list(scores))
-
             else:
                 msg = "Training data not found."
                 raise FileNotFoundError(msg)
+
         if not self.gnn:
             x_list, y_list = zip(*training_data, strict=False)
             x = np.array(x_list, dtype=np.float64)
