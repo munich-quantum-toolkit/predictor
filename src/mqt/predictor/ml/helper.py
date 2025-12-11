@@ -289,13 +289,13 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     for node in topo_nodes:
         preds = [p for p in dag.predecessors(node) if isinstance(p, DAGOpNode)]
         if preds:
-            dist_in[node] = max(dist_in[p] + 1 for p in preds)
+            dist_in[node] = max(dist_in.get(p, 0) + 1 for p in preds)
 
     dist_out = dict.fromkeys(topo_nodes, 0)
     for node in reversed(topo_nodes):
         succs = [s for s in dag.successors(node) if isinstance(s, DAGOpNode)]
         if succs:
-            dist_out[node] = max(dist_out[s] + 1 for s in succs)
+            dist_out[node] = max(dist_out.get(s, 0) + 1 for s in succs)
 
     critical_len = max(dist_in[n] + dist_out[n] for n in topo_nodes)
 
