@@ -132,7 +132,7 @@ def calc_device_specific_features(
     return np.array(list(feature_dict.values()))
 
 
-def get_hellinger_model_path(device: Target, gnn: bool = False) -> Path:
+def get_hellinger_model_path(device: Target, gnn: bool = False) -> Path: # noqa: FBT001, FBT002
     """Returns the path to the trained model file resulting from the machine learning training."""
     training_data_path = Path(str(resources.files("mqt.predictor"))) / "ml" / "training_data" / "trained_model"
     device_description = str(device.description)
