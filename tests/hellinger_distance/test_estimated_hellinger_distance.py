@@ -50,7 +50,7 @@ def target_path() -> Path:
 
 
 @pytest.fixture(scope="module")
-def device() -> Path:
+def device() -> Target:
     """Return the target device."""
     return get_device("quantinuum_h2_56")
 
