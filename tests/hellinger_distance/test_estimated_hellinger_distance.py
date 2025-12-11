@@ -155,9 +155,10 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
-def test_train_model_and_predict(device: Target, gnn: bool) -> None:
+@pytest.mark.parametrize("model_type", ["rf", "gnn"])
+def test_train_model_and_predict(device: Target, model_type: str) -> None:
     """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
+    gnn = model_type == "gnn"
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)

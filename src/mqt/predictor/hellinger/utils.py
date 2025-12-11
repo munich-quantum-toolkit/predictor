@@ -133,12 +133,12 @@ def calc_device_specific_features(
 
 
 def get_hellinger_model_path(device: Target, gnn: bool = False) -> Path:
-    """Returns the path to the trained model folder resulting from the machine learning training."""
+    """Returns the path to the trained model file resulting from the machine learning training."""
     training_data_path = Path(str(resources.files("mqt.predictor"))) / "ml" / "training_data" / "trained_model"
     device_description = str(device.description)
     filename = (
-        ("trained_hellinger_distance_regressor_gnn_" + device_description + ".pth")
+        (f"trained_hellinger_distance_regressor_gnn_{device_description}.pth")
         if gnn
-        else ("trained_hellinger_distance_regressor_" + device_description + ".joblib")
+        else (f"trained_hellinger_distance_regressor_{device_description}.joblib")
     )
     return training_data_path / filename
