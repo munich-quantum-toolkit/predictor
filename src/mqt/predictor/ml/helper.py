@@ -562,11 +562,11 @@ def train_model(
         if val_loader is not None:
             if task == "classification":
                 val_loss, val_metrics, _ = evaluate_classification_model(
-                    model, val_loader, loss_fn, device=str(device), verbose=False
+                    model, val_loader, loss_fn, device=str(device), verbose=verbose
                 )
             elif task == "regression":
                 val_loss, val_metrics, _ = evaluate_regression_model(
-                    model, val_loader, loss_fn, device=str(device), verbose=False
+                    model, val_loader, loss_fn, device=str(device), verbose=verbose
                 )
             else:
                 # raise an error if task not classification or regression
