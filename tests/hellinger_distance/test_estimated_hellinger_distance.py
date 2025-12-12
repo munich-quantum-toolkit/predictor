@@ -18,12 +18,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
-from torch_geometric.data import Batch, Data
 
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
 from mqt.predictor.ml import Predictor as ml_Predictor
@@ -35,6 +33,17 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from qiskit.transpiler import Target
+
+try:
+    import torch  # type: ignore[import-not-found]
+    from torch_geometric.data import Batch, Data  # type: ignore[import-not-found]
+
+    _HAS_GNN_DEPS = True
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore[assignment]
+    Batch = None  # type: ignore[assignment]
+    Data = None  # type: ignore[assignment]
+    _HAS_GNN_DEPS = False
 
 
 @pytest.fixture(scope="module")
@@ -160,6 +169,8 @@ def test_hellinger_distance_error() -> None:
 def test_train_model_and_predict(device: Target, model_type: str) -> None:
     """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
     gnn = model_type == "gnn"
+    if gnn and not _HAS_GNN_DEPS:
+        pytest.skip("GNN optional dependencies (torch/torch-geometric) not installed")
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
@@ -216,6 +227,7 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
         # it is set a tolerance value of 5e-1 just because of the small number of training samples
         # for this reason we are not interested in a very accurate prediction here and a tolerance of 0.5
         # guarantees that the test passes even if the prediction is not very accurate
+        # (sometimes happens that the difference is higher than 0.3)
         assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
