@@ -38,7 +38,7 @@ try:
     from torch_geometric.data import Batch, Data  # type: ignore[import-not-found]
 
     _HAS_GNN_DEPS = True
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     torch = None  # type: ignore[assignment]
     Batch = None  # type: ignore[assignment]
     Data = None  # type: ignore[assignment]
@@ -299,7 +299,10 @@ def test_train_and_qcompile_with_hellinger_model(
                 assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_gnn_model() if gnn else ml_predictor.train_random_forest_model()
+        if gnn:
+            ml_predictor.train_gnn_model()
+        else:
+            ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
@@ -355,7 +358,13 @@ def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
                 file.unlink()
             elif file.is_dir() and file.name.startswith("graph_dataset_"):
                 for sub in file.iterdir():
-                    sub.unlink()
+                    if sub.is_file():
+                        sub.unlink()
+                    elif sub.is_dir():
+                        # If nested dirs appear, consider switching to shutil.rmtree as noted above
+                        for nested in sub.iterdir():
+                            nested.unlink()
+                        sub.rmdir()
                 file.rmdir()
 
     # Cleanup trained model artifacts
