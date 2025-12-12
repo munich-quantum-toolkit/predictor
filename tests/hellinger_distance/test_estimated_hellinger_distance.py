@@ -213,6 +213,8 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
             predicted_values = out.cpu().numpy()
             labels = np.asarray(labels_list, dtype=np.float32)
         # it is set a tolerance value of 5e-1 just because of the small number of training samples
+        # for this reason we are not interested in a very accurate prediction here and a tolerance of 0.5 
+        # guarantees that the test passes even if the prediction is not very accurate
         assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
@@ -254,6 +256,7 @@ def test_train_and_qcompile_with_hellinger_model(
                 dump(qc, f)
 
         # Generate compiled circuits (using trained RL model)
+        # Note: On Windows, the timeout feature is not supported and raises a warning. (just for RF model)
         if sys.platform == "win32" and not gnn:
             with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
                 ml_predictor.compile_training_circuits(
