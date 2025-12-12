@@ -179,8 +179,9 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
     labels_list = [distance_label] * n_circuits
+    labels = np.asarray(labels_list, dtype=np.float32)
     if not gnn:
-        training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+        training_data = TrainingData(X_train=feature_vector_list, y_train=labels)
     else:
         training_data_list = []
         for i in range(n_circuits):
@@ -192,7 +193,7 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
                 num_nodes=n_nodes,
             )
             training_data_list.append(gnn_training_sample)
-        training_data = TrainingData(X_train=training_data_list, y_train=labels_list)
+        training_data = TrainingData(X_train=training_data_list, y_train=labels)
 
     # 3. Model Training
     pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)
@@ -280,7 +281,8 @@ def test_train_and_qcompile_with_hellinger_model(
             )
             assert dataset_dir.exists()
             assert dataset_dir.is_dir()
-            assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
+            # check for controlling that the name starts with a number and ends with .safetensor asdefined in the predictor
+            assert any(f.is_file() and f.suffix == ".safetensors" and f.stem.isdigit() for f in dataset_dir.iterdir())
         else:
             for file in [
                 "training_data_estimated_hellinger_distance.npy",
@@ -323,6 +325,12 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
 @pytest.fixture(scope="module", autouse=True)
 def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
     """Remove files and directories created during testing in this module."""
+    # NOTE: This cleanup is intentionally conservative: we only delete *.qasm files that
+    # tests generate and then try to remove the directory.
+    # We do NOT use shutil.rmtree() to avoid deleting unexpected/non-test files.
+    # This means Path.rmdir() can fail if extra files/dirs exist (e.g., partial runs or
+    # platform artifacts). If this becomes flaky, switch to shutil.rmtree().
+
     # Let the tests run
     yield
 
