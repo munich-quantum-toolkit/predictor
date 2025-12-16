@@ -221,7 +221,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
 
     def _safe_float(val: object, default: float = 0.0) -> float:
         try:
-            return float(cast("SupportsFloat | SupportsIndex | str | bytes | bytearray", val))
+            return float(val)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return default
 
