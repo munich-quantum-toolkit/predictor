@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
