@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex, cast
 
 import numpy as np
 import torch
@@ -219,22 +219,20 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
     gate2idx = {g: i for i, g in enumerate(unique_gates)}
     number_gates = len(unique_gates)
 
+    def _safe_float(val: object, default: float = 0.0) -> float:
+        try:
+            return float(cast("SupportsFloat | SupportsIndex | str | bytes | bytearray", val))
+        except (TypeError, ValueError):
+            return default
+
     # --- parameters sin/cos (max 3 param) ---
     def param_vector(node: DAGOpNode, dim: int = 3) -> list[float]:
-        """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)].
-
-        Arguments:
-            node: DAG operation node
-            dim: number of parameters to consider (max 3)
-
-        Returns:
-            list of sin/cos values of parameters
-        """
-        # pad the parameters with zeros if less than dim
-        params = [float(val) for val in getattr(node.op, "params", [])][:dim]
+        """Return [sin(p1), cos(p1), sin(p2), cos(p2), sin(p3), cos(p3)]."""
+        raw_params = getattr(node.op, "params", [])
+        params = [_safe_float(v) for v in raw_params[:dim]]
         params += [0.0] * (dim - len(params))
-        out = []
-        # for each param calculate sin and cos
+
+        out: list[float] = []
         for p in params:
             out.extend([np.sin(p), np.cos(p)])
         return out  # len = 2*dim
@@ -297,7 +295,7 @@ def create_dag(qc: QuantumCircuit) -> tuple[torch.Tensor, torch.Tensor, int]:
         if succs:
             dist_out[node] = max(dist_out.get(s, 0) + 1 for s in succs)
 
-    critical_len = max(dist_in[n] + dist_out[n] for n in topo_nodes)
+    critical_len = max(dist_in.get(n, 0) + dist_out.get(n, 0) for n in topo_nodes)
 
     critical_flag = torch.zeros((number_nodes, 1), dtype=torch.float32)
     for i, node in enumerate(nodes):
@@ -561,10 +559,16 @@ def train_model(
 
         if val_loader is not None:
             if task == "classification":
+                # evaluate on validation set the loss function and metrics connected to classification
+                # Passed the model, val_loader, loss function, device, and
+                # verbose (leaving the user decide if also wants to print metrics during evaluation)
                 val_loss, val_metrics, _ = evaluate_classification_model(
                     model, val_loader, loss_fn, device=str(device), verbose=verbose
                 )
             elif task == "regression":
+                # evaluate on validation set the loss function and metrics connected to regression
+                # Passed the model, val_loader, loss function, device, and
+                # verbose (leaving the user decide if also wants to print metrics during evaluation)
                 val_loss, val_metrics, _ = evaluate_regression_model(
                     model, val_loader, loss_fn, device=str(device), verbose=verbose
                 )
