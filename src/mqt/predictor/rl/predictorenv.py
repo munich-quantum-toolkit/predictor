@@ -640,7 +640,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             msg = "Device target does not expose the required Target API for approximate reward computation."
             raise RuntimeError(msg) from exc
 
-        getattr(target, "dt", None)
         twoq_edges = coupling_map.get_edges()  # list[(i, j)]
 
         p1: list[float] = []
