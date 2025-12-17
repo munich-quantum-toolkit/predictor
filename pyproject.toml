@@ -271,3 +271,7 @@ ignore = ["GH200"]
 override-dependencies = [
   "networkx==2.8.5", # Required by `qiskit-ibm-transpiler`
 ]
+
+
+[tool.check-sdist]
+sdist-only = ["src/mqt/predictor/_version.py"]
