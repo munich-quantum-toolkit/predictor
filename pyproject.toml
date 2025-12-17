@@ -94,9 +94,6 @@ Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
-[tool.check-sdist]
-sdist-only = ["src/mqt/predictor/_version.py"]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/mqt"]
 
@@ -263,7 +260,6 @@ fom = "fom"
 ignore = [
     "GH200",
 ]
-
 
 [tool.check-sdist]
 sdist-only = ["src/mqt/predictor/_version.py"]
