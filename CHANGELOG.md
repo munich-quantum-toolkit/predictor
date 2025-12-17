@@ -11,8 +11,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou])
-- 🔧 Changed test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou])
+- ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
+- 🔧 Changed test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
