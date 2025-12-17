@@ -263,3 +263,7 @@ fom = "fom"
 ignore = [
     "GH200",
 ]
+
+
+[tool.check-sdist]
+sdist-only = ["src/mqt/predictor/_version.py"]
