@@ -424,7 +424,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return qc, None
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
-        pm_property_set: PropertySet | None = {}
+        pm_property_set: dict[str, Any] | None = None
         if getattr(action, "stochastic", False):  # Wrap stochastic action to optimize for the used figure of merit
             altered_qc, pm_property_set = self.fom_aware_compile(
                 action,
@@ -443,14 +443,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 else:
                     pm = PassManager(passes)
                 altered_qc = pm.run(self.state)
-                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
             else:
                 transpile_pass = (
                     action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
                 )
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
-                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
 
         if action_index in (
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
