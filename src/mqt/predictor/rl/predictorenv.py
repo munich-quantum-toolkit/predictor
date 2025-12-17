@@ -11,11 +11,7 @@
 from __future__ import annotations
 
 import logging
-import sys
 from typing import TYPE_CHECKING, Any
-
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    pass
 
 if TYPE_CHECKING:
     from collections.abc import Callable
