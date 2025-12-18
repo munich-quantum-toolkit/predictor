@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -79,12 +80,16 @@ from qiskit.transpiler.passes import (
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
-from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
     get_bqskit_native_gates,
 )
+
+IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
+if not IS_WIN_PY313:
+    from qiskit_ibm_transpiler.ai.routing import AIRouting
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -488,39 +493,40 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "AIRouting",
-        CompilationOrigin.QISKIT,
-        PassType.ROUTING,
-        stochastic=True,
-        transpile_pass=lambda device: [
-            SafeAIRouting(
-                coupling_map=device.build_coupling_map(),
-                optimization_level=3,
-                layout_mode="improve",
-                local_mode=True,
-            )
-        ],
+if not IS_WIN_PY313:
+    register_action(
+        DeviceDependentAction(
+            "AIRouting",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            stochastic=True,
+            transpile_pass=lambda device: [
+                SafeAIRouting(
+                    coupling_map=device.build_coupling_map(),
+                    optimization_level=3,
+                    layout_mode="improve",
+                    local_mode=True,
+                )
+            ],
+        )
     )
-)
 
-register_action(
-    DeviceDependentAction(
-        "AIRouting_opt",
-        CompilationOrigin.QISKIT,
-        PassType.MAPPING,
-        stochastic=True,
-        transpile_pass=lambda device: [
-            ### Requires an initial layout, but "optimize" mode overwrites it
-            SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=True, max_iterations=1),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-            SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
-        ],
+    register_action(
+        DeviceDependentAction(
+            "AIRouting_opt",
+            CompilationOrigin.QISKIT,
+            PassType.MAPPING,
+            stochastic=True,
+            transpile_pass=lambda device: [
+                ### Requires an initial layout, but "optimize" mode overwrites it
+                SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=True, max_iterations=1),
+                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                EnlargeWithAncilla(),
+                ApplyLayout(),
+                SafeAIRouting(coupling_map=device.build_coupling_map(), optimization_level=3, layout_mode="optimize"),
+            ],
+        )
     )
-)
 
 register_action(
     DeviceDependentAction(
@@ -694,40 +700,42 @@ def add_cregs_and_measurements(
     return qc
 
 
-class SafeAIRouting(AIRouting):  # type: ignore[misc]
-    """Custom AIRouting wrapper that removes classical registers before routing.
+if not IS_WIN_PY313:
 
-    This prevents failures in AIRouting when classical bits are present by
-    temporarily removing classical registers and measurements and restoring
-    them after routing is completed.
-    """
+    class SafeAIRouting(AIRouting):  # type: ignore[misc]
+        """Custom AIRouting wrapper that removes classical registers before routing.
 
-    def run(self, dag: DAGCircuit) -> DAGCircuit:
-        """Run the routing pass on a DAGCircuit."""
-        qc_orig = dag_to_circuit(dag)
-        # Extract classical registers and measurement instructions
-        cregs, measurements = extract_cregs_and_measurements(qc_orig)
-        # Remove cregs and measurements
-        qc_noclassical = remove_cregs(qc_orig)
-        # Convert back to dag and run routing (AIRouting)
-        dag_noclassical = circuit_to_dag(qc_noclassical)
-        dag_routed = super().run(dag_noclassical)
-        # Convert routed dag to circuit for restoration
-        qc_routed = dag_to_circuit(dag_routed)
-        # Build mapping from original qubits to qubits in routed circuit
-        final_layout = getattr(self, "property_set", {}).get("final_layout", None)
-        assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
-        qubit_map = {}
-        for virt in qc_orig.qubits:
-            assert virt in final_layout, f"Virtual qubit {virt} not found in final layout!"
-            phys = final_layout[virt]
-            if isinstance(phys, int):
-                assert 0 <= phys < len(qc_routed.qubits), f"Physical index {phys} out of range in routed circuit!"
-                qubit_map[virt] = qc_routed.qubits[phys]
-            else:
-                assert phys in qc_routed.qubits, f"Physical qubit {phys} not found in output circuit!"
-                qubit_map[virt] = qc_routed.qubits[qc_routed.qubits.index(phys)]
-        # Restore classical registers and measurement instructions
-        qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
-        # Return as dag
-        return circuit_to_dag(qc_final)
+        This prevents failures in AIRouting when classical bits are present by
+        temporarily removing classical registers and measurements and restoring
+        them after routing is completed.
+        """
+
+        def run(self, dag: DAGCircuit) -> DAGCircuit:
+            """Run the routing pass on a DAGCircuit."""
+            qc_orig = dag_to_circuit(dag)
+            # Extract classical registers and measurement instructions
+            cregs, measurements = extract_cregs_and_measurements(qc_orig)
+            # Remove cregs and measurements
+            qc_noclassical = remove_cregs(qc_orig)
+            # Convert back to dag and run routing (AIRouting)
+            dag_noclassical = circuit_to_dag(qc_noclassical)
+            dag_routed = super().run(dag_noclassical)
+            # Convert routed dag to circuit for restoration
+            qc_routed = dag_to_circuit(dag_routed)
+            # Build mapping from original qubits to qubits in routed circuit
+            final_layout = getattr(self, "property_set", {}).get("final_layout", None)
+            assert final_layout is not None, "final_layout is None — cannot map virtual qubits"
+            qubit_map = {}
+            for virt in qc_orig.qubits:
+                assert virt in final_layout, f"Virtual qubit {virt} not found in final layout!"
+                phys = final_layout[virt]
+                if isinstance(phys, int):
+                    assert 0 <= phys < len(qc_routed.qubits), f"Physical index {phys} out of range in routed circuit!"
+                    qubit_map[virt] = qc_routed.qubits[phys]
+                else:
+                    assert phys in qc_routed.qubits, f"Physical qubit {phys} not found in output circuit!"
+                    qubit_map[virt] = qc_routed.qubits[qc_routed.qubits.index(phys)]
+            # Restore classical registers and measurement instructions
+            qc_final = add_cregs_and_measurements(qc_routed, cregs, measurements, qubit_map)
+            # Return as dag
+            return circuit_to_dag(qc_final)

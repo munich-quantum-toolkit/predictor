@@ -48,7 +48,7 @@ dependencies = [
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
     "typing-extensions>=4.1",  # for `assert_never`
-    "qiskit-ibm-transpiler>=0.15.0",
+    "qiskit-ibm-transpiler>=0.15.0; sys_platform != 'win32' or python_version != '3.13'",
     "qiskit-ibm-ai-local-transpiler>=0.5.5",
 ]
 
