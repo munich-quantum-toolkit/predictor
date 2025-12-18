@@ -122,9 +122,10 @@ filterwarnings = [
     # NOTE: qiskit-ibm-transpiler (>=0.14) imports wrappers/function_transpile.py during import,
     # which currently triggers SyntaxWarnings (invalid escape sequence, and `is` with string literal).
     # TODO: Remove these ignores once upstream fixes the warnings.
-    "ignore:.*invalid escape sequence.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
-    "ignore:.*\\\"is\\\" with.*literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     'error',
+    "ignore:.*invalid escape sequence.*:DeprecationWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:.*invalid escape sequence.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:.*is.*with.*literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     'ignore:.*pytorch.*:UserWarning:',
     'ignore:.*Values in x.*:RuntimeWarning:',
     'ignore:.*The least populated class in y has only 3 members, which is less than n_splits=5.*:UserWarning:',
