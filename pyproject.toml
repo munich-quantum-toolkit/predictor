@@ -119,6 +119,9 @@ addopts = [
 ]
 log_level = "INFO"
 filterwarnings = [
+    # NOTE: qiskit-ibm-transpiler (>=0.14) imports wrappers/function_transpile.py during import,
+    # which currently triggers SyntaxWarnings (invalid escape sequence, and `is` with string literal).
+    # TODO: Remove these ignores once upstream fixes the warnings.
     "ignore:.*invalid escape sequence.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     "ignore:.*\\\"is\\\" with.*literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     'error',
@@ -131,6 +134,7 @@ filterwarnings = [
     'ignore:.*qiskit.providers.models is deprecated since Qiskit 1.2*:DeprecationWarning:',
     'ignore:.*The class ``qiskit.qobj.*`` is deprecated as of Qiskit 1.3.*:DeprecationWarning:',
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
+    # Windows: Python 3.13 can emit a RuntimeWarning about unsupported timeouts; keep tests strict otherwise.
     'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
 
 ]

@@ -456,7 +456,12 @@ class PredictorEnv(Env):  # type: ignore[misc]
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
         ):
             altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
-        elif action_index in self.actions_routing_indices and self.layout and pm_property_set is not None:
+        elif (
+            action_index in self.actions_routing_indices
+            and self.layout is not None
+            and pm_property_set is not None
+            and "final_layout" in pm_property_set
+        ):
             self.layout.final_layout = pm_property_set["final_layout"]
 
         return altered_qc
