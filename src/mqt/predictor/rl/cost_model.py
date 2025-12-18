@@ -9,13 +9,14 @@
 """Helper functions for approximating transformations to device-native gates.
 
 This module provides a simple canonical gate cost model and approximate
-fidelity/ESP estimates based on averaged 1q/2q error rates. The current
-implementation is tailored to IBM-style backends and ships a hand-crafted
-cost table for IBM "torino".
+fidelity/ESP estimates based on averaged 1q/2q error rates.
+
+It ships hand-crafted canonical cost tables for a small set of backends
+(currently: ``ibm_torino``, ``ankaa_3``, ``emerald``).
 
 Support for additional devices is not automatic: for each new backend,
-a corresponding canonical cost table (and, if needed, device-specific
-approximations) must be added manually.
+add a corresponding canonical cost table (and, if needed, device-specific
+approximations) to ``DEVICE_CANONICAL_COSTS``.
 """
 
 from __future__ import annotations
@@ -150,9 +151,9 @@ DEVICE_CANONICAL_COSTS: dict[str, CanonicalCostTable] = {
 def get_cost_table(device_id: str) -> CanonicalCostTable:
     """Return the canonical cost table for ``device_id``, with a safe fallback.
 
-    If the device is unknown, a warning is emitted and the Torino table is used
-    as a generic fallback. This keeps the code running but the approximation
-    should be treated with care.
+    If the device is unknown, a warning is emitted and the ``ibm_torino`` table
+    is used as a generic fallback. This keeps the code running, but the
+    approximation should be treated with care.
     """
     table = DEVICE_CANONICAL_COSTS.get(device_id)
     if table is None:
@@ -176,8 +177,9 @@ def canonical_cost(
     """Return (n_1q, n_2q) cost for ``gate_name`` on the given device.
 
     Note:
-        Currently only a hand-crafted model for IBM "torino" is provided.
-        For additional devices, extend ``DEVICE_CANONICAL_COSTS`` accordingly.
+        Hand-crafted tables are available for a small set of backends
+        (see ``DEVICE_CANONICAL_COSTS``). For additional devices, extend
+        ``DEVICE_CANONICAL_COSTS`` accordingly.
     """
     table = get_cost_table(device_id)
     return table.get(gate_name, (0, 0))
