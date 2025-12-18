@@ -119,8 +119,8 @@ addopts = [
 ]
 log_level = "INFO"
 filterwarnings = [
-    "ignore:.*\"is\" with a literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     "ignore:.*invalid escape sequence.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:.*\\\"is\\\" with.*literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     'error',
     'ignore:.*pytorch.*:UserWarning:',
     'ignore:.*Values in x.*:RuntimeWarning:',
