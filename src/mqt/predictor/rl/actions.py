@@ -369,8 +369,9 @@ register_action(
                     EnlargeWithAncilla(),
                     ApplyLayout(),
                 ],
-                condition=lambda property_set: property_set["VF2Layout_stop_reason"]
-                == VF2LayoutStopReason.SOLUTION_FOUND,
+                condition=lambda property_set: (
+                    property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+                ),
             ),
         ],
     )
@@ -404,19 +405,21 @@ register_action(
         "BQSKitMapping",
         CompilationOrigin.BQSKIT,
         PassType.MAPPING,
-        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-            bqskit_circuit,
-            model=MachineModel(
-                num_qudits=device.num_qubits,
-                gate_set=get_bqskit_native_gates(device),
-                coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-            ),
-            with_mapping=True,
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-            seed=10,
-            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        transpile_pass=lambda device: (
+            lambda bqskit_circuit: bqskit_compile(
+                bqskit_circuit,
+                model=MachineModel(
+                    num_qudits=device.num_qubits,
+                    gate_set=get_bqskit_native_gates(device),
+                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
+                ),
+                with_mapping=True,
+                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+                seed=10,
+                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+            )
         ),
     )
 )
@@ -437,14 +440,16 @@ register_action(
         "BQSKitSynthesis",
         CompilationOrigin.BQSKIT,
         PassType.SYNTHESIS,
-        transpile_pass=lambda device: lambda bqskit_circuit: bqskit_compile(
-            bqskit_circuit,
-            model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
-            seed=10,
-            num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+        transpile_pass=lambda device: (
+            lambda bqskit_circuit: bqskit_compile(
+                bqskit_circuit,
+                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
+                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
+                seed=10,
+                num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
+            )
         ),
     )
 )
