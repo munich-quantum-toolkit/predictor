@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -33,7 +32,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CanonicalCostTable = Mapping[str, tuple[int, int]]
+CanonicalCostTable = dict[str, tuple[int, int]]
 
 # ---------------------------------------------------------------------------
 # Canonical cost tables
@@ -299,7 +298,6 @@ def approx_estimated_success_probability(
     n_q = max(n_qubits, 1)
     k_eff = 1.0 + (n_q - 1.0) * float(par_feature)  # ∈ [1, n_qubits]
 
-    t_hat = 0.0
     t_hat = (n_1q * tau1_avg + n_2q * tau2_avg) / k_eff
 
     # Idle-time penalty via (1 - liveness)

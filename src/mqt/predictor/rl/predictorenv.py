@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from bqskit import Circuit
-    from qiskit.passmanager import PropertySet
+    from bqskit.ir.circuit import Circuit
+    from numpy.typing import NDArray
     from qiskit.transpiler import InstructionProperties, Target
 
     from mqt.predictor.reward import figure_of_merit
@@ -36,6 +36,7 @@ from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
+from qiskit.passmanager import PropertySet
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
@@ -101,12 +102,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
 
         self.action_set = {}
-        self.actions_synthesis_indices = []
-        self.actions_layout_indices = []
-        self.actions_routing_indices = []
-        self.actions_mapping_indices = []
-        self.actions_opt_indices = []
-        self.actions_final_optimization_indices = []
+        self.actions_synthesis_indices: list[int] = []
+        self.actions_layout_indices: list[int] = []
+        self.actions_routing_indices: list[int] = []
+        self.actions_mapping_indices: list[int] = []
+        self.actions_opt_indices: list[int] = []
+        self.actions_final_optimization_indices: list[int] = []
+        self.valid_actions: list[int] = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -186,6 +188,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self._tau2_avg = 0.0
         self._tbar: float | None = None
         self._dev_avgs_cached = False
+        self.state: QuantumCircuit = QuantumCircuit()
+
+        self.error_occurred = False
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
@@ -197,7 +202,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             3. Normalizes the circuit (e.g., decompose high-level gates) so that
             reward computation is well-defined.
             4. Updates the internal state and valid action set.
-            5. Computes a shaped step reward based on the change in figure of merit.
+            5. Computes a shaped step reward based on the change in the figure of merit.
 
         Reward design:
             - For non-terminal actions, the step reward is a scaled delta between
@@ -209,10 +214,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         logger.info(f"Applying {self.action_set[action].name}")
 
-        # 1) Evaluate reward for current circuit (before applying the action)
-        prev_val, prev_kind = self.calculate_reward(mode="auto")
-        self.prev_reward = prev_val
-        self.prev_reward_kind = prev_kind
+        # 1) Evaluate reward for the current circuit (before applying the action)
+        self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         # 2) Apply the selected transpiler pass
         altered_qc = self.apply_action(action)
@@ -227,7 +230,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
 
         # 4) Update state and valid actions
-        self.state: QuantumCircuit = altered_qc
+        self.state = altered_qc
         self.num_steps += 1
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
@@ -237,20 +240,18 @@ class PredictorEnv(Env):  # type: ignore[misc]
         # 5) Compute step reward and termination flag
         if action == self.action_terminate_index:
             # Terminal action: use the exact metric as final reward
-            final_val, final_kind = self.calculate_reward(mode="exact")
-            logger.info(f"Final reward ({final_kind}): {final_val}")
-            self.prev_reward = final_val
-            self.prev_reward_kind = final_kind
+            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
+            logger.info(f"Final reward ({self.prev_reward_kind}): {self.prev_reward}")
             done = True
-            reward_val = final_val
+            reward_val = self.prev_reward
         else:
             done = False
 
             # Re-evaluate reward after applying the action
             new_val, new_kind = self.calculate_reward(mode="auto")
-            delta_reward = new_val - prev_val
+            delta_reward = new_val - self.prev_reward
 
-            if prev_kind == "approx" and new_kind == "exact":
+            if self.prev_reward_kind == "approx" and new_kind == "exact":
                 # Metrics aren't comparable across regimes; suppress delta to avoid misleading reward signal
                 delta_reward = 0.0
 
@@ -340,7 +341,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             val = approx_expected_fidelity(qc, self._p1_avg, self._p2_avg, device_id=self.device.description)
             return val, "approx"
 
-        # self.reward_function == "estimated_success_probability"
         feats = calc_supermarq_features(qc)
         val = approx_estimated_success_probability(
             qc,
@@ -365,7 +365,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[QuantumCircuit, dict[str, Any]]:
+    ) -> tuple[dict[str, int | NDArray[np.float64]], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
@@ -472,14 +472,14 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 else:
                     pm = PassManager(passes)
                 altered_qc = pm.run(self.state)
-                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+                pm_property_set = pm.property_set if hasattr(pm, "property_set") else PropertySet()
             else:
                 transpile_pass = (
                     action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
                 )
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
-                pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+                pm_property_set = pm.property_set if hasattr(pm, "property_set") else PropertySet()
 
         if action_index in (
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
@@ -493,7 +493,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
     def _handle_qiskit_layout_postprocessing(
         self,
         action: Action,
-        pm_property_set: dict[str, Any] | None,
+        pm_property_set: PropertySet | None,
         altered_qc: QuantumCircuit,
     ) -> QuantumCircuit:
         if not pm_property_set:
@@ -501,7 +501,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if action.name == "VF2PostLayout":
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm_property_set.get("post_layout")
-            if post_layout:
+            if post_layout and self.layout:
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
             if pm_property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
@@ -731,7 +731,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         check_nat_gates(qc)
         only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
-        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
+        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
         check_mapping(qc)
         mapped = check_mapping.property_set["is_swap_mapped"]
 

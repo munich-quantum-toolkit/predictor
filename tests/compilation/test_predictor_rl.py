@@ -20,7 +20,7 @@ from mqt.bench.targets import get_device
 from qiskit import transpile
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler import InstructionProperties, Target
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
@@ -104,7 +104,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
+    check_mapping = CheckMap(coupling_map=device.build_coupling_map())
     check_mapping(qc_compiled)
     mapped = check_mapping.property_set["is_swap_mapped"]
 
@@ -172,11 +172,10 @@ def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> No
     device = get_device("ibm_heron_133")
 
     # Make a native + mapped version of the circuit for exact metrics
-    coupling = CouplingMap(device.build_coupling_map())
     qc_native = transpile(
         qc,
         basis_gates=device.operation_names,
-        coupling_map=coupling,
+        coupling_map=device.build_coupling_map(),
         optimization_level=3,
     )
 
