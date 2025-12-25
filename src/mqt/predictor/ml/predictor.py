@@ -282,7 +282,6 @@ class Predictor:
             )
             for filename in path_uncompiled_circuits.glob("*.qasm")
         )
-
         for sample in results:
             training_sample, circuit_name, scores = sample
             if all(score == -1 for score in scores):

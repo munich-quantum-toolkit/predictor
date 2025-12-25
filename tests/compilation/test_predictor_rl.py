@@ -81,7 +81,6 @@ def test_qcompile_with_newly_trained_models() -> None:
     figure_of_merit = "expected_fidelity"
     device = get_device("ibm_falcon_127")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
     model_name = "model_" + figure_of_merit + "_" + device.description

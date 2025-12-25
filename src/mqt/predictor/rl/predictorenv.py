@@ -377,7 +377,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             The initial state and additional information.
         """
         super().reset(seed=seed)
-
         if isinstance(qc, QuantumCircuit):
             self.state = qc
         elif qc:
@@ -397,7 +396,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
-
         return create_feature_dict(self.state), {}
 
     def action_masks(self) -> list[bool]:
@@ -452,11 +450,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if action.origin == CompilationOrigin.BQSKIT:
             return self._apply_bqskit_action(action, action_index)
         msg = f"Origin {action.origin} not supported."
-
         raise ValueError(msg)
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
-        pm_property_set: PropertySet | None = {}
+        pm_property_set: PropertySet | None
         if getattr(action, "stochastic", False):  # Wrap stochastic action to optimize for the used figure of merit
             altered_qc, pm_property_set = self.fom_aware_compile(
                 action,
