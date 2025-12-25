@@ -12,8 +12,14 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
-- 🔧 Changed test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
+- 🔧 Change test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
+
+### Fixed
+
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
+
+### Removed
+
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 
@@ -48,9 +54,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#526]: https://github.com/munich-quantum-toolkit/predictor/pull/526
+[#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#449]: https://github.com/munich-quantum-toolkit/predictor/pull/449
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
-[#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
