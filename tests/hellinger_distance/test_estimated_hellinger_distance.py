@@ -220,10 +220,13 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             path_uncompiled_circuits=source_path,
             path_compiled_circuits=target_path,
             timeout=6000,
+            num_workers=1,
         )
 
         # Generate training data from the compiled circuits
-        ml_predictor.generate_training_data(path_uncompiled_circuits=source_path, path_compiled_circuits=target_path)
+        ml_predictor.generate_training_data(
+            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
+        )
 
         for file in [
             "training_data_estimated_hellinger_distance.npy",
