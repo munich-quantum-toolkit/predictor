@@ -43,7 +43,7 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
         path_compiled_circuits.mkdir()
 
     for i in range(2, 8):
-        qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
+        qc = get_benchmark("ghz", BenchmarkLevel.INDEP, i)
         path = path_uncompiled_circuits / f"qc{i}.qasm"
         with path.open("w", encoding="utf-8") as f:
             dump(qc, f)
@@ -63,7 +63,7 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
     assert (data_path / "names_list_expected_fidelity.npy").exists()
     assert (data_path / "scores_list_expected_fidelity.npy").exists()
 
-    test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    test_qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
     predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
 
     assert predicted.description == "ibm_falcon_127"
@@ -93,7 +93,7 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
     """Test the prediction of the device for a given figure of merit with a wrong device name."""
     num_qubits = 130
-    qc = get_benchmark("ghz", BenchmarkLevel.ALG, num_qubits)
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, num_qubits)
     with pytest.raises(
         ValueError, match=re.escape(f"No suitable device found for the given quantum circuit with {num_qubits} qubits.")
     ):
