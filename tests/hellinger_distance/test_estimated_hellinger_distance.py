@@ -165,8 +165,8 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-@pytest.mark.parametrize("model_type", ["rf", "gnn"])
-def test_train_model_and_predict(device: Target, model_type: str) -> None:
+@pytest.mark.parametrize(("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"])
+def test_train_model_and_predict(device: Target, model_type: str, verbose: bool) -> None:
     """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
     gnn = model_type == "gnn"
     if gnn and not _HAS_GNN_DEPS:
@@ -209,7 +209,7 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
     # 3. Model Training
     pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)
     if gnn:
-        trained_model = pred.train_gnn_model(training_data, num_epochs=200, patience=30)
+        trained_model = pred.train_gnn_model(training_data, num_epochs=200, patience=30, verbose=verbose)
     else:
         trained_model = pred.train_random_forest_model(training_data)
 
@@ -231,9 +231,11 @@ def test_train_model_and_predict(device: Target, model_type: str) -> None:
         assert np.allclose(predicted_values, labels, atol=5e-1)
 
 
-@pytest.mark.parametrize("model_type", ["rf", "gnn"])
+@pytest.mark.parametrize(
+    ("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"]
+)
 def test_train_and_qcompile_with_hellinger_model(
-    source_path: Path, target_path: Path, device: Target, model_type: str
+    source_path: Path, target_path: Path, device: Target, model_type: str, verbose: bool
 ) -> None:
     """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
@@ -306,7 +308,7 @@ def test_train_and_qcompile_with_hellinger_model(
 
         # Train the ML model
         if gnn:
-            ml_predictor.train_gnn_model()
+            ml_predictor.train_gnn_model(verbose=verbose)
         else:
             ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
