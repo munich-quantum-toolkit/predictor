@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
+from qiskit import QuantumCircuit
 
 from mqt.predictor.ml.helper import (
     create_dag,
@@ -34,6 +36,26 @@ def test_create_dag() -> None:
     qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3).decompose()
     dag = create_dag(qc)
     assert dag is not None
+
+
+def test_empty_circuit_dag() -> None:
+    """Test the creation of a DAG from an empty quantum circuit."""
+    qc = QuantumCircuit(2)
+
+    node_vector, edge_index, number_nodes = create_dag(qc)
+
+    # No nodes
+    assert number_nodes == 0
+
+    # node_vector empty with shape
+    assert isinstance(node_vector, torch.Tensor)
+    assert node_vector.ndim == 2
+    assert node_vector.shape[0] == 0
+
+    # edge_index empty (2, 0) and dtype long as in the code
+    assert isinstance(edge_index, torch.Tensor)
+    assert edge_index.dtype == torch.long
+    assert tuple(edge_index.shape) == (2, 0)
 
 
 def test_get_openqasm_gates() -> None:
