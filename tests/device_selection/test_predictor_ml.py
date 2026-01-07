@@ -110,17 +110,12 @@ def test_setup_multidevice_predictor_with_prediction_gnn(
     assert success
 
     data_path = get_path_training_data() / "training_data_aggregated"
-    if gnn:
-        dataset_dir = data_path / "graph_dataset_expected_fidelity"
-        assert dataset_dir.exists()
-        assert dataset_dir.is_dir()
-        assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
-        assert (data_path / "names_list_expected_fidelity.npy").exists()
-        assert (data_path / "scores_list_expected_fidelity.npy").exists()
-    else:
-        assert (data_path / "training_data_expected_fidelity.npy").exists()
-        assert (data_path / "names_list_expected_fidelity.npy").exists()
-        assert (data_path / "scores_list_expected_fidelity.npy").exists()
+    dataset_dir = data_path / "graph_dataset_expected_fidelity"
+    assert dataset_dir.exists()
+    assert dataset_dir.is_dir()
+    assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
+    assert (data_path / "names_list_expected_fidelity.npy").exists()
+    assert (data_path / "scores_list_expected_fidelity.npy").exists()
 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=True)
