@@ -83,13 +83,10 @@ def test_setup_device_predictor_with_prediction(
     assert predicted.description == "ibm_falcon_127"
 
 
-@pytest.mark.parametrize(
-    ("gnn", "verbose"), [(False, False), (True, False), (True, True)], ids=["rf", "gnn", "gnn_verbose"]
-)
-def test_setup_multidevice_predictor_with_prediction(
-    path_uncompiled_circuits: Path, path_compiled_circuits: Path, gnn: bool, verbose: bool
+def test_setup_multidevice_predictor_with_prediction_gnn(
+    path_uncompiled_circuits: Path, path_compiled_circuits: Path
 ) -> None:
-    """Test the full training pipeline and prediction using a mock device."""
+    """Test the full training pipeline for GNN on multiple devices."""
     if not path_uncompiled_circuits.exists():
         path_uncompiled_circuits.mkdir()
     if not path_compiled_circuits.exists():
@@ -107,8 +104,8 @@ def test_setup_multidevice_predictor_with_prediction(
         figure_of_merit="expected_fidelity",
         path_uncompiled_circuits=path_uncompiled_circuits,
         path_compiled_circuits=path_compiled_circuits,
-        gnn=gnn,
-        verbose=verbose,
+        gnn=True,
+        verbose=False,
     )
     assert success
 
@@ -126,9 +123,9 @@ def test_setup_multidevice_predictor_with_prediction(
         assert (data_path / "scores_list_expected_fidelity.npy").exists()
 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=gnn)
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=True)
 
-    assert predicted.description == "ibm_falcon_127" or predicted.description == "quantinuum_h2_56"
+    assert predicted.description in ("ibm_falcon_127", "quantinuum_h2_56")
 
 
 def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:

@@ -541,9 +541,7 @@ def train_model(
         for batch in train_loader:
             batch_device = batch.to(device)
             preds = model(batch_device)
-            print(batch_device.y, batch_device)
             targets = batch_device.y
-            print("preds:", preds.shape, "targets:", targets.shape)
             if targets.dim() == 1:
                 targets = targets.unsqueeze(1)
             loss = loss_fn(preds, targets)

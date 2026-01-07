@@ -242,6 +242,8 @@ def test_train_and_qcompile_with_hellinger_model(
     """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
     gnn = model_type == "gnn"
+    if gnn and not _HAS_GNN_DEPS:
+        pytest.skip("GNN optional dependencies (torch/torch-geometric) not installed")
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -297,7 +299,7 @@ def test_train_and_qcompile_with_hellinger_model(
             )
             assert dataset_dir.exists()
             assert dataset_dir.is_dir()
-            # check for controlling that the name starts with a number and ends with .safetensor asdefined in the predictor
+            # check for controlling that the name starts with a number and ends with .safetensors asdefined in the predictor
             assert any(f.is_file() and f.suffix == ".safetensors" and f.stem.isdigit() for f in dataset_dir.iterdir())
         else:
             for file in [

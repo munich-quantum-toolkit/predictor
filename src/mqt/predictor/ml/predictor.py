@@ -523,16 +523,11 @@ class Predictor:
         # Split into k-folds
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
-        # debug
-        print("Predictor", dataset)
         for _fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):
             train_subset = [dataset[i] for i in train_idx]
             val_subset = [dataset[i] for i in val_idx]
             # Transform the data into loaders
-            print("Train subset:", train_subset)
             train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-            for i in train_loader:
-                print("Batch in train loader:", i)
             val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
             # Define the GNN
             model = GNN(
