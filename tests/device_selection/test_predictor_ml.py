@@ -83,6 +83,54 @@ def test_setup_device_predictor_with_prediction(
     assert predicted.description == "ibm_falcon_127"
 
 
+@pytest.mark.parametrize(
+    ("gnn", "verbose"), [(False, False), (True, False), (True, True)], ids=["rf", "gnn", "gnn_verbose"]
+)
+def test_setup_multidevice_predictor_with_prediction(
+    path_uncompiled_circuits: Path, path_compiled_circuits: Path, gnn: bool, verbose: bool
+) -> None:
+    """Test the full training pipeline and prediction using a mock device."""
+    if not path_uncompiled_circuits.exists():
+        path_uncompiled_circuits.mkdir()
+    if not path_compiled_circuits.exists():
+        path_compiled_circuits.mkdir()
+
+    for i in range(2, 8):
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
+        path = path_uncompiled_circuits / f"qc{i}.qasm"
+        with path.open("w", encoding="utf-8") as f:
+            dump(qc, f)
+
+    device = [get_device("ibm_falcon_127"), get_device("quantinuum_h2_56")]
+    success = setup_device_predictor(
+        devices=device,
+        figure_of_merit="expected_fidelity",
+        path_uncompiled_circuits=path_uncompiled_circuits,
+        path_compiled_circuits=path_compiled_circuits,
+        gnn=gnn,
+        verbose=verbose,
+    )
+    assert success
+
+    data_path = get_path_training_data() / "training_data_aggregated"
+    if gnn:
+        dataset_dir = data_path / "graph_dataset_expected_fidelity"
+        assert dataset_dir.exists()
+        assert dataset_dir.is_dir()
+        assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
+        assert (data_path / "names_list_expected_fidelity.npy").exists()
+        assert (data_path / "scores_list_expected_fidelity.npy").exists()
+    else:
+        assert (data_path / "training_data_expected_fidelity.npy").exists()
+        assert (data_path / "names_list_expected_fidelity.npy").exists()
+        assert (data_path / "scores_list_expected_fidelity.npy").exists()
+
+    test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=gnn)
+
+    assert predicted.description == "ibm_falcon_127" or predicted.description == "quantinuum_h2_56"
+
+
 def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
     """Remove files created during testing."""
     if path_uncompiled_circuits.exists():
