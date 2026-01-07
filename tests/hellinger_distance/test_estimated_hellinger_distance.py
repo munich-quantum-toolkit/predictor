@@ -165,7 +165,9 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-@pytest.mark.parametrize(("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"])
+@pytest.mark.parametrize(
+    ("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"]
+)
 def test_train_model_and_predict(device: Target, model_type: str, verbose: bool) -> None:
     """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
     gnn = model_type == "gnn"
