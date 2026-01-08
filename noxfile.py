@@ -59,51 +59,54 @@ def lint(session: nox.Session) -> None:
 
     session.run("prek", "run", "--all-files", *session.posargs, external=True)
 
-    def _run_tests(
-        session: nox.Session,
-        *,
-        install_args: Sequence[str] = (),
-        extra_command: Sequence[str] = (),
-        pytest_run_args: Sequence[str] = (),
-    ) -> None:
-        env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
 
-        if extra_command:
-            session.run(*extra_command, env=env)
-        if "--cov" in session.posargs:
-            # Try to use the lighter-weight `sys.monitoring` coverage core available in Python 3.12+ to speed up coverage collection.
-            env["COVERAGE_CORE"] = "sysmon"
-        session.run(
-            "uv",
-            "run",
-            "--no-dev",
-            "--group",
-            "test",
-            *install_args,
-            "pytest",
-            *pytest_run_args,
-            *session.posargs,
-            "--cov-config=pyproject.toml",
-            env=env,
+def _run_tests(
+    session: nox.Session,
+    *,
+    install_args: Sequence[str] = (),
+    extra_command: Sequence[str] = (),
+    pytest_run_args: Sequence[str] = (),
+) -> None:
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+
+    if extra_command:
+        session.run(*extra_command, env=env)
+    if "--cov" in session.posargs:
+        # Try to use the lighter-weight `sys.monitoring` coverage core available in Python 3.12+ to speed up coverage collection.
+        env["COVERAGE_CORE"] = "sysmon"
+    session.run(
+        "uv",
+        "run",
+        "--no-dev",
+        "--group",
+        "test",
+        *install_args,
+        "pytest",
+        *pytest_run_args,
+        *session.posargs,
+        "--cov-config=pyproject.toml",
+        env=env,
+    )
+
+
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
+def tests(session: nox.Session) -> None:
+    """Run the test suite."""
+    _run_tests(session)
+
+
+@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
+def minimums(session: nox.Session) -> None:
+    """Test the minimum versions of dependencies."""
+    with preserve_lockfile():
+        _run_tests(
+            session,
+            install_args=["--resolution=lowest-direct"],
+            pytest_run_args=["-Wdefault"],
         )
-
-    @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
-    def tests(session: nox.Session) -> None:
-        """Run the test suite."""
-        _run_tests(session)
-
-    @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
-    def minimums(session: nox.Session) -> None:
-        """Test the minimum versions of dependencies."""
-        with preserve_lockfile():
-            _run_tests(
-                session,
-                install_args=["--resolution=lowest-direct"],
-                pytest_run_args=["-Wdefault"],
-            )
-            env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-            session.run("uv", "tree", "--frozen", env=env)
-            session.run("uv", "lock", "--refresh", env=env)
+        env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+        session.run("uv", "tree", "--frozen", env=env)
+        session.run("uv", "lock", "--refresh", env=env)
 
 
 @nox.session(reuse_venv=True)
