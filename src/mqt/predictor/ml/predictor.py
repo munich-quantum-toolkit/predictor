@@ -334,6 +334,7 @@ class Predictor:
                 value_device = [scores.get(dev.description, -1.0) for dev in self.devices]
                 gnn_training_sample = Data(
                     x=x,
+                    # unsqueeze to avoid concatenation issues later on
                     y=torch.tensor(value_device, dtype=torch.float32).unsqueeze(0),
                     edge_index=edge_idx,
                     num_nodes=n_nodes,
@@ -520,7 +521,7 @@ class Predictor:
         if k_folds < 2:
             msg = f"Not enough samples ({len(dataset)}) for k-folds (k={k_folds})."
             raise ValueError(msg)
-        # Split into k-folds
+        # Split into k-folds, stratified not needed because classification treated as regression
         kf = KFold(n_splits=k_folds, shuffle=True)
         fold_val_best_losses: list[float] = []
         for _fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):

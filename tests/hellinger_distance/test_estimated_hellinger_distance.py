@@ -22,6 +22,7 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
 from mqt.predictor.ml import Predictor as ml_Predictor
@@ -34,16 +35,9 @@ if TYPE_CHECKING:
 
     from qiskit.transpiler import Target
 
-try:
-    import torch  # type: ignore[import-not-found]
-    from torch_geometric.data import Batch, Data  # type: ignore[import-not-found]
 
-    _HAS_GNN_DEPS = True
-except ImportError:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
-    Batch = None  # type: ignore[assignment]
-    Data = None  # type: ignore[assignment]
-    _HAS_GNN_DEPS = False
+torch = pytest.importorskip("torch", exc_type=ModuleNotFoundError)
+pytest.importorskip("torch_geometric", exc_type=ModuleNotFoundError)
 
 
 @pytest.fixture(scope="module")
@@ -171,8 +165,6 @@ def test_hellinger_distance_error() -> None:
 def test_train_model_and_predict(device: Target, model_type: str, verbose: bool) -> None:
     """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
     gnn = model_type == "gnn"
-    if gnn and not _HAS_GNN_DEPS:
-        pytest.skip("GNN optional dependencies (torch/torch-geometric) not installed")
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
@@ -242,8 +234,6 @@ def test_train_and_qcompile_with_hellinger_model(
     """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
     gnn = model_type == "gnn"
-    if gnn and not _HAS_GNN_DEPS:
-        pytest.skip("GNN optional dependencies (torch/torch-geometric) not installed")
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
