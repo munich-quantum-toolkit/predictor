@@ -109,7 +109,7 @@ source = "vcs"
 version-file = "src/mqt/predictor/_version.py"
 
 
-[tool.pytest]
+[tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
 strict = true
@@ -123,9 +123,9 @@ filterwarnings = [
     # which currently triggers SyntaxWarnings (invalid escape sequence, and `is` with string literal).
     # TODO: Remove these ignores once upstream fixes the warnings.
     'error',
-    "ignore:.*invalid escape sequence.*:DeprecationWarning:qiskit_ibm_transpiler\\..*",
-    "ignore:.*invalid escape sequence.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
-    "ignore:.*is.*with.*literal.*:SyntaxWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:invalid escape sequence '\\\\w':DeprecationWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:invalid escape sequence '\\\\w':SyntaxWarning:qiskit_ibm_transpiler\\..*",
+    "ignore:\"is\" with a literal:SyntaxWarning:qiskit_ibm_transpiler\\..*",
     'ignore:.*pytorch.*:UserWarning:',
     'ignore:.*Values in x.*:RuntimeWarning:',
     'ignore:.*The least populated class in y has only 3 members, which is less than n_splits=5.*:UserWarning:',
