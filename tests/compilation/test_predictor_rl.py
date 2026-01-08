@@ -119,14 +119,15 @@ def test_qcompile_with_false_input() -> None:
         rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
-def test_qcompile_with_newly_trained_models_quantinuum() -> None:
+@pytest.mark.parametrize("device_name", ["ibm_falcon_127", "quantinuum_h2_56"])
+def test_qcompile_with_newly_trained_models(device_name: str) -> None:
     """Test the qcompile function with a newly trained model.
 
     Important: Those trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
     figure_of_merit = "expected_fidelity"
-    device = get_device("quantinuum_h2_56")
+    device = get_device(device_name)
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
@@ -136,7 +137,7 @@ def test_qcompile_with_newly_trained_models_quantinuum() -> None:
         with pytest.raises(
             FileNotFoundError,
             match=re.escape(
-                "The RL model 'model_expected_fidelity_quantinuum_h2_56' is not trained yet. Please train the model before using it."
+                f"The RL model 'model_expected_fidelity_{device_name}' is not trained yet. Please train the model before using it."
             ),
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
