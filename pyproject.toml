@@ -257,7 +257,8 @@ fom = "fom"
 
 [tool.repo-review]
 ignore = [
-    "GH200",
+  "GH200", # We use Renovate instead of Dependabot
+  "PC160", # We use a mirror of crate-ci/typos
 ]
 
 
