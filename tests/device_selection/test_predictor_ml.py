@@ -40,7 +40,7 @@ def path_compiled_circuits() -> Path:
 )
 def test_setup_device_predictor_with_prediction(
     path_uncompiled_circuits: Path, path_compiled_circuits: Path, gnn: bool, verbose: bool
-) -> None: # noqa: FBT001
+) -> None:
     """Test the full training pipeline and prediction using a mock device."""
     if not path_uncompiled_circuits.exists():
         path_uncompiled_circuits.mkdir()
