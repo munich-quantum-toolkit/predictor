@@ -878,7 +878,8 @@ def predict_device_for_figure_of_merit(
         ])
     else:
         # Open the json file save_mdl_path[:-4] + ".json"
-        with Path.open(path.with_suffix(".json"), encoding="utf-8") as f:
+        json_path = path.with_suffix(".json")
+        with json_path.open(encoding="utf-8") as f:
             json_dict = json.load(f)
 
         mlp_str = json_dict["mlp"]

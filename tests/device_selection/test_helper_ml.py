@@ -18,6 +18,7 @@ from mqt.predictor.ml.helper import (
     create_dag,
     create_feature_vector,
     get_openqasm_gates,
+    get_openqasm3_gates,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
@@ -50,6 +51,8 @@ def test_empty_circuit_dag() -> None:
 
     node_vector, edge_index, number_nodes = create_dag(qc)
 
+    num_gates = len(get_openqasm3_gates()) + 1
+    expected_feature_size = num_gates + 12
     # No nodes
     assert number_nodes == 0
 
@@ -57,7 +60,7 @@ def test_empty_circuit_dag() -> None:
     assert isinstance(node_vector, torch.Tensor)
     assert node_vector.ndim == 2
     assert node_vector.shape[0] == 0
-    assert node_vector.shape[1] > 0
+    assert node_vector.shape[1] == expected_feature_size
 
     # edge_index empty (2, 0) and dtype long as in the code
     assert isinstance(edge_index, torch.Tensor)

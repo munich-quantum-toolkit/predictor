@@ -7,7 +7,6 @@
 # Licensed under the MIT License
 
 """Tests for the machine learning device selection predictor module."""
-
 from __future__ import annotations
 
 import re
@@ -22,7 +21,6 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
-from torch_geometric.data import Batch, Data
 
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
 from mqt.predictor.ml import Predictor as ml_Predictor
@@ -32,12 +30,13 @@ from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
     from qiskit.transpiler import Target
 
-
+# Handle optional dependencies
 torch = pytest.importorskip("torch", exc_type=ModuleNotFoundError)
-pytest.importorskip("torch_geometric", exc_type=ModuleNotFoundError)
+torch_geometric_data = pytest.importorskip("torch_geometric.data", exc_type=ModuleNotFoundError)
+Batch = torch_geometric_data.Batch
+Data = torch_geometric_data.Data
 
 
 @pytest.fixture(scope="module")
@@ -217,12 +216,12 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
             out = trained_model(batch)
             out = out.squeeze(-1)
             predicted_values = out.cpu().numpy()
-            labels = np.asarray(labels_list, dtype=np.float32)
+            expected_labels = np.asarray(labels_list, dtype=np.float32)
         # it is set a tolerance value of 5e-1 just because of the small number of training samples
         # for this reason we are not interested in a very accurate prediction here and a tolerance of 0.5
         # guarantees that the test passes even if the prediction is not very accurate
         # (sometimes happens that the difference is higher than 0.3)
-        assert np.allclose(predicted_values, labels, atol=5e-1)
+        assert np.allclose(predicted_values, expected_labels, atol=5e-1)
 
 
 @pytest.mark.parametrize(
@@ -289,7 +288,7 @@ def test_train_and_qcompile_with_hellinger_model(
             )
             assert dataset_dir.exists()
             assert dataset_dir.is_dir()
-            # check for controlling that the name starts with a number and ends with .safetensors asdefined in the predictor
+            # check for controlling that the name starts with a number and ends with .safetensors as defined in the predictor
             assert any(f.is_file() and f.suffix == ".safetensors" and f.stem.isdigit() for f in dataset_dir.iterdir())
         else:
             for file in [
