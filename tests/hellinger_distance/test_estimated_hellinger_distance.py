@@ -7,6 +7,7 @@
 # Licensed under the MIT License
 
 """Tests for the machine learning device selection predictor module."""
+
 from __future__ import annotations
 
 import re
@@ -30,6 +31,7 @@ from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
     from qiskit.transpiler import Target
 
 # Handle optional dependencies

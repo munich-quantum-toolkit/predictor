@@ -17,8 +17,8 @@ from qiskit import QuantumCircuit
 from mqt.predictor.ml.helper import (
     create_dag,
     create_feature_vector,
-    get_openqasm_gates,
     get_openqasm3_gates,
+    get_openqasm_gates,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
