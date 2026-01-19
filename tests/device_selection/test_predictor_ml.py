@@ -98,9 +98,9 @@ def test_setup_multidevice_predictor_with_prediction_gnn(
         with path.open("w", encoding="utf-8") as f:
             dump(qc, f)
 
-    device = [get_device("ibm_falcon_127"), get_device("quantinuum_h2_56")]
+    devices = [get_device("ibm_falcon_127"), get_device("quantinuum_h2_56")]
     success = setup_device_predictor(
-        devices=device,
+        devices=devices,
         figure_of_merit="expected_fidelity",
         path_uncompiled_circuits=path_uncompiled_circuits,
         path_compiled_circuits=path_compiled_circuits,

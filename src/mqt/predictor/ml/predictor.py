@@ -666,7 +666,6 @@ class Predictor:
 
         # Device handling
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model.to(device)
         # Optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=dict_best_hyper["lr"])
         # Train-validation split (needed for early stopping)
