@@ -15,7 +15,6 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
-from qiskit.transpiler.basepasses import BasePass as QiskitBasePass
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
     pass
@@ -25,6 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
+    from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
@@ -58,6 +58,7 @@ from mqt.predictor.reward import (
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
@@ -328,16 +329,13 @@ class PredictorEnv(Env):
                 self.device.operation_names,
                 CouplingMap(self.device.build_coupling_map()) if self.layout else None,
             )
-            assert isinstance(passes_, list)
-            passes = cast("list[QiskitBasePass]", passes_)
+            passes = cast("list[Task]", passes_)
             assert action.do_while is not None
             pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
         else:
-            transpile_pass = (
-                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-            )
-            assert isinstance(transpile_pass, QiskitBasePass)
-            pm = PassManager(transpile_pass)
+            passes_ = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+            passes = cast("list[Task]", passes_)
+            pm = PassManager(passes)
 
         altered_qc = pm.run(self.state)
 
@@ -381,7 +379,7 @@ class PredictorEnv(Env):
         passes = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
         assert isinstance(passes, list)
         for pass_ in passes:
-            assert isinstance(pass_, TketBasePass)
+            assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
             pass_.apply(tket_qc)
 
         qbs = tket_qc.qubits
