@@ -62,14 +62,24 @@ def test_predictor_env_hellinger_error() -> None:
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
 
 
-def test_qcompile_with_newly_trained_models() -> None:
+def test_qcompile_with_false_input() -> None:
+    """Test the qcompile function with false input."""
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
+        rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
+    with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
+        rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
+
+
+@pytest.mark.parametrize("device_name", ["ibm_falcon_127", "quantinuum_h2_56"])
+def test_qcompile_with_newly_trained_models(device_name: str) -> None:
     """Test the qcompile function with a newly trained model.
 
     Important: Those trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
     figure_of_merit = "expected_fidelity"
-    device = get_device("ibm_falcon_127")
+    device = get_device(device_name)
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
@@ -79,7 +89,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         with pytest.raises(
             FileNotFoundError,
             match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+                f"The RL model 'model_expected_fidelity_{device_name}' is not trained yet. Please train the model before using it."
             ),
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
@@ -98,15 +108,6 @@ def test_qcompile_with_newly_trained_models() -> None:
     assert qc_compiled.layout is not None
     assert compilation_information is not None
     assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
-
-
-def test_qcompile_with_false_input() -> None:
-    """Test the qcompile function with false input."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
-    with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
-        rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
-    with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
-        rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
 def test_warning_for_unidirectional_device() -> None:
