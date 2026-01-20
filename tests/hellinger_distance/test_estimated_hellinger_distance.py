@@ -135,19 +135,19 @@ def test_create_device_specific_feature_dict(device: Target) -> None:
 
 def test_hellinger_distance() -> None:
     """Test the calculation of the Hellinger distance."""
-    p = [0.0, 1.0]
-    q = [1.0, 0.0]
-    distance = hellinger_distance(p, q)
-    assert distance == 1
+    p = np.array([0.0, 1.0])
+    q = np.array([1.0, 0.0])
+    assert hellinger_distance(p, q) == 1
 
 
 def test_hellinger_distance_error() -> None:
     """Test error during Hellinger distance calculation."""
-    valid = [0.5, 0.5]
-    invalid = [0.5, 0.4]
+    valid = np.array([0.5, 0.5])
+    invalid = np.array([0.5, 0.4])
 
     with pytest.raises(AssertionError, match="q is not a probability distribution"):
         hellinger_distance(p=valid, q=invalid)
+
     with pytest.raises(AssertionError, match="p is not a probability distribution"):
         hellinger_distance(p=invalid, q=valid)
 
@@ -163,7 +163,7 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
 
     # 1. Feature Extraction
     feature_vector = calc_device_specific_features(qc, device)
-    feature_vector_list = [feature_vector] * n_circuits
+    feature_vector_list = np.tile(feature_vector, (n_circuits, 1))
 
     # 2. Label Generation
     rng = np.random.default_rng()
@@ -172,7 +172,7 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     noiseless = np.zeros_like(noisy)
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
-    labels_list = [distance_label] * n_circuits
+    labels_list = np.full(n_circuits, distance_label)
     training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
 
     # 3. Model Training
@@ -254,12 +254,7 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
     rng = np.random.default_rng()
     random_int = rng.integers(0, 10)
 
-    feature_vector = rng.random(random_int)
-    feature_vector_list = [feature_vector]
-
-    distance_label = rng.random(random_int)
-    labels_list = [distance_label]
-    training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    training_data = TrainingData(X_train=rng.random(random_int), y_train=rng.random(random_int))
 
     pred = ml_Predictor(
         figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27"), get_device("ibm_falcon_127")]

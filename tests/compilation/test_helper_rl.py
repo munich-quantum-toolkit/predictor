@@ -17,6 +17,7 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
 from qiskit.transpiler import PassManager
+from qiskit.transpiler.basepasses import BasePass as QiskitBasePass
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
 from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
@@ -51,13 +52,18 @@ def test_vf2_layout_and_postlayout() -> None:
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
     for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
-        layout_pass = None
+        layout_pass: QiskitBasePass | None = None
         for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
             if layout_action.name == "VF2Layout":
-                layout_pass = layout_action.transpile_pass(dev)
+                assert callable(layout_action.transpile_pass)
+                layout_pass_ = layout_action.transpile_pass(dev)
+                assert isinstance(layout_pass_, QiskitBasePass)
+                layout_pass = layout_pass_
                 break
+        assert isinstance(layout_pass, QiskitBasePass)
         pm = PassManager(layout_pass)
         layouted_qc = pm.run(qc)
+        assert layouted_qc.layout is not None
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
     dev_success = get_device("ibm_falcon_27")
@@ -66,11 +72,15 @@ def test_vf2_layout_and_postlayout() -> None:
 
     initial_layout_before = qc_transpiled.layout.initial_layout
 
-    post_layout_pass = None
+    post_layout_pass: QiskitBasePass | None = None
     for layout_action in get_actions_by_pass_type()[PassType.FINAL_OPT]:
         if layout_action.name == "VF2PostLayout":
-            post_layout_pass = layout_action.transpile_pass(dev_success)
+            assert callable(layout_action.transpile_pass)
+            post_layout_pass_ = layout_action.transpile_pass(dev_success)
+            assert isinstance(post_layout_pass_, QiskitBasePass)
+            post_layout_pass = post_layout_pass_
             break
+    assert isinstance(post_layout_pass, QiskitBasePass)
 
     pm = PassManager(post_layout_pass)
     altered_qc = pm.run(qc_transpiled)
