@@ -252,9 +252,8 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 def test_predict_device_for_estimated_hellinger_distance_no_device_provided() -> None:
     """Test the error handling of the device selection predictor when no device is provided for the Hellinger distance model."""
     rng = np.random.default_rng()
-    random_int = rng.integers(0, 10)
-
-    training_data = TrainingData(X_train=rng.random(random_int), y_train=rng.random(random_int))
+    n_samples = rng.integers(1, 10)
+    training_data = TrainingData(X_train=rng.random((n_samples, 1)), y_train=rng.random(n_samples))
 
     pred = ml_Predictor(
         figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27"), get_device("ibm_falcon_127")]
