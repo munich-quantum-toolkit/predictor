@@ -11,13 +11,9 @@
 from __future__ import annotations
 
 import logging
-import sys
 from typing import TYPE_CHECKING, Any
 
 from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
-
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    pass
 
 if TYPE_CHECKING:
     from collections.abc import Callable

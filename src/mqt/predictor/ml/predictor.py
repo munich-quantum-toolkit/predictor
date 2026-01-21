@@ -11,20 +11,15 @@
 from __future__ import annotations
 
 import logging
-import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from joblib import dump as joblib_dump
-
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    pass
-
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
+from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
