@@ -353,7 +353,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             if post_layout:
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
-            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+            if pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
+                return self.state
             assert pm.property_set["layout"]
         else:
             assert pm.property_set["layout"]
@@ -379,7 +380,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc)
+        altered_qc = tk_to_qiskit(tket_qc, perm_warning=False)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None

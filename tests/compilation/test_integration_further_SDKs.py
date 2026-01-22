@@ -218,7 +218,7 @@ def test_tket_routing(available_actions_dict: dict[str, Action]) -> None:
     qubit_map = {qbs[i]: Qubit("q", i) for i in range(len(qbs))}
     tket_qc.rename_units(qubit_map)  # type: ignore[arg-type]
 
-    mapped_qc = tk_to_qiskit(tket_qc)
+    mapped_qc = tk_to_qiskit(tket_qc, perm_warning=False)
 
     final_layout = final_layout_pytket_to_qiskit(tket_qc, mapped_qc)
 
