@@ -211,6 +211,15 @@ class PredictorEnv(Env):  # type: ignore[misc]
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
+    def _is_valid_circuit(self) -> bool:
+        for instruction in self.state.data:
+            if instruction.operation.name == "barrier":
+                continue
+            qubit_indices = tuple(self.state.find_bit(q).index for q in instruction.qubits)
+            if not self.device.instruction_supported(operation_name=instruction.operation.name, qargs=qubit_indices):
+                return False
+        return True
+
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
         if self.reward_function == "expected_fidelity":
@@ -441,7 +450,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
         mapped = check_mapping.property_set["is_swap_mapped"]
 
         if mapped and self.layout is not None:  # The circuit is correctly mapped.
-            return [self.action_terminate_index, *self.actions_opt_indices]
+            if self._is_valid_circuit():  # The circuit respects native gates (icl. directionality).
+                return [self.action_terminate_index, *self.actions_opt_indices]
+            return self.actions_opt_indices
 
         if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
             return self.actions_routing_indices
