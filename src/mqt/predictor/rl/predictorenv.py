@@ -561,33 +561,47 @@ class PredictorEnv(Env):  # type: ignore[misc]
         routed = self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if mapped else False
 
         actions = []
+        flexible = False
+        strict = True
 
         # Initial state
         if not synthesized and not mapped and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_mapping_and_routing_indices)
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_opt_indices)
+            if flexible:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_and_routing_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if strict:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
 
         # LEFT TOP
         if synthesized and not mapped and not routed:
-            actions.extend(self.actions_mapping_and_routing_indices)
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_opt_indices)
+            if flexible:
+                actions.extend(self.actions_mapping_and_routing_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if strict:
+                actions.extend(self.actions_mapping_and_routing_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_structure_preserving_indices)
 
         # LEFT BOTTOM
-        if not synthesized and mapped and not routed:
+        if not synthesized and mapped and not routed and flexible:
             actions.extend(self.actions_synthesis_indices)
             actions.extend(self.actions_routing_indices)
             actions.extend(self.actions_opt_indices)
 
         # RIGHT TOP
         if synthesized and mapped and not routed:
-            actions.extend(self.actions_routing_indices)
-            actions.extend(self.actions_opt_indices)
+            if flexible:
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+            if strict:
+                actions.extend(self.actions_routing_indices)
 
         # RIGHT BOTTOM
-        if not synthesized and mapped and routed:
+        if not synthesized and mapped and routed and flexible:
             actions.extend(self.actions_synthesis_indices)
             actions.extend(self.actions_opt_indices)
 
@@ -598,5 +612,4 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 *self.actions_structure_preserving_indices,
                 *self.actions_final_optimization_indices,
             ]
-
         return actions
