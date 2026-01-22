@@ -108,7 +108,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_synthesis_indices = []
         self.actions_layout_indices = []
         self.actions_routing_indices = []
-        self.actions_mapping_indices = []
+        self.actions_mapping_and_routing_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
         self.actions_structure_preserving_indices = []  # Actions that preserves the mapping and native gates
@@ -144,7 +144,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             index += 1
         for elem in action_dict[PassType.MAPPING]:
             self.action_set[index] = elem
-            self.actions_mapping_indices.append(index)
+            self.actions_mapping_and_routing_indices.append(index)
             index += 1
         for elem in action_dict[PassType.FINAL_OPT]:
             self.action_set[index] = elem
@@ -367,7 +367,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
             pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
 
         if action_index in (
-            self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
+            self.actions_layout_indices
+            + self.actions_mapping_and_routing_indices
+            + self.actions_final_optimization_indices
         ):
             altered_qc = self._handle_qiskit_layout_postprocessing(action, pm_property_set, altered_qc)
         elif (
@@ -495,7 +497,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         elif action_index in self.actions_synthesis_indices:
             factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action.transpile_pass)
             bqskit_compiled_qc = factory(self.device)(bqskit_qc)
-        elif action_index in self.actions_mapping_indices:
+        elif action_index in self.actions_mapping_and_routing_indices:
             factory = cast(
                 "Callable[[Target], Callable[[Circuit], tuple[Circuit, list[int], list[int]]]]",
                 action.transpile_pass,
@@ -510,7 +512,21 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
-    def is_circuit_mapped(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
+    def is_circuit_mapped(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
+        """True if every logical qubit in the circuit has a physical assignment."""
+        if isinstance(layout, TranspileLayout):
+            # Use final_layout if available; otherwise fallback to initial_layout
+            layout = layout.final_layout or layout.initial_layout
+
+        v2p = layout.get_virtual_bits()
+        for instr in circuit.data:
+            for q in instr.qubits:
+                if q not in v2p:
+                    # Logical qubit not assigned
+                    return False
+        return True
+
+    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
         """Check if a circuit is fully routed/mapped to the device, including directionality.
 
         A circuit is considered mapped if all two-qubit gates are on qubits
@@ -527,7 +543,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         directed_edges = set(coupling_map.get_edges())
 
         for instr in circuit.data:
-            qubits = [q._index for q in instr.qubits]
+            qubits = [q._index for q in instr.qubits]  # noqa: SLF001
             if len(qubits) == 2:
                 q0, q1 = qubits
                 # If this two-qubit gate is not allowed in the device coupling map, return False
@@ -536,38 +552,51 @@ class PredictorEnv(Env):  # type: ignore[misc]
         return True
 
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine valid actions based on circuit state: synthesized, layouted, routed."""
+        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
         synthesized = check_nat_gates.property_set["all_gates_in_basis"]
-        layouted = self.layout is not None
-        routed = self.is_circuit_mapped(self.state, CouplingMap(self.device.build_coupling_map()))
+        mapped = self.is_circuit_mapped(self.state, self.layout) if self.layout else False
+        # Routing is only allowed after mapping
+        routed = self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if mapped else False
+
+        actions = []
+
+        # Initial state
+        if not synthesized and not mapped and not routed:
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_mapping_and_routing_indices)
+            actions.extend(self.actions_layout_indices)
+            actions.extend(self.actions_opt_indices)
+
+        # LEFT TOP
+        if synthesized and not mapped and not routed:
+            actions.extend(self.actions_mapping_and_routing_indices)
+            actions.extend(self.actions_layout_indices)
+            actions.extend(self.actions_opt_indices)
+
+        # LEFT BOTTOM
+        if not synthesized and mapped and not routed:
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_routing_indices)
+            actions.extend(self.actions_opt_indices)
+
+        # RIGHT TOP
+        if synthesized and mapped and not routed:
+            actions.extend(self.actions_routing_indices)
+            actions.extend(self.actions_opt_indices)
+
+        # RIGHT BOTTOM
+        if not synthesized and mapped and routed:
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_opt_indices)
 
         # Final state
-        if synthesized and layouted and routed:
+        if synthesized and mapped and routed:
             return [
                 self.action_terminate_index,
                 *self.actions_structure_preserving_indices,
                 *self.actions_final_optimization_indices,
             ]
-
-        actions = []
-
-        # Synthesis is possible if not fully synthesized
-        if not synthesized:
-            actions.extend(self.actions_synthesis_indices)
-
-        # Layout can be explored if not layouted
-        if not layouted:
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_mapping_indices)
-
-        # Routing is only valid if layout is assigned
-        if layouted and not routed:
-            actions.extend(self.actions_routing_indices)
-            actions.extend(self.actions_mapping_indices)
-
-        # General optimizations can happen in any non-final state
-        actions.extend(self.actions_opt_indices)
 
         return actions
