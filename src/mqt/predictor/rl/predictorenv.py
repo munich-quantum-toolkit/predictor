@@ -46,7 +46,6 @@ from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
-    CheckGateDirection,
     EnlargeWithAncilla,
     FullAncillaAllocation,
     GatesInBasis,
@@ -236,26 +235,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.state._layout = self.layout  # noqa: SLF001
 
         return create_feature_dict(self.state), reward_val, done, False, {}
-
-    def _verify_native_mapped(self) -> tuple[bool, bool]:
-        """Check if the current circuit is fully valid for the device."""
-        is_native, is_mapped = True, True
-        for instruction in self.state.data:
-            if instruction.operation.name == "barrier":
-                continue
-            qubit_indices = tuple(self.state.find_bit(q).index for q in instruction.qubits)
-            # Is this operation generally in the device's basis gates?
-            if instruction.operation.name not in self.device.operation_names:
-                logger.debug(f"Instruction {instruction.operation.name} is not in the device's basis gates.")
-                is_native = False
-
-            # Is this operation supported on these specific qubits?
-            if not self.device.instruction_supported(operation_name=instruction.operation.name, qargs=qubit_indices):
-                logger.debug(
-                    f"Instruction {instruction.operation.name} on qubits {qubit_indices} is not supported by the device."
-                )
-                is_mapped = False
-        return is_native, is_mapped
 
     def calculate_reward(self, qc: QuantumCircuit | None = None) -> float:
         """Calculates and returns the reward for either the current state or a quantum circuit (if provided)."""
@@ -531,57 +510,64 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
+    def is_circuit_mapped(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
+        """Check if a circuit is fully routed/mapped to the device, including directionality.
+
+        A circuit is considered mapped if all two-qubit gates are on qubits
+        allowed by the coupling map and follow the allowed direction.
+
+        Args:
+            circuit: QuantumCircuit to check.
+            coupling_map: CouplingMap of the target device.
+
+        Returns:
+            True if fully mapped and directed, False otherwise.
+        """
+        # Create a set of directed edges for fast lookup
+        directed_edges = set(coupling_map.get_edges())
+
+        for instr in circuit.data:
+            qubits = [q._index for q in instr.qubits]
+            if len(qubits) == 2:
+                q0, q1 = qubits
+                # If this two-qubit gate is not allowed in the device coupling map, return False
+                if (q0, q1) not in directed_edges:
+                    return False
+        return True
+
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine the valid actions for the current circuit state."""
-        # Check if circuit uses only native gates
+        """Determine valid actions based on circuit state: synthesized, layouted, routed."""
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
-        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+        synthesized = check_nat_gates.property_set["all_gates_in_basis"]
+        layouted = self.layout is not None
+        routed = self.is_circuit_mapped(self.state, CouplingMap(self.device.build_coupling_map()))
 
-        # Check if circuit is mapped to the device coupling map
-        # Note this does not validate directionality of the connectivity between  qubits.
-        # If you need to check gates are implemented in a native direction for a target use the :class:`~.CheckGateDirection` pass instead.
-        # check_mapping = CheckMap(coupling_map=CouplingMap(self.device.build_coupling_map()))
-        # check_mapping(self.state)
-        # mapped = check_mapping.property_set["is_swap_mapped"]
-        check_direction = CheckGateDirection(coupling_map=CouplingMap(self.device.build_coupling_map()))
-        check_direction(self.state)
-        mapped = check_direction.property_set["all_gates_in_basis_and_direction"]
+        # Final state
+        if synthesized and layouted and routed:
+            return [
+                self.action_terminate_index,
+                *self.actions_structure_preserving_indices,
+                *self.actions_final_optimization_indices,
+            ]
 
-        verified_native, verified_mapped = self._verify_native_mapped()
+        actions = []
 
-        if verified_mapped != mapped:
-            logger.warning(
-                f"Discrepancy in mapping verification: CheckMap says {mapped}, _verify_native_mapped says {verified_mapped}."
-            )
-            mapped = verified_mapped
-        if verified_native != only_nat_gates:
-            logger.warning(
-                f"Discrepancy in native gate verification: GatesInBasis says {only_nat_gates}, _verify_native_mapped says {verified_native}."
-            )
-            only_nat_gates = verified_native
+        # Synthesis is possible if not fully synthesized
+        if not synthesized:
+            actions.extend(self.actions_synthesis_indices)
 
-        if not only_nat_gates:
-            if not mapped:
-                # Non-native + unmapped → synthesis or optimization
-                return self.actions_synthesis_indices + self.actions_opt_indices
-            # Non-native + mapped → synthesis or structure-preserving (native gates & mapping)
-            return self.actions_synthesis_indices + self.actions_structure_preserving_indices
+        # Layout can be explored if not layouted
+        if not layouted:
+            actions.extend(self.actions_layout_indices)
+            actions.extend(self.actions_mapping_indices)
 
-        if mapped:
-            if self.layout is not None:
-                # Native + fully mapped & layout assigned → terminate or fine-tune
-                return [
-                    self.action_terminate_index,
-                    *self.actions_structure_preserving_indices,
-                    *self.actions_final_optimization_indices,
-                ]
-            # Mapped but no explicit layout yet → explore layout/mapping improvements
-            return (
-                self.actions_structure_preserving_indices + self.actions_layout_indices + self.actions_mapping_indices
-            )
-        if self.layout is not None:
-            # Layout chosen but not mapped → must do routing
-            return self.actions_routing_indices
-        # Not mapped and without layout → explore layout/mapping/optimizations
-        return self.actions_opt_indices + self.actions_layout_indices + self.actions_mapping_indices
+        # Routing is only valid if layout is assigned
+        if layouted and not routed:
+            actions.extend(self.actions_routing_indices)
+            actions.extend(self.actions_mapping_indices)
+
+        # General optimizations can happen in any non-final state
+        actions.extend(self.actions_opt_indices)
+
+        return actions
