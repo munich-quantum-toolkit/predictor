@@ -413,10 +413,19 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm_property_set.get("post_layout")
             if post_layout:
-                altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+                try:
+                    altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+                except Exception as e:
+                    logger.warning(
+                        "VF2PostLayout postprocessing failed. Contintinuing with previous circuit. Error: %s", e
+                    )
+                    return self.state
         elif action.name == "VF2Layout":
             if pm_property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
                 assert pm_property_set["layout"]
+            else:
+                logger.warning("VF2Layout did not find a solution. Continuing with previous circuit.")
+                return self.state
         else:
             assert pm_property_set["layout"]
 
