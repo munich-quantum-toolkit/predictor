@@ -15,32 +15,54 @@ import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 from joblib import dump as joblib_dump
+from torch import nn
+from torch_geometric.loader import DataLoader
+from typing_extensions import Unpack
+
+from mqt.predictor.ml.gnn import GNN
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
     from typing import assert_never
 else:
     from typing_extensions import assert_never
 
+import gc
+import json
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
+import torch
 from joblib import Parallel, delayed, load
 from mqt.bench.targets import get_device
+from optuna.samplers import TPESampler
+
+# cspell:disable-next-line
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
+from safetensors.torch import load_file, save_file
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, KFold, train_test_split
+from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.ml.helper import (
     TrainingData,
+    create_dag,
     create_feature_vector,
+    evaluate_classification_model,
+    evaluate_regression_model,
+    get_gnn_input_features,
     get_path_trained_model,
+    get_path_trained_model_gnn,
     get_path_training_circuits,
     get_path_training_circuits_compiled,
     get_path_training_data,
+    train_model,
 )
 from mqt.predictor.reward import (
     crit_depth,
@@ -53,13 +75,29 @@ from mqt.predictor.rl import rl_compile
 from mqt.predictor.utils import timeout_watcher
 
 if TYPE_CHECKING:
+    import torch_geometric
+    from numpy._typing import NDArray
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
 
+
+GNNSample = tuple[torch.Tensor, torch.Tensor | None, torch.Tensor, int, str]
+FeatureSample = tuple[list[float], str]
+TrainingSample = GNNSample | FeatureSample
+
 plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
+
+
+class TrainGNNKwargs(TypedDict, total=False):
+    """Arguments for training the GNN model."""
+
+    num_epochs: int
+    num_trials: int
+    verbose: bool
+    patience: int
 
 
 def setup_device_predictor(
@@ -69,6 +107,9 @@ def setup_device_predictor(
     path_compiled_circuits: Path | None = None,
     path_training_data: Path | None = None,
     timeout: int = 600,
+    *,
+    gnn: bool = False,
+    **gnn_kwargs: Unpack[TrainGNNKwargs],
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
@@ -79,33 +120,37 @@ def setup_device_predictor(
         path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
         path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
         timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
+        gnn: Whether to use a GNN for training. Defaults to False.
+        gnn_kwargs: Additional keyword arguments for GNN training.
 
     Returns:
         True if the setup was successful, False otherwise.
     """
-    predictor = Predictor(
-        figure_of_merit=figure_of_merit,
-        devices=devices,
-    )
+    predictor = Predictor(figure_of_merit=figure_of_merit, devices=devices, gnn=gnn)
     try:
-        logger.info(f"Start the training for the figure of merit: {figure_of_merit}")
+        logger.info("Start the training for the figure of merit: %s", figure_of_merit)
         # Step 1: Generate compiled circuits for all devices
         predictor.compile_training_circuits(
             path_uncompiled_circuits=path_uncompiled_circuits,
             path_compiled_circuits=path_compiled_circuits,
             timeout=timeout,
         )
-        logger.info(f"Generated compiled circuit for {figure_of_merit}")
+        logger.info("Generated compiled circuit for %s", figure_of_merit)
         # Step 2: Generate training data from the compiled circuits
         predictor.generate_training_data(
             path_uncompiled_circuits=path_uncompiled_circuits,
             path_compiled_circuits=path_compiled_circuits,
             path_training_data=path_training_data,
         )
-        logger.info(f"Generated training data for {figure_of_merit}")
+        logger.info("Generated training data for %s", figure_of_merit)
+
         # Step 3: Train the random forest classifier
-        predictor.train_random_forest_model()
-        logger.info(f"Trained random forest classifier for {figure_of_merit}")
+        if not predictor.gnn:
+            predictor.train_random_forest_model()
+            logger.info("Trained random forest classifier for %s", figure_of_merit)
+        else:
+            predictor.train_gnn_model(**gnn_kwargs)
+            logger.info("Trained random GNN for %s", figure_of_merit)
 
     except FileNotFoundError:
         logger.exception("File not found during setup.")
@@ -129,6 +174,8 @@ class Predictor:
         self,
         devices: list[Target],
         figure_of_merit: figure_of_merit = "expected_fidelity",
+        *,
+        gnn: bool = False,
         logger_level: int = logging.INFO,
     ) -> None:
         """Initializes the Predictor class.
@@ -137,12 +184,13 @@ class Predictor:
             figure_of_merit: The figure of merit to be used for training.
             devices: The devices to be used for training.
             logger_level: The level of the logger. Defaults to logging.INFO.
-
+            gnn: Decide if using GNN or other models
         """
         logger.setLevel(logger_level)
 
         self.figure_of_merit = figure_of_merit
         self.devices = devices
+        self.gnn = gnn
         self.devices.sort(
             key=lambda x: x.description
         )  # sorting is necessary to determine the ground truth label later on when generating the training data
@@ -278,15 +326,47 @@ class Predictor:
         )
         for sample in results:
             training_sample, circuit_name, scores = sample
-            if all(score == -1 for score in scores):
+            if all(score == -1 for score in scores.values()):
                 continue
-            training_data.append(training_sample)
+
+            if self.gnn:
+                x, _y, edge_idx, n_nodes, target_label = training_sample
+                value_device = [scores.get(dev.description, -1.0) for dev in self.devices]
+                gnn_training_sample = Data(
+                    x=x,
+                    # unsqueeze to avoid concatenation issues later on
+                    y=torch.tensor(value_device, dtype=torch.float32).unsqueeze(0),
+                    edge_index=edge_idx,
+                    num_nodes=n_nodes,
+                    target_label=target_label,
+                )
+
+            training_data.append(gnn_training_sample if self.gnn else training_sample)
             names_list.append(circuit_name)
             scores_list.append(scores)
 
         with resources.as_file(path_training_data) as path:
-            data = np.asarray(training_data, dtype=object)
-            np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+            if self.gnn:
+                dataset_dir = path / f"graph_dataset_{self.figure_of_merit}"
+                dataset_dir.mkdir(parents=True, exist_ok=True)
+
+                for idx, data in enumerate(training_data):
+                    # data is a torch_geometric.data.Data object
+                    tensors = {
+                        "x": data.x,  # node features
+                        "y": data.y,  # target values per device
+                        "edge_index": data.edge_index,
+                        "num_nodes": torch.tensor([data.num_nodes], dtype=torch.int64),
+                    }
+                    save_file(tensors, str(dataset_dir / f"{idx}.safetensors"))
+
+                    # target_label is a string; save it separately
+                    label_path = dataset_dir / f"{idx}.label"
+                    label_path.write_text(str(data.target_label), encoding="utf-8")
+            else:
+                data = np.asarray(training_data, dtype=object)
+                np.save(str(path / ("training_data_" + self.figure_of_merit + ".npy")), data)
+
             data = np.asarray(names_list, dtype=str)
             np.save(str(path / ("names_list_" + self.figure_of_merit + ".npy")), data)
             data = np.asarray(scores_list, dtype=object)
@@ -298,7 +378,7 @@ class Predictor:
         path_uncompiled_circuit: Path,
         path_compiled_circuits: Path,
         logger_level: int = logging.INFO,
-    ) -> tuple[tuple[list[Any], Any], str, list[float]]:
+    ) -> tuple[TrainingSample, str, dict[str, float]]:
         """Handles to create a training sample from a given file.
 
         Arguments:
@@ -356,14 +436,276 @@ class Predictor:
         if num_not_empty_entries == 0:
             logger.warning("no compiled circuits found for:" + str(file))
 
-        scores_list = list(scores.values())
+        scores_list = scores
         target_label = max(scores, key=lambda k: scores[k])
 
         qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
-        feature_vec = create_feature_vector(qc)
-        training_sample = (feature_vec, target_label)
+        training_sample: TrainingSample
+        if self.gnn:
+            x, edge_index, number_of_gates = create_dag(qc)
+            training_sample = (x, None, edge_index, number_of_gates, target_label)
+        else:
+            feature_vec = create_feature_vector(qc)
+            training_sample = (feature_vec, target_label)
         circuit_name = str(file).split(".")[0]
         return training_sample, circuit_name, scores_list
+
+    def objective(
+        self,
+        trial: optuna.Trial,
+        dataset: NDArray[np.float64] | list[torch_geometric.data.Data],
+        task: str,
+        in_feats: int,
+        num_outputs: int,
+        loss_fn: nn.Module,
+        k_folds: int,
+        batch_size: int = 32,
+        num_epochs: int = 10,
+        patience: int = 10,
+        device: str | None = None,
+        *,
+        verbose: bool = False,
+    ) -> float:
+        """Objective function for Optuna GNN hyperparameter optimization.
+
+        Arguments:
+            trial: The Optuna trial object.
+            dataset: Dataset used for training and validation (classical or GNN).
+            task: Task type, e.g. "classification", or "regression".
+            in_feats: Number of input node features.
+            num_outputs: Number of model outputs (classes or regression targets).
+            loss_fn: Loss function to optimize.
+            k_folds: Number of cross-validation folds.
+            batch_size: Batch size for training.
+            num_epochs: Maximum number of training epochs per fold.
+            patience: Early-stopping patience (epochs without improvement).
+            device: Device to use for training (e.g. "cpu" or "cuda"), or None.
+            verbose: Whether to print verbose output during training.
+
+        Returns:
+            mean_val: The mean validation metric considering the k-folds.
+        """
+        # Type of device used
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        device_obj = torch.device(device)
+
+        hidden_dim = trial.suggest_int("hidden_dim", 8, 64)
+        num_conv_wo_resnet = trial.suggest_int("num_conv_wo_resnet", 1, 3)
+        num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 9)
+        dropout = trial.suggest_categorical("dropout", [0.0, 0.1, 0.2, 0.3])
+        sag_pool = trial.suggest_categorical("sag_pool", [False, True])
+        bidirectional = trial.suggest_categorical("bidirectional", [False, True])  # True, False])
+        mlp_options = [
+            "none",
+            "32",
+            "64",
+            "128",
+            "256",
+            "64,32",
+            "128,32",
+            "128,64",
+            "256,32",
+            "256,64",
+            "256,128",
+            "128,64,32",
+            "256,128,64",
+        ]
+
+        mlp_str = trial.suggest_categorical("mlp", mlp_options)
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+        lr = trial.suggest_categorical("lr", [1e-2, 1e-3, 1e-4])
+        # Ensure at least 2 folds
+        max_splits = len(dataset)
+        k_folds = min(max(2, k_folds), max_splits)
+        if k_folds < 2:
+            msg = f"Not enough samples ({len(dataset)}) for k-folds (k={k_folds})."
+            raise ValueError(msg)
+        # Split into k-folds, stratified not needed because classification treated as regression
+        kf = KFold(n_splits=k_folds, shuffle=True)
+        fold_val_best_losses: list[float] = []
+        for _fold_idx, (train_idx, val_idx) in enumerate(kf.split(range(len(dataset)))):
+            train_subset = [dataset[i] for i in train_idx]
+            val_subset = [dataset[i] for i in val_idx]
+            # Transform the data into loaders
+            train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+            val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+            # Define the GNN
+            model = GNN(
+                in_feats=in_feats,
+                num_conv_wo_resnet=num_conv_wo_resnet,
+                hidden_dim=hidden_dim,
+                num_resnet_layers=num_resnet_layers,
+                mlp_units=mlp_units,
+                output_dim=num_outputs,
+                dropout_p=dropout,
+                bidirectional=bidirectional,
+                use_sag_pool=sag_pool,
+                sag_ratio=0.7,
+                conv_activation=torch.nn.functional.leaky_relu,
+                mlp_activation=torch.nn.functional.leaky_relu,
+            ).to(device_obj)
+
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            # Based on the task, do a training and evaluation for regression or classification
+            train_model(
+                model,
+                train_loader,
+                optimizer,
+                loss_fn,
+                task=task,
+                num_epochs=num_epochs,
+                device=device,
+                verbose=verbose,
+                val_loader=val_loader,
+                patience=patience,
+                min_delta=0.0,
+                restore_best=True,
+            )
+            if task == "regression":
+                val_loss, _, _ = evaluate_regression_model(
+                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=verbose
+                )
+            else:
+                val_loss, _, _ = evaluate_classification_model(
+                    model, val_loader, loss_fn, device=device, return_arrays=False, verbose=verbose
+                )
+
+            fold_val_best_losses.append(float(val_loss))
+            del train_loader, val_loader, train_subset, val_subset, optimizer, model
+            if device_obj.type == "cuda":
+                torch.cuda.empty_cache()
+            gc.collect()
+        # Take the mean value
+        return float(np.mean(fold_val_best_losses))
+
+    def train_gnn_model(
+        self,
+        training_data: TrainingData | None = None,
+        num_epochs: int = 10,
+        num_trials: int = 2,
+        patience: int = 10,
+        *,
+        verbose: bool = False,
+    ) -> nn.Module:
+        """Train the GNN model(s) and return the trained model.
+
+        Arguments:
+            training_data: The training data to use for training the model.
+            num_epochs: The number of epochs to train the model.
+            num_trials: The number of trials to run for hyperparameter optimization.
+            verbose: Whether to print verbose output during training.
+            patience: The patience variable for early stopping.
+
+        Returns:
+            The trained GNN model.
+        """
+        # Figure out outputs and save path
+        if self.figure_of_merit == "hellinger_distance":
+            if len(self.devices) != 1:
+                msg = "A single device must be provided for Hellinger distance model training."
+                raise ValueError(msg)
+            num_outputs = 1
+            save_mdl_path = str(get_hellinger_model_path(self.devices[0], gnn=True))
+        else:
+            num_outputs = max(1, len(self.devices))
+            save_mdl_path = str(get_path_trained_model_gnn(self.figure_of_merit))
+
+        # Prepare data
+        if training_data is None:
+            training_data = self._get_prepared_training_data()
+        number_in_features = get_gnn_input_features()
+        loss_fn = nn.MSELoss()
+        task = "regression" if self.figure_of_merit == "hellinger_distance" else "classification"
+        sampler_obj = TPESampler(n_startup_trials=10)
+        study = optuna.create_study(study_name="Best GNN Model", direction="minimize", sampler=sampler_obj)
+        k_folds = min(len(training_data.y_train), 5)
+
+        def _obj(trial: optuna.Trial) -> float:
+            return self.objective(
+                trial=trial,
+                dataset=training_data.X_train,
+                task=task,
+                in_feats=number_in_features,
+                num_outputs=num_outputs,
+                loss_fn=loss_fn,
+                k_folds=k_folds,
+                num_epochs=num_epochs,
+                patience=patience,
+                verbose=verbose,
+            )
+
+        study.optimize(_obj, n_trials=num_trials)
+        dict_best_hyper = study.best_trial.params  # user_attrs.get("best_hparams")
+        # Build model (ensure final layer outputs raw logits/no activation)
+        json_dict = study.best_trial.params
+        mlp_str = dict_best_hyper["mlp"]
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+
+        json_dict["num_outputs"] = len(self.devices) if self.figure_of_merit != "hellinger_distance" else 1
+
+        model = GNN(
+            in_feats=get_gnn_input_features(),
+            num_conv_wo_resnet=dict_best_hyper["num_conv_wo_resnet"],
+            hidden_dim=dict_best_hyper["hidden_dim"],
+            num_resnet_layers=dict_best_hyper["num_resnet_layers"],
+            mlp_units=mlp_units,
+            output_dim=json_dict["num_outputs"],
+            dropout_p=dict_best_hyper["dropout"],
+            bidirectional=dict_best_hyper["bidirectional"],
+            use_sag_pool=dict_best_hyper["sag_pool"],
+            sag_ratio=0.7,
+            conv_activation=torch.nn.functional.leaky_relu,
+            mlp_activation=torch.nn.functional.leaky_relu,
+        ).to("cuda" if torch.cuda.is_available() else "cpu")
+
+        json_path = Path(save_mdl_path).with_suffix(".json")  # works whether save_mdl_path is str or Path
+        json_dict["class_labels"] = [dev.description for dev in self.devices]
+        with json_path.open("w", encoding="utf-8") as f:
+            json.dump(json_dict, f, indent=4)
+
+        # Device handling
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        # Optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=dict_best_hyper["lr"])
+        # Train-validation split (needed for early stopping)
+        # This portion is separated from test set
+        x_train, x_val, _y_train, _y_val = train_test_split(
+            training_data.X_train, training_data.y_train, test_size=0.2, random_state=5
+        )
+        # Dataloader
+        train_loader = DataLoader(x_train, batch_size=16, shuffle=True)
+        val_loader = DataLoader(x_val, batch_size=16, shuffle=False)
+        train_model(
+            model,
+            train_loader,
+            optimizer,
+            loss_fn,
+            task=task,
+            num_epochs=num_epochs,
+            device=device,
+            verbose=verbose,
+            val_loader=val_loader,
+            patience=patience,
+            min_delta=0.0,
+            restore_best=True,
+        )
+        if verbose and training_data.X_test is not None and len(training_data.X_test) > 0:
+            test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
+            if task == "regression":
+                avg_loss_test, dict_results, _ = evaluate_regression_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                )
+            else:
+                avg_loss_test, dict_results, _ = evaluate_classification_model(
+                    model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
+                )
+            print(f"Test loss: {avg_loss_test:.4f}, {dict_results}")
+
+        # Save the model
+        torch.save(model.state_dict(), save_mdl_path)
+        return model
 
     def train_random_forest_model(
         self, training_data: TrainingData | None = None
@@ -405,6 +747,8 @@ class Predictor:
         if not training_data:
             training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
+        min_class = min(Counter(training_data.y_train).values())
+        num_cv = max(2, min(num_cv, min_class))
         mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
 
         joblib_dump(mdl, save_mdl_path)
@@ -420,23 +764,66 @@ class Predictor:
         """
         with resources.as_file(get_path_training_data() / "training_data_aggregated") as path:
             prefix = f"{self.figure_of_merit}.npy"
-            file_data = path / f"training_data_{prefix}"
             file_names = path / f"names_list_{prefix}"
             file_scores = path / f"scores_list_{prefix}"
 
-            if file_data.is_file() and file_names.is_file() and file_scores.is_file():
-                training_data = np.load(file_data, allow_pickle=True)
+            if not self.gnn:
+                file_data = path / f"training_data_{prefix}"
+            else:
+                # New safetensors directory for GNN data
+                dataset_dir = path / f"graph_dataset_{self.figure_of_merit}"
+
+            if (file_names.is_file() and file_scores.is_file()) and (
+                (not self.gnn and file_data.is_file()) or (self.gnn and dataset_dir.is_dir())
+            ):
+                if not self.gnn:
+                    training_data = np.load(file_data, allow_pickle=True)
+                else:
+                    # Reconstruct list[Data] from safetensors files
+                    training_data = []
+                    # assume files are named 0.safetensors, 1.safetensors, ...
+                    for sf in sorted(dataset_dir.glob("*.safetensors")):
+                        idx = sf.stem
+                        tensors = load_file(str(sf))
+
+                        data = Data(
+                            x=tensors["x"],
+                            y=tensors["y"],
+                            edge_index=tensors["edge_index"],
+                            num_nodes=int(tensors["num_nodes"][0].item()),
+                        )
+
+                        # restore string label
+                        label_path = dataset_dir / f"{idx}.label"
+                        if label_path.is_file():
+                            data.target_label = label_path.read_text(encoding="utf-8").strip()
+                        else:
+                            data.target_label = ""  # or raise error if you prefer
+
+                        training_data.append(data)
+
                 names_list = list(np.load(file_names, allow_pickle=True))
-                scores_list = [list(scores) for scores in np.load(file_scores, allow_pickle=True)]
+                raw_scores = np.load(file_scores, allow_pickle=True)
+                scores_list: list[list[float]] = []
+                for scores in raw_scores:
+                    if isinstance(scores, dict):
+                        # Legacy format: dict[device_name, score]
+                        scores_list.append(list(scores.values()))
+                    else:
+                        # New format: list/array of per-device scores
+                        scores_list.append(list(scores))
             else:
                 msg = "Training data not found."
                 raise FileNotFoundError(msg)
 
-        x_list, y_list = zip(*training_data, strict=False)
-        x = np.array(x_list, dtype=np.float64)
-        y = np.array(y_list, dtype=str)
+        if not self.gnn:
+            x_list, y_list = zip(*training_data, strict=False)
+            x = np.array(x_list, dtype=np.float64)
+            y = np.array(y_list, dtype=str)
+        else:
+            x = training_data
+            y = np.array([el.target_label for el in training_data])
         indices = np.arange(len(y), dtype=np.int64)
-
         x_train, x_test, y_train, y_test, indices_train, indices_test = train_test_split(
             x, y, indices, test_size=0.3, random_state=5
         )
@@ -454,13 +841,14 @@ class Predictor:
 
 
 def predict_device_for_figure_of_merit(
-    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity"
+    qc: Path | QuantumCircuit, figure_of_merit: figure_of_merit = "expected_fidelity", *, gnn: bool = False
 ) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
     Arguments:
         qc: The QuantumCircuit or Path to the respective qasm file.
         figure_of_merit: The figure of merit to be used for compilation.
+        gnn: Whether to use a GNN for prediction. Defaults to False.
 
     Returns:
         The probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
@@ -472,22 +860,59 @@ def predict_device_for_figure_of_merit(
     if isinstance(qc, Path) and qc.exists():
         qc = QuantumCircuit.from_qasm_file(qc)
     assert isinstance(qc, QuantumCircuit)
-
-    path = get_path_trained_model(figure_of_merit)
+    path = get_path_trained_model(figure_of_merit) if not gnn else get_path_trained_model_gnn(figure_of_merit)
     if not path.exists():
         error_msg = "The ML model is not trained yet. Please train the model before using it."
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
-    clf = load(path)
+    if not gnn:
+        clf = load(path)
 
-    feature_vector = create_feature_vector(qc)
+        feature_vector = create_feature_vector(qc)
 
-    probabilities = clf.predict_proba([feature_vector])[0]
-    class_labels = clf.classes_
-    # sort all devices with decreasing probabilities
-    sorted_devices = np.array([
-        label for _, label in sorted(zip(probabilities, class_labels, strict=False), reverse=True)
-    ])
+        probabilities = clf.predict_proba([feature_vector])[0]
+        class_labels = clf.classes_
+        # sort all devices with decreasing probabilities
+        sorted_devices = np.array([
+            label for _, label in sorted(zip(probabilities, class_labels, strict=False), reverse=True)
+        ])
+    else:
+        # Open the json file save_mdl_path[:-4] + ".json"
+        with Path.open(path.with_suffix(".json"), encoding="utf-8") as f:
+            json_dict = json.load(f)
+
+        mlp_str = json_dict["mlp"]
+        mlp_units = [] if mlp_str == "none" else [int(x) for x in mlp_str.split(",")]
+        device_str = "cuda" if torch.cuda.is_available() else "cpu"
+        gnn_model = GNN(
+            in_feats=get_gnn_input_features(),
+            num_conv_wo_resnet=json_dict["num_conv_wo_resnet"],
+            hidden_dim=json_dict["hidden_dim"],
+            num_resnet_layers=json_dict["num_resnet_layers"],
+            mlp_units=mlp_units,
+            output_dim=json_dict["num_outputs"],
+            dropout_p=json_dict["dropout"],
+            bidirectional=json_dict["bidirectional"],
+            use_sag_pool=json_dict["sag_pool"],
+            sag_ratio=0.7,
+            conv_activation=torch.nn.functional.leaky_relu,
+            mlp_activation=torch.nn.functional.leaky_relu,
+        ).to(device_str)
+        gnn_model.load_state_dict(torch.load(path, weights_only=True, map_location=device_str))
+        x, edge_index, number_of_gates = create_dag(qc)
+        feature_vector = Data(x=x, edge_index=edge_index, num_nodes=number_of_gates).to(device_str)
+        gnn_model.eval()
+        class_labels = json_dict["class_labels"]
+        with torch.no_grad():
+            outputs = gnn_model(feature_vector)
+            outputs = outputs.squeeze(0)
+        assert class_labels is not None
+        if len(class_labels) != len(outputs):
+            msg = "outputs and class_labels must be same length"
+            raise ValueError(msg)
+
+        pairs = sorted(zip(outputs.tolist(), class_labels, strict=False), reverse=True)
+        sorted_devices = np.array([label for _, label in pairs])
 
     for dev_name in sorted_devices:
         dev = get_device(dev_name)

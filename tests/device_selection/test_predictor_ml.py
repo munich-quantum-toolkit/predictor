@@ -35,7 +35,12 @@ def path_compiled_circuits() -> Path:
     return Path("./test_compiled_circuits")
 
 
-def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
+@pytest.mark.parametrize(
+    ("gnn", "verbose"), [(False, False), (True, False), (True, True)], ids=["rf", "gnn", "gnn_verbose"]
+)
+def test_setup_device_predictor_with_prediction(
+    path_uncompiled_circuits: Path, path_compiled_circuits: Path, gnn: bool, verbose: bool
+) -> None:
     """Test the full training pipeline and prediction using a mock device."""
     if not path_uncompiled_circuits.exists():
         path_uncompiled_circuits.mkdir()
@@ -49,24 +54,73 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
             dump(qc, f)
 
     device = get_device("ibm_falcon_127")
-
     success = setup_device_predictor(
         devices=[device],
         figure_of_merit="expected_fidelity",
         path_uncompiled_circuits=path_uncompiled_circuits,
         path_compiled_circuits=path_compiled_circuits,
+        gnn=gnn,
+        verbose=verbose,
     )
     assert success
 
     data_path = get_path_training_data() / "training_data_aggregated"
-    assert (data_path / "training_data_expected_fidelity.npy").exists()
+    if gnn:
+        dataset_dir = data_path / "graph_dataset_expected_fidelity"
+        assert dataset_dir.exists()
+        assert dataset_dir.is_dir()
+        assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
+        assert (data_path / "names_list_expected_fidelity.npy").exists()
+        assert (data_path / "scores_list_expected_fidelity.npy").exists()
+    else:
+        assert (data_path / "training_data_expected_fidelity.npy").exists()
+        assert (data_path / "names_list_expected_fidelity.npy").exists()
+        assert (data_path / "scores_list_expected_fidelity.npy").exists()
+
+    test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=gnn)
+
+    assert predicted.description == "ibm_falcon_127"
+
+
+def test_setup_multidevice_predictor_with_prediction_gnn(
+    path_uncompiled_circuits: Path, path_compiled_circuits: Path
+) -> None:
+    """Test the full training pipeline for GNN on multiple devices."""
+    if not path_uncompiled_circuits.exists():
+        path_uncompiled_circuits.mkdir()
+    if not path_compiled_circuits.exists():
+        path_compiled_circuits.mkdir()
+
+    for i in range(2, 8):
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
+        path = path_uncompiled_circuits / f"qc{i}.qasm"
+        with path.open("w", encoding="utf-8") as f:
+            dump(qc, f)
+
+    device = [get_device("ibm_falcon_127"), get_device("quantinuum_h2_56")]
+    success = setup_device_predictor(
+        devices=device,
+        figure_of_merit="expected_fidelity",
+        path_uncompiled_circuits=path_uncompiled_circuits,
+        path_compiled_circuits=path_compiled_circuits,
+        gnn=True,
+        verbose=False,
+    )
+    assert success
+
+    data_path = get_path_training_data() / "training_data_aggregated"
+    dataset_dir = data_path / "graph_dataset_expected_fidelity"
+    assert dataset_dir.exists()
+    assert dataset_dir.is_dir()
+    assert any(f.suffix == ".safetensors" for f in dataset_dir.iterdir())
     assert (data_path / "names_list_expected_fidelity.npy").exists()
     assert (data_path / "scores_list_expected_fidelity.npy").exists()
 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
+    predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity", gnn=True)
 
-    assert predicted.description == "ibm_falcon_127"
+    assert predicted.description in ("ibm_falcon_127", "quantinuum_h2_56")
 
 
 def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
@@ -85,9 +139,13 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
 
     data_path = get_path_training_data() / "training_data_aggregated"
     if data_path.exists():
-        for file in data_path.iterdir():
-            if file.suffix == ".npy":
+        for file in list(data_path.iterdir()):
+            if file.is_file() and file.suffix in (".npy", ".pt", ".safetensors", ".label"):
                 file.unlink()
+            elif file.is_dir() and file.name.startswith("graph_dataset_"):
+                for sub in file.iterdir():
+                    sub.unlink()
+                file.rmdir()
 
 
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
@@ -100,8 +158,9 @@ def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
         predict_device_for_figure_of_merit(qc)
 
 
-def test_get_prepared_training_data_false_input() -> None:
+@pytest.mark.parametrize("gnn", [False, True], ids=["rf", "gnn"])
+def test_get_prepared_training_data_false_input(gnn: bool) -> None:
     """Test the retrieval of prepared training data."""
-    pred = Predictor(devices=[], figure_of_merit="expected_fidelity")
+    pred = Predictor(devices=[], figure_of_merit="expected_fidelity", gnn=gnn)
     with pytest.raises(FileNotFoundError, match=re.escape("Training data not found.")):
         pred._get_prepared_training_data()  # noqa: SLF001
