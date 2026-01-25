@@ -11,19 +11,16 @@
 from __future__ import annotations
 
 import logging
-import sys
 from typing import TYPE_CHECKING, Any
 
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    from typing import assert_never
-else:
-    from typing_extensions import assert_never
+from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from bqskit import Circuit
+    from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
@@ -57,6 +54,7 @@ from mqt.predictor.reward import (
 from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType, get_actions_by_pass_type
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
@@ -65,7 +63,7 @@ from mqt.predictor.rl.parsing import (
 logger = logging.getLogger("mqt-predictor")
 
 
-class PredictorEnv(Env):  # type: ignore[misc]
+class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
     def __init__(
@@ -204,7 +202,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             done = False
 
         # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
-        if self.state.count_ops().get("unitary"):
+        if self.state.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
@@ -221,7 +219,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             return estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
         if self.reward_function == "critical_depth":
             return crit_depth(self.state)
-        assert_never(self.state)
+        msg = f"No implementation for reward function {self.reward_function}."
+        raise NotImplementedError(msg)
 
     def render(self) -> None:
         """Renders the current state."""
@@ -232,7 +231,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[QuantumCircuit, dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
@@ -247,7 +246,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if isinstance(qc, QuantumCircuit):
             self.state = qc
         elif qc:
-            self.state = QuantumCircuit.from_qasm_file(str(qc))
+            self.state = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
 
@@ -321,16 +320,18 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-            passes = action.transpile_pass(
+            assert callable(action.transpile_pass)
+            passes_ = action.transpile_pass(
                 self.device.operation_names,
                 CouplingMap(self.device.build_coupling_map()) if self.layout else None,
             )
+            passes = cast("list[Task]", passes_)
+            assert action.do_while is not None
             pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
         else:
-            transpile_pass = (
-                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-            )
-            pm = PassManager(transpile_pass)
+            passes_ = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+            passes = cast("list[Task]", passes_)
+            pm = PassManager(passes)
 
         altered_qc = pm.run(self.state)
 
@@ -351,6 +352,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert pm.property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm.property_set["post_layout"]
             if post_layout:
+                assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
             assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
@@ -370,12 +372,11 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
-        transpile_pass = (
-            action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-        )
-        assert isinstance(transpile_pass, list)
-        for p in transpile_pass:
-            p.apply(tket_qc)
+        passes = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+        assert isinstance(passes, list)
+        for pass_ in passes:
+            assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
+            pass_.apply(tket_qc)
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})

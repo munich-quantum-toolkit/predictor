@@ -33,7 +33,7 @@ logger = logging.getLogger("mqt-predictor")
 
 
 def timeout_watcher(
-    func: Callable[..., bool | QuantumCircuit],
+    func: Callable[..., tuple[QuantumCircuit, list[str]] | bool],
     args: list[QuantumCircuit | figure_of_merit | str | RL_Predictor],
     timeout: int,
 ) -> tuple[QuantumCircuit, list[str]] | bool:

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -22,6 +23,9 @@ from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopRea
 from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 from mqt.predictor.rl.parsing import postprocess_vf2postlayout
+
+if TYPE_CHECKING:
+    from qiskit.passmanager.base_tasks import Task
 
 
 def test_create_feature_dict() -> None:
@@ -51,13 +55,16 @@ def test_vf2_layout_and_postlayout() -> None:
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
     for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
-        layout_pass = None
+        passes: list[Task] | None = None
         for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
             if layout_action.name == "VF2Layout":
-                layout_pass = layout_action.transpile_pass(dev)
+                assert callable(layout_action.transpile_pass)
+                passes = cast("list[Task]", layout_action.transpile_pass(dev))
                 break
-        pm = PassManager(layout_pass)
+        assert passes is not None
+        pm = PassManager(passes)
         layouted_qc = pm.run(qc)
+        assert layouted_qc.layout is not None
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
     dev_success = get_device("ibm_falcon_27")
@@ -66,13 +73,15 @@ def test_vf2_layout_and_postlayout() -> None:
 
     initial_layout_before = qc_transpiled.layout.initial_layout
 
-    post_layout_pass = None
+    post_layout_passes: list[Task] | None = None
     for layout_action in get_actions_by_pass_type()[PassType.FINAL_OPT]:
         if layout_action.name == "VF2PostLayout":
-            post_layout_pass = layout_action.transpile_pass(dev_success)
+            assert callable(layout_action.transpile_pass)
+            post_layout_passes = cast("list[Task]", layout_action.transpile_pass(dev_success))
             break
+    assert post_layout_passes is not None
 
-    pm = PassManager(post_layout_pass)
+    pm = PassManager(post_layout_passes)
     altered_qc = pm.run(qc_transpiled)
 
     assert pm.property_set["VF2PostLayout_stop_reason"] == VF2PostLayoutStopReason.SOLUTION_FOUND

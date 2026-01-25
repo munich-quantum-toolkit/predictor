@@ -22,7 +22,8 @@ from mqt.predictor.hellinger import calc_device_specific_features, get_hellinger
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
-    from qiskit import QuantumCircuit, QuantumRegister, Qubit
+    from qiskit import QuantumCircuit
+    from qiskit.circuit import QuantumRegister, Qubit
     from qiskit.transpiler import Target
     from sklearn.ensemble import RandomForestRegressor
 
