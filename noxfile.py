@@ -106,7 +106,6 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
-        session.run("uv", "lock", "--refresh", env=env)
 
 
 @nox.session(reuse_venv=True)
