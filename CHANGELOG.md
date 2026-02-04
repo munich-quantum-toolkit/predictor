@@ -12,7 +12,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
-- 🔧 Change test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
 
 ### Fixed
 

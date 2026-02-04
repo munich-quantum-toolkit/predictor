@@ -58,7 +58,12 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
 )
-from mqt.predictor.rl.cost_model import approx_estimated_success_probability, approx_expected_fidelity
+from mqt.predictor.rl.cost_model import (
+    approx_estimated_success_probability,
+    approx_expected_fidelity,
+    build_error_rates_from_averages,
+    build_gate_durations_from_averages,
+)
 from mqt.predictor.rl.helper import (
     create_feature_dict,
     get_path_training_circuits,
@@ -338,20 +343,23 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self._ensure_device_averages_cached()
 
         if self.reward_function == "expected_fidelity":
-            val = approx_expected_fidelity(qc, self._p1_avg, self._p2_avg, device_id=self.device.description)
+            # Build per-basis error map from device averages and call per-basis estimator
+            error_rates = build_error_rates_from_averages(self.device.description, self._p1_avg, self._p2_avg)
+            val = approx_expected_fidelity(qc, error_rates, device_id=self.device.description)
             return val, "approx"
 
         feats = calc_supermarq_features(qc)
+
+        error_rates = build_error_rates_from_averages(self.device.description, self._p1_avg, self._p2_avg)
+        gate_durations = build_gate_durations_from_averages(self.device.description, self._tau1_avg, self._tau2_avg)
         val = approx_estimated_success_probability(
             qc,
-            p1_avg=self._p1_avg,
-            p2_avg=self._p2_avg,
-            tau1_avg=self._tau1_avg,
-            tau2_avg=self._tau2_avg,
-            tbar=self._tbar,
-            par_feature=feats.parallelism,
-            liv_feature=feats.liveness,
-            n_qubits=qc.num_qubits,
+            error_rates,
+            gate_durations,
+            self._tbar,
+            feats.parallelism,
+            feats.liveness,
+            qc.num_qubits,
             device_id=self.device.description,
         )
         return val, "approx"
@@ -453,33 +461,25 @@ class PredictorEnv(Env):  # type: ignore[misc]
         raise ValueError(msg)
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
-        pm_property_set: PropertySet | None
-        if getattr(action, "stochastic", False):  # Wrap stochastic action to optimize for the used figure of merit
-            altered_qc, pm_property_set = self.fom_aware_compile(
-                action,
-                self.device,
-                self.state,
-                max_iteration=self.max_iter,
+        pm_property_set: PropertySet | None = {}
+        if action.name in ["QiskitO3", "Opt2qBlocks_preserve"] and isinstance(action, DeviceDependentAction):
+            passes = action.transpile_pass(
+                self.device.operation_names,
+                CouplingMap(self.device.build_coupling_map()) if self.layout else None,
             )
-        else:
-            if action.name in ["QiskitO3", "Opt2qBlocks_preserve"] and isinstance(action, DeviceDependentAction):
-                passes = action.transpile_pass(
-                    self.device.operation_names,
-                    CouplingMap(self.device.build_coupling_map()) if self.layout else None,
-                )
-                if action.name == "QiskitO3":
-                    pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
-                else:
-                    pm = PassManager(passes)
-                altered_qc = pm.run(self.state)
-                pm_property_set = pm.property_set if hasattr(pm, "property_set") else PropertySet()
+            if action.name == "QiskitO3":
+                pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
             else:
-                transpile_pass = (
-                    action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-                )
-                pm = PassManager(transpile_pass)
-                altered_qc = pm.run(self.state)
-                pm_property_set = pm.property_set if hasattr(pm, "property_set") else PropertySet()
+                pm = PassManager(passes)
+            altered_qc = pm.run(self.state)
+            pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
+        else:
+            transpile_pass = (
+                action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+            )
+            pm = PassManager(transpile_pass)
+            altered_qc = pm.run(self.state)
+            pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else {}
 
         if action_index in (
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
