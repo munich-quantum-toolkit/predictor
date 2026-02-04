@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -119,7 +119,7 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
         The feature dictionary of the given quantum circuit.
     """
     ops_list = qc.count_ops()
-    ops_list_dict = dict_to_featurevector(ops_list)
+    ops_list_dict = dict_to_featurevector(ops_list)  # ty: ignore[invalid-argument-type]
 
     feature_dict = {}
     for key in ops_list_dict:

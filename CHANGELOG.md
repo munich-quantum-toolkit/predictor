@@ -12,9 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
-
-### Fixed
-
+- 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 
 ### Removed
@@ -52,9 +50,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#526]: https://github.com/munich-quantum-toolkit/predictor/pull/526
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
-[#449]: https://github.com/munich-quantum-toolkit/predictor/pull/449
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406

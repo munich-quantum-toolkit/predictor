@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -70,6 +70,7 @@ from mqt.predictor.rl.helper import (
     get_state_sample,
 )
 from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
@@ -79,7 +80,7 @@ from mqt.predictor.utils import calc_supermarq_features
 logger = logging.getLogger("mqt-predictor")
 
 
-class PredictorEnv(Env):  # type: ignore[misc]
+class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
     def __init__(
@@ -388,7 +389,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if isinstance(qc, QuantumCircuit):
             self.state = qc
         elif qc:
-            self.state = QuantumCircuit.from_qasm_file(str(qc))
+            self.state = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
 
@@ -525,12 +526,11 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
-        transpile_pass = (
-            action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-        )
-        assert isinstance(transpile_pass, list)
-        for p in transpile_pass:
-            p.apply(tket_qc)
+        passes = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
+        assert isinstance(passes, list)
+        for pass_ in passes:
+            assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
+            pass_.apply(tket_qc)
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})

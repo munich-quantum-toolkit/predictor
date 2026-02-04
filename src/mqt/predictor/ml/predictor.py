@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -11,22 +11,15 @@
 from __future__ import annotations
 
 import logging
-import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from joblib import dump as joblib_dump
-
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    from typing import assert_never
-else:
-    from typing_extensions import assert_never
-
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
+from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
@@ -183,7 +176,7 @@ class Predictor:
         for filename in path_uncompiled_circuits.iterdir():
             if filename.suffix != ".qasm":
                 continue
-            qc = QuantumCircuit.from_qasm_file(filename)
+            qc = QuantumCircuit.from_qasm_file(filename)  # ty: ignore[invalid-argument-type]
             if qc.num_qubits > dev_max_qubits:
                 continue
 
@@ -345,7 +338,8 @@ class Predictor:
                 msg = "Hellinger distance should not be used for training data generation. Use 'estimated_hellinger_distance' instead."
                 raise RuntimeError(msg)
             else:
-                assert_never(self.figure_of_merit)
+                msg = f"No implementation for figure of merit {self.figure_of_merit}"
+                raise NotImplementedError(msg)
             scores[dev_name] = score
 
         num_not_empty_entries = 0
@@ -359,7 +353,7 @@ class Predictor:
         scores_list = list(scores.values())
         target_label = max(scores, key=lambda k: scores[k])
 
-        qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
+        qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)  # ty: ignore[invalid-argument-type]
         feature_vec = create_feature_vector(qc)
         training_sample = (feature_vec, target_label)
         circuit_name = str(file).split(".")[0]
@@ -469,7 +463,7 @@ def predict_device_for_figure_of_merit(
         ValueError: If no suitable device is found for the given quantum circuit.
     """
     if isinstance(qc, Path) and qc.exists():
-        qc = QuantumCircuit.from_qasm_file(qc)
+        qc = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
     assert isinstance(qc, QuantumCircuit)
 
     path = get_path_trained_model(figure_of_merit)
