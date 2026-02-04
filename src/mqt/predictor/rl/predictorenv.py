@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from bqskit.ir.circuit import Circuit
     from numpy.typing import NDArray
+    from qiskit.passmanager import PropertySet
     from qiskit.transpiler import InstructionProperties, Target
 
     from mqt.predictor.reward import figure_of_merit
@@ -36,7 +37,6 @@ from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
-from qiskit.passmanager import PropertySet
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
