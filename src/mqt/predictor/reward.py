@@ -204,7 +204,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 if first_qubit_idx not in active_qubits:
                     continue
 
-                dt = device.dt  # instruction durations are stored in unit dt
+                dt = device.dt or 1.0  # discrete time unit; fallback to 1.0 if unavailable
                 res *= np.exp(
                     -instruction.duration
                     * dt
