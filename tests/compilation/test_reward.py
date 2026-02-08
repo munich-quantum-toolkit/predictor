@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -100,13 +100,13 @@ def make_target(
     else:
         if QISKIT_PRE_2_0:
             t.qubit_properties = [
-                type("QubitProp", (), {"t1": t1, "t2": t2}),
+                type("QubitProps", (), {"t1": t1, "t2": t2}),
                 type("QubitProps", (), {"t1": t1, "t2": t2}),
             ]
         else:
             t.qubit_properties = [
-                QubitProperties(t1=t1, t2=t2),
-                QubitProperties(t1=t1, t2=t2),
+                QubitProperties(t1=t1, t2=t2),  # ty: ignore[unknown-argument]
+                QubitProperties(t1=t1, t2=t2),  # ty: ignore[unknown-argument]
             ]
     return t
 
@@ -130,5 +130,5 @@ def make_target(
 )
 def test_esp_data_available_invalid_target(kwargs: dict[str, float | bool]) -> None:
     """Test that `esp_data_available` returns False for invalid device configurations."""
-    target = make_target(**kwargs)
+    target = make_target(**kwargs)  # ty: ignore[invalid-argument-type]
     assert not esp_data_available(target)

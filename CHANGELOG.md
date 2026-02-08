@@ -13,7 +13,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Improved the MDP and extended the RL predictor's action/state space (expanded observation vector, support for stochastic passes, wrapped stochastic actions) ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Added AIRouting and new optimization actions (KAKDecomposition, ElidePermutations) to the RL action set ([#449]) ([**@Shaobo-Zhou**])
-- 🔧 Changed test circuit level for RL predictor from ALG to INDEP ([#449]) ([**@Shaobo-Zhou**])
+- 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
@@ -48,9 +48,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-[#449]: https://github.com/munich-quantum-toolkit/predictor/pull/449
+
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
+[#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
+[#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405

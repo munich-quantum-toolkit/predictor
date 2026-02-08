@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -22,7 +22,8 @@ from mqt.predictor.hellinger import calc_device_specific_features, get_hellinger
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
-    from qiskit import QuantumCircuit, QuantumRegister, Qubit
+    from qiskit import QuantumCircuit
+    from qiskit.circuit import QuantumRegister, Qubit
     from qiskit.transpiler import Target
     from sklearn.ensemble import RandomForestRegressor
 

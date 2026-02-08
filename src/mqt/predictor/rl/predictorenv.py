@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -11,13 +11,9 @@
 from __future__ import annotations
 
 import logging
-import sys
 from typing import TYPE_CHECKING, Any
 
-if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    from typing import assert_never
-else:
-    from typing_extensions import assert_never
+from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -77,6 +73,7 @@ from mqt.predictor.rl.helper import (
     get_state_sample,
 )
 from mqt.predictor.rl.parsing import (
+    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
@@ -87,7 +84,7 @@ from mqt.predictor.utils import get_openqasm_gates_without_u
 logger = logging.getLogger("mqt-predictor")
 
 
-class PredictorEnv(Env):  # type: ignore[misc]
+class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
     def __init__(
@@ -237,8 +234,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator)
-        if self.state.count_ops().get("unitary"):
+        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
+        if self.state.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
             self.state = self.state.decompose(gates_to_decompose="unitary")
         elif self.state.count_ops().get("clifford"):
             self.state = self.state.decompose(gates_to_decompose="clifford")
@@ -257,8 +254,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if self.reward_function == "estimated_hellinger_distance":
             return estimated_hellinger_distance(circuit, self.device, self.hellinger_model)
         if self.reward_function == "critical_depth":
-            return crit_depth(circuit)
-        assert_never(circuit)
+            return crit_depth(self.state)
+        msg = f"No implementation for reward function {self.reward_function}."
+        raise NotImplementedError(msg)
 
     def render(self) -> None:
         """Renders the current state."""
@@ -269,7 +267,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[QuantumCircuit, dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
@@ -285,7 +283,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if isinstance(qc, QuantumCircuit):
             self.state = qc
         elif qc:
-            self.state = QuantumCircuit.from_qasm_file(str(qc))
+            self.state = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
 
@@ -478,6 +476,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             assert pm_property_set["VF2PostLayout_stop_reason"] is not None
             post_layout = pm_property_set.get("post_layout")
             if post_layout:
+                assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
             if pm_property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:

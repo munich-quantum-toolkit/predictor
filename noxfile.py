@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script --quiet
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -106,7 +106,6 @@ def minimums(session: nox.Session) -> None:
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
-        session.run("uv", "lock", "--refresh", env=env)
 
 
 @nox.session(reuse_venv=True)
