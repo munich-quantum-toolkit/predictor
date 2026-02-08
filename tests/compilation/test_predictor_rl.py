@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import transpile
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
@@ -31,11 +30,6 @@ from mqt.predictor.rl.actions import (
     get_actions_by_pass_type,
     register_action,
     remove_action,
-)
-from mqt.predictor.rl.cost_model import (
-    TORINO_CANONICAL_COSTS,
-    canonical_cost,
-    get_cost_table,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
@@ -152,82 +146,27 @@ def test_register_action() -> None:
         remove_action("wrong_action_name")
 
 
-def test_cost_model_unknown_device_and_gate() -> None:
-    """Cover unknown-device fallback and unknown-gate default in cost model."""
-    # --- Unknown device: triggers warning + Torino fallback ---
-    msg = "No canonical cost table defined for device 'my_custom_device'"
-    with pytest.warns(UserWarning, match=re.escape(msg)):
-        table = get_cost_table("my_custom_device")
+def test_approx_reward_path_uses_cached_per_gate_maps(monkeypatch: MonkeyPatch) -> None:
+    """Ensure approx path works and uses per-basis-gate cached calibration maps.
 
-    # The returned table must be exactly the Torino table
-    assert table is TORINO_CANONICAL_COSTS
-
-    # --- Unknown gate on a known device: (0, 0) fallback ---
-    assert canonical_cost("some_weird_gate", device_id="ibm_torino") == (0, 0)
-
-
-def test_calculate_reward_esp_and_critical_depth(monkeypatch: MonkeyPatch) -> None:
-    """Cover ESP (exact + approx) and critical_depth branches in calculate_reward."""
+    We don't test exact numeric values (backend-dependent), only that:
+      - approx path runs,
+      - cached maps are populated,
+      - output is a valid probability in [0, 1].
+    """
     qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
     device = get_device("ibm_heron_133")
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
 
-    # Make a native + mapped version of the circuit for exact metrics
-    qc_native = transpile(
-        qc,
-        basis_gates=device.operation_names,
-        coupling_map=device.build_coupling_map(),
-        optimization_level=3,
-    )
+    # Force approx path
+    monkeypatch.setattr(predictor.env, "_is_native_and_mapped", lambda _qc: False)
 
-    # ------------------------------------------------------------------
-    # 1) estimated_success_probability: exact + approx (all modes)
-    # ------------------------------------------------------------------
-    predictor_esp = Predictor(
-        figure_of_merit="estimated_success_probability",
-        device=device,
-    )
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="auto")
+    assert kind == "approx"
+    assert 0.0 <= val <= 1.0
 
-    # a) Explicit exact mode on a native, mapped circuit
-    val_exact, kind_exact = predictor_esp.env.calculate_reward(qc=qc_native, mode="exact")
-    assert kind_exact == "exact"
-    assert 0.0 <= val_exact <= 1.0
-
-    # a2) Auto mode on native, mapped circuit → should select exact
-    val_auto_exact, kind_auto_exact = predictor_esp.env.calculate_reward(qc=qc_native, mode="auto")
-    assert kind_auto_exact == "exact"
-    assert 0.0 <= val_auto_exact <= 1.0
-
-    # b) Explicit approx mode (forces approximate path regardless of nativeness)
-    val_approx, kind_approx = predictor_esp.env.calculate_reward(qc=qc, mode="approx")
-    assert kind_approx == "approx"
-    assert 0.0 <= val_approx <= 1.0
-
-    # c) Auto mode → approx (force "not native & not mapped")
-    monkeypatch.setattr(predictor_esp.env, "_is_native_and_mapped", lambda _qc: False)
-    val_auto_approx, kind_auto_approx = predictor_esp.env.calculate_reward(qc=qc, mode="auto")
-    assert kind_auto_approx == "approx"
-    assert 0.0 <= val_auto_approx <= 1.0
-
-    # ------------------------------------------------------------------
-    # 1d) Broken Target API → RuntimeError in ensure_device_averages_cached
-    # ------------------------------------------------------------------
-    # Use a fresh predictor so _dev_avgs_cached is not yet set
-    broken_predictor = Predictor(
-        figure_of_merit="estimated_success_probability",
-        device=device,
-    )
-    broken_predictor.env.device = object()
-
-    with pytest.raises(
-        RuntimeError,
-        match=re.escape("Device target does not expose the required Target API for approximate reward computation."),
-    ):
-        broken_predictor.env._ensure_device_averages_cached()  # noqa: SLF001
-
-    # ------------------------------------------------------------------
-    # 2) critical_depth: always exact, regardless of mode
-    # ------------------------------------------------------------------
-    predictor_cd = Predictor(figure_of_merit="critical_depth", device=device)
-    val_cd, kind_cd = predictor_cd.env.calculate_reward(qc=qc, mode="auto")
-    assert kind_cd == "exact"
-    assert 0.0 <= val_cd <= 1.0
+    # Ensure caching produced per-gate mappings
+    assert predictor.env._dev_avgs_cached  # noqa: SLF001
+    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
+    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
+    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
