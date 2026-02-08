@@ -150,7 +150,7 @@ def test_register_action() -> None:
     "fom",
     ["expected_fidelity", "estimated_success_probability"],
 )
-def test_approx_reward_paths_use_cached_per_gate_maps(monkeypatch: pytest.MonkeyPatch, fom: figure_of_merit) -> None:
+def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> None:
     """Ensure approx reward path runs and uses cached per-basis-gate calibration maps.
 
     We don't test exact numeric values (backend-dependent), only that:
@@ -162,10 +162,7 @@ def test_approx_reward_paths_use_cached_per_gate_maps(monkeypatch: pytest.Monkey
     device = get_device("ibm_heron_133")
     predictor = Predictor(figure_of_merit=fom, device=device)
 
-    # Force approx path
-    monkeypatch.setattr(predictor.env, "_is_native_and_mapped", lambda _qc: False)
-
-    val, kind = predictor.env.calculate_reward(qc=qc, mode="auto")
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="approx")
     assert kind == "approx"
     assert 0.0 <= val <= 1.0
 
