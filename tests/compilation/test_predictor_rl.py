@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -21,7 +22,6 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
-from mqt.predictor.reward import figure_of_merit
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
@@ -32,6 +32,9 @@ from mqt.predictor.rl.actions import (
     remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from mqt.predictor.reward import figure_of_merit
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -172,7 +175,7 @@ def test_approx_reward_paths_use_cached_per_gate_maps(monkeypatch: pytest.Monkey
     assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
     assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
 
-    if figure_of_merit == "estimated_success_probability":
+    if fom == "estimated_success_probability":
         assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
         # tbar is optional depending on backend calibration; just sanity-check type
         assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001

@@ -193,10 +193,6 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = QuantumCircuit()
 
         self.error_occurred = False
-        self._gates_in_basis_check = GatesInBasis(basis_gates=self.device.operation_names)
-        self._check_map = CheckMap(coupling_map=self.device.build_coupling_map())
-        self._last_qc_id: int | None = None
-        self._last_native_mapped: tuple[bool, bool] | None = None
 
     def _apply_and_update(self, action: int) -> QuantumCircuit | None:
         """Apply an action, normalize the circuit, and update internal state."""
@@ -319,7 +315,15 @@ class PredictorEnv(Env):
         elif mode == "approx":
             kind = "approx"
         else:  # "auto"
-            kind = "exact" if self._is_native_and_mapped(qc) else "approx"
+            check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
+            check_nat_gates(qc)
+            only_native = bool(check_nat_gates.property_set["all_gates_in_basis"])
+
+            check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
+            check_mapping(qc)
+            mapped = bool(check_mapping.property_set["is_swap_mapped"])
+
+            kind = "exact" if (only_native and mapped) else "approx"
 
         if kind == "exact":
             if self.reward_function == "expected_fidelity":
@@ -701,21 +705,3 @@ class PredictorEnv(Env):
 
         self._tbar = float(np.median(tmins)) if tmins else None
         self._dev_avgs_cached = True
-
-    def _native_and_mapped(self, qc: QuantumCircuit) -> tuple[bool, bool]:
-        qc_id = id(qc)
-        if qc_id == self._last_qc_id and self._last_native_mapped is not None:
-            return self._last_native_mapped
-
-        self._gates_in_basis_check(qc)
-        only_native = bool(self._gates_in_basis_check.property_set["all_gates_in_basis"])
-        self._check_map(qc)
-        mapped = bool(self._check_map.property_set["is_swap_mapped"])
-
-        self._last_qc_id = qc_id
-        self._last_native_mapped = (only_native, mapped)
-        return only_native, mapped
-
-    def _is_native_and_mapped(self, qc: QuantumCircuit) -> bool:
-        only_native, mapped = self._native_and_mapped(qc)
-        return only_native and mapped
