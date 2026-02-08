@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -22,6 +21,7 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
+from mqt.predictor.reward import figure_of_merit
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
@@ -32,9 +32,6 @@ from mqt.predictor.rl.actions import (
     remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
-
-if TYPE_CHECKING:
-    from _pytest.monkeypatch import MonkeyPatch
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -146,8 +143,12 @@ def test_register_action() -> None:
         remove_action("wrong_action_name")
 
 
-def test_approx_reward_ef(monkeypatch: MonkeyPatch) -> None:
-    """Ensure approx path works and uses per-basis-gate cached calibration maps.
+@pytest.mark.parametrize(
+    "fom",
+    ["expected_fidelity", "estimated_success_probability"],
+)
+def test_approx_reward_paths_use_cached_per_gate_maps(monkeypatch: pytest.MonkeyPatch, fom: figure_of_merit) -> None:
+    """Ensure approx reward path runs and uses cached per-basis-gate calibration maps.
 
     We don't test exact numeric values (backend-dependent), only that:
       - approx path runs,
@@ -156,7 +157,7 @@ def test_approx_reward_ef(monkeypatch: MonkeyPatch) -> None:
     """
     qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
     device = get_device("ibm_heron_133")
-    predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
+    predictor = Predictor(figure_of_merit=fom, device=device)
 
     # Force approx path
     monkeypatch.setattr(predictor.env, "_is_native_and_mapped", lambda _qc: False)
@@ -171,34 +172,7 @@ def test_approx_reward_ef(monkeypatch: MonkeyPatch) -> None:
     assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
     assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
 
-
-def test_approx_reward_esp(monkeypatch: MonkeyPatch) -> None:
-    """Ensure approx ESP path runs and uses per-basis-gate cached calibration maps.
-
-    We don't test exact numeric values (backend-dependent), only that:
-      - approx path runs,
-      - cached maps are populated,
-      - output is a valid probability in [0, 1].
-    """
-    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
-    device = get_device("ibm_heron_133")
-
-    # ESP requires calibration availability (the device fixture should provide it).
-    predictor = Predictor(figure_of_merit="estimated_success_probability", device=device)
-
-    # Force approx path
-    monkeypatch.setattr(predictor.env, "_is_native_and_mapped", lambda _qc: False)
-
-    val, kind = predictor.env.calculate_reward(qc=qc, mode="auto")
-    assert kind == "approx"
-    assert 0.0 <= val <= 1.0
-
-    # Ensure caching produced per-gate mappings
-    assert predictor.env._dev_avgs_cached  # noqa: SLF001
-    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
-    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
-    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
-    assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
-
-    # tbar is optional depending on backend calibration; just sanity-check type
-    assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001
+    if figure_of_merit == "estimated_success_probability":
+        assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
+        # tbar is optional depending on backend calibration; just sanity-check type
+        assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001

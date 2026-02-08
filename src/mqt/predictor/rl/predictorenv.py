@@ -193,6 +193,29 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = QuantumCircuit()
 
         self.error_occurred = False
+        self._gates_in_basis_check = GatesInBasis(basis_gates=self.device.operation_names)
+        self._check_map = CheckMap(coupling_map=self.device.build_coupling_map())
+        self._last_qc_id: int | None = None
+        self._last_native_mapped: tuple[bool, bool] | None = None
+
+    def _apply_and_update(self, action: int) -> QuantumCircuit | None:
+        """Apply an action, normalize the circuit, and update internal state."""
+        altered_qc = self.apply_action(action)
+        if altered_qc is None:
+            return None
+
+        for gate_type in ("unitary", "clifford"):
+            if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
+                altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
+
+        self.state = altered_qc
+        self.num_steps += 1
+        self.valid_actions = self.determine_valid_actions_for_state()
+        if not self.valid_actions:
+            msg = "No valid actions left."
+            raise RuntimeError(msg)
+
+        return altered_qc
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
@@ -201,10 +224,7 @@ class PredictorEnv(Env):
             1. Evaluates the current circuit with the configured reward function
             (using either the exact or approximate metric, depending on state).
             2. Applies the selected transpiler pass (the action).
-            3. Normalizes the circuit (e.g., decompose high-level gates) so that
-            reward computation is well-defined.
-            4. Updates the internal state and valid action set.
-            5. Computes a shaped step reward based on the change in the figure of merit.
+            3. Computes a shaped step reward based on the change in the figure of merit.
 
         Reward design:
             - For non-terminal actions, the step reward is a scaled delta between
@@ -213,79 +233,35 @@ class PredictorEnv(Env):
             the exact (calibration-aware) metric.
         """
         self.used_actions.append(str(self.action_set[action].name))
-
         logger.info("Applying %s", self.action_set[action].name)
-        if self.reward_function == "estimated_hellinger_distance":
-            altered_qc = self.apply_action(action)
-            if altered_qc is None:
-                return create_feature_dict(self.state), 0.0, True, False, {}
 
-            for gate_type in ["unitary", "clifford"]:
-                if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
-                    altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
-
-            self.state = altered_qc
-            self.num_steps += 1
-            self.valid_actions = self.determine_valid_actions_for_state()
-            if not self.valid_actions:
-                msg = "No valid actions left."
-                raise RuntimeError(msg)
-
-            done = action == self.action_terminate_index
-            if done:
-                val, _kind = self.calculate_reward(mode="exact")
-                reward_val = val
-            else:
-                reward_val = self.no_effect_penalty
-
-            self.state._layout = self.layout  # noqa: SLF001
-            return create_feature_dict(self.state), reward_val, done, False, {}
-
-        # 1) Evaluate reward for the current circuit (before applying the action)
-        self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
-
-        # 2) Apply the selected transpiler pass
-        altered_qc = self.apply_action(action)
-
+        altered_qc = self._apply_and_update(action)
         if altered_qc is None:
             return create_feature_dict(self.state), 0.0, True, False, {}
 
-        # 3) Normalize circuit: remove high-level gates that break reward assumptions
-        #    - decompose "unitary"/"clifford"
-        for gate_type in ["unitary", "clifford"]:
-            if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
-                altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
+        done = action == self.action_terminate_index
 
-        # 4) Update state and valid actions
-        self.state = altered_qc
-        self.num_steps += 1
-        self.valid_actions = self.determine_valid_actions_for_state()
-        if len(self.valid_actions) == 0:
-            msg = "No valid actions left."
-            raise RuntimeError(msg)
+        if self.reward_function == "estimated_hellinger_distance":
+            reward_val = self.calculate_reward(mode="exact")[0] if done else self.no_effect_penalty
+            self.state._layout = self.layout  # noqa: SLF001
+            return create_feature_dict(self.state), reward_val, done, False, {}
 
-        # 5) Compute step reward and termination flag
-        if action == self.action_terminate_index:
-            # Terminal action: use the exact metric as final reward
+        # Lazy init: compute prev_reward only once per episode (or if missing)
+        if self.prev_reward is None:
+            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
+
+        if done:
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
-            logger.info("Final reward (%s): %s", self.prev_reward_kind, self.prev_reward)
-            done = True
             reward_val = self.prev_reward
         else:
-            done = False
-
-            # Re-evaluate reward after applying the action
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
 
             if self.prev_reward_kind != new_kind:
-                # Metrics aren't comparable across regimes; suppress delta to avoid misleading reward signal
                 delta_reward = 0.0
 
             reward_val = self.reward_scale * delta_reward if delta_reward != 0.0 else self.no_effect_penalty
-
-            self.prev_reward = new_val
-            self.prev_reward_kind = new_kind
+            self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         self.state._layout = self.layout  # noqa: SLF001
         return create_feature_dict(self.state), reward_val, done, False, {}
@@ -413,6 +389,9 @@ class PredictorEnv(Env):
         self.valid_actions = self.actions_opt_indices + self.actions_synthesis_indices
 
         self.error_occurred = False
+
+        self.prev_reward = None
+        self.prev_reward_kind = None
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
@@ -723,13 +702,20 @@ class PredictorEnv(Env):
         self._tbar = float(np.median(tmins)) if tmins else None
         self._dev_avgs_cached = True
 
+    def _native_and_mapped(self, qc: QuantumCircuit) -> tuple[bool, bool]:
+        qc_id = id(qc)
+        if qc_id == self._last_qc_id and self._last_native_mapped is not None:
+            return self._last_native_mapped
+
+        self._gates_in_basis_check(qc)
+        only_native = bool(self._gates_in_basis_check.property_set["all_gates_in_basis"])
+        self._check_map(qc)
+        mapped = bool(self._check_map.property_set["is_swap_mapped"])
+
+        self._last_qc_id = qc_id
+        self._last_native_mapped = (only_native, mapped)
+        return only_native, mapped
+
     def _is_native_and_mapped(self, qc: QuantumCircuit) -> bool:
-        check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
-        check_nat_gates(qc)
-        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-
-        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
-        check_mapping(qc)
-        mapped = check_mapping.property_set["is_swap_mapped"]
-
-        return bool(only_nat_gates and mapped)
+        only_native, mapped = self._native_and_mapped(qc)
+        return only_native and mapped
