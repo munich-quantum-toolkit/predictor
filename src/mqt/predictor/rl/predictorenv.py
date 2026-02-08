@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
@@ -73,7 +71,6 @@ from mqt.predictor.rl.helper import (
     get_state_sample,
 )
 from mqt.predictor.rl.parsing import (
-    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,

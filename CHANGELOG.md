@@ -48,7 +48,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
