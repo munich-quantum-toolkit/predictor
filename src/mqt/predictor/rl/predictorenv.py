@@ -215,6 +215,31 @@ class PredictorEnv(Env):
         self.used_actions.append(str(self.action_set[action].name))
 
         logger.info("Applying %s", self.action_set[action].name)
+        if self.reward_function == "estimated_hellinger_distance":
+            altered_qc = self.apply_action(action)
+            if altered_qc is None:
+                return create_feature_dict(self.state), 0.0, True, False, {}
+
+            for gate_type in ["unitary", "clifford"]:
+                if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
+                    altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
+
+            self.state = altered_qc
+            self.num_steps += 1
+            self.valid_actions = self.determine_valid_actions_for_state()
+            if not self.valid_actions:
+                msg = "No valid actions left."
+                raise RuntimeError(msg)
+
+            done = action == self.action_terminate_index
+            if done:
+                val, _kind = self.calculate_reward(mode="exact")
+                reward_val = val
+            else:
+                reward_val = self.no_effect_penalty
+
+            self.state._layout = self.layout  # noqa: SLF001
+            return create_feature_dict(self.state), reward_val, done, False, {}
 
         # 1) Evaluate reward for the current circuit (before applying the action)
         self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
