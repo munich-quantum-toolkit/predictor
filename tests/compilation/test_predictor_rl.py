@@ -146,7 +146,7 @@ def test_register_action() -> None:
         remove_action("wrong_action_name")
 
 
-def test_approx_reward_path_uses_cached_per_gate_maps(monkeypatch: MonkeyPatch) -> None:
+def test_approx_reward_ef(monkeypatch: MonkeyPatch) -> None:
     """Ensure approx path works and uses per-basis-gate cached calibration maps.
 
     We don't test exact numeric values (backend-dependent), only that:
@@ -170,3 +170,35 @@ def test_approx_reward_path_uses_cached_per_gate_maps(monkeypatch: MonkeyPatch) 
     assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
     assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
     assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
+
+
+def test_approx_reward_esp(monkeypatch: MonkeyPatch) -> None:
+    """Ensure approx ESP path runs and uses per-basis-gate cached calibration maps.
+
+    We don't test exact numeric values (backend-dependent), only that:
+      - approx path runs,
+      - cached maps are populated,
+      - output is a valid probability in [0, 1].
+    """
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+    device = get_device("ibm_heron_133")
+
+    # ESP requires calibration availability (the device fixture should provide it).
+    predictor = Predictor(figure_of_merit="estimated_success_probability", device=device)
+
+    # Force approx path
+    monkeypatch.setattr(predictor.env, "_is_native_and_mapped", lambda _qc: False)
+
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="auto")
+    assert kind == "approx"
+    assert 0.0 <= val <= 1.0
+
+    # Ensure caching produced per-gate mappings
+    assert predictor.env._dev_avgs_cached  # noqa: SLF001
+    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
+    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
+    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
+    assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
+
+    # tbar is optional depending on backend calibration; just sanity-check type
+    assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001
