@@ -61,10 +61,7 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
 )
-from mqt.predictor.rl.approx_reward import (
-    approx_estimated_success_probability,
-    approx_expected_fidelity,
-)
+from mqt.predictor.rl.approx_reward import BLACKLIST, approx_estimated_success_probability, approx_expected_fidelity
 from mqt.predictor.rl.helper import (
     create_feature_dict,
     get_path_training_circuits,
@@ -256,19 +253,11 @@ class PredictorEnv(Env):
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
 
-            if self.prev_reward_kind == "approx" and new_kind == "exact":
+            if self.prev_reward_kind != new_kind:
                 # Metrics aren't comparable across regimes; suppress delta to avoid misleading reward signal
                 delta_reward = 0.0
 
-            if delta_reward > 0.0:
-                # Positive change: reward proportional to improvement
-                reward_val = self.reward_scale * delta_reward
-            elif delta_reward < 0.0:
-                # Negative change: proportional penalty
-                reward_val = self.reward_scale * delta_reward
-            else:
-                # No change: small step penalty for "doing nothing"
-                reward_val = self.no_effect_penalty
+            reward_val = self.reward_scale * delta_reward if delta_reward != 0.0 else self.no_effect_penalty
 
             self.prev_reward = new_val
             self.prev_reward_kind = new_kind
@@ -315,7 +304,6 @@ class PredictorEnv(Env):
             if self.reward_function == "critical_depth":
                 return crit_depth(qc), "exact"
             if self.reward_function == "estimated_hellinger_distance":
-                # Use the preloaded model
                 return estimated_hellinger_distance(qc, self.device, self.hellinger_model), "exact"
             # Fallback for other unknown / not-yet-implemented reward functions:
             logger.warning(
@@ -620,8 +608,7 @@ class PredictorEnv(Env):
             msg = "Device target does not expose the required Target API for approximate reward computation."
             raise RuntimeError(msg) from exc
 
-        gate_blacklist = {"measure", "reset", "delay", "barrier"}
-        basis_ops = [name for name in op_names if name not in gate_blacklist]
+        basis_ops = [name for name in op_names if name not in BLACKLIST]
 
         twoq_edges = coupling_map.get_edges()  # list[(i, j)]
 

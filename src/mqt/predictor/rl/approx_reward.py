@@ -31,8 +31,8 @@ def estimate_basis_gate_counts(qc: QuantumCircuit, *, basis_gates: list[str]) ->
     """Transpile ``qc`` to ``basis_gates`` and count occurrences of each basis gate."""
     qc_t = transpile(qc, basis_gates=basis_gates, optimization_level=1, seed_transpiler=42)
     counts = dict.fromkeys(basis_gates, 0)
-    for instr, _, _ in qc_t.data:
-        name = instr.name
+    for ci in qc_t.data:
+        name = ci.operation.name
         if name in BLACKLIST:
             continue
         if name in counts:
