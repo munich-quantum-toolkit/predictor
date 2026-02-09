@@ -594,12 +594,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
 
+        # Not depicted in paper/thesis, but covered in implementation because optimization can destroy the native gate set.
         if not synthesized and mapped and not routed:
             if flexible:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
-            if strict:  # not depicted in thesis
+            if strict:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
@@ -608,6 +609,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
 
+        # Not depicted in paper, but possible due to mapping-only passes
         if synthesized and mapped and not routed:
             if flexible:
                 actions.extend(self.actions_routing_indices)
@@ -617,10 +619,17 @@ class PredictorEnv(Env):  # type: ignore[misc]
             if og:
                 actions.extend(self.actions_routing_indices)
 
-        # NEW
-        if not synthesized and mapped and routed and flexible:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
+        # Not depicted in paper/thesis, but possible since routing can insert non-native SWAPs
+        if not synthesized and mapped and routed:
+            if flexible:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
+            if strict:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_structure_preserving_indices)
+            if og:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
 
         # Final state
         if synthesized and mapped and routed:
