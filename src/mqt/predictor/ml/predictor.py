@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import zipfile
 from importlib import resources
 from pathlib import Path
@@ -18,7 +19,6 @@ from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-import sys
 from joblib import Parallel, delayed, load
 from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device

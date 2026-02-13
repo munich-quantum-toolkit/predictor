@@ -18,12 +18,16 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
+    from pytket._tket.passes import BasePass as TketBasePass
     from pytket.circuit import Node
-    from qiskit.passmanager import PropertySet
-    from qiskit.transpiler import Target
+    from qiskit.passmanager.base_tasks import Task
+    from qiskit.transpiler import Layout, Target
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.parsing import (
+        PreProcessTKETRoutingAfterQiskitLayout,
+    )
 
 
 import warnings
@@ -36,6 +40,7 @@ from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
+from pytket.placement import Placement
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.passmanager.flow_controllers import DoWhileController
@@ -234,7 +239,7 @@ class PredictorEnv(Env):
         # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
         if self.state.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
             self.state = self.state.decompose(gates_to_decompose="unitary")
-        elif self.state.count_ops().get("clifford"):
+        elif self.state.count_ops().get("clifford"):  # ty: ignore[invalid-argument-type]
             self.state = self.state.decompose(gates_to_decompose="clifford")
 
         self.state._layout = self.layout  # noqa: SLF001
@@ -355,8 +360,8 @@ class PredictorEnv(Env):
         raise ValueError(msg)
 
     def fom_aware_compile(
-        self, action: Action, device: Target, qc: QuantumCircuit, max_iteration: int = 20
-    ) -> tuple[QuantumCircuit, PropertySet | None]:
+        self, action: Action, device: Target | None, qc: QuantumCircuit, max_iteration: int = 20
+    ) -> tuple[QuantumCircuit, dict[str, Any] | None]:
         """Run a stochastic pass multiple times optimizing for the given figure of merit.
 
         Args:
@@ -368,14 +373,16 @@ class PredictorEnv(Env):
         Returns:
             A tuple of the best circuit found and its property set (if available).
         """
-        best_result = None
-        best_property_set = None
+        assert device is not None
+        best_result: QuantumCircuit | None = None
+        best_property_set: dict[str, Any] | None = None
         best_fom = -1.0
         best_swap_count = float("inf")  # for fallback
 
         assert callable(action.transpile_pass), "Mapping action should be callable"
         for i in range(max_iteration):
-            pm = PassManager(action.transpile_pass(device))
+            passes = cast("list[Task]", action.transpile_pass(device))
+            pm = PassManager(passes)
             try:
                 out_circ = pm.run(qc)
                 prop_set = dict(pm.property_set)
@@ -403,7 +410,7 @@ class PredictorEnv(Env):
 
                 except Exception as e:
                     logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
-                    swap_count = out_circ.count_ops().get("swap", 0)
+                    swap_count = out_circ.count_ops().get("swap", 0)  # ty: ignore[no-matching-overload]
                     if best_result is None or swap_count < best_swap_count:
                         best_swap_count = swap_count
                         best_result = out_circ
@@ -429,20 +436,23 @@ class PredictorEnv(Env):
             )
         else:
             if action.name in ["QiskitO3", "Opt2qBlocks_preserve"] and isinstance(action, DeviceDependentAction):
-                passes = action.transpile_pass(
+                passes_ = action.transpile_pass(
                     self.device.operation_names,
                     CouplingMap(self.device.build_coupling_map()) if self.layout else None,
                 )
+                passes = cast("list[Task]", passes_)
                 if action.name == "QiskitO3":
+                    assert action.do_while is not None
                     pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
                 else:
                     pm = PassManager(passes)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
             else:
-                transpile_pass = (
+                transpile_pass_ = (
                     action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
                 )
+                transpile_pass = cast("list[Task]", transpile_pass_)
                 pm = PassManager(transpile_pass)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
@@ -482,11 +492,14 @@ class PredictorEnv(Env):
             assert pm_property_set["layout"]
 
         layout = pm_property_set.get("layout")
-        if layout:
+        if layout is not None:
+            orig = pm_property_set["original_qubit_indices"]
+            final = pm_property_set["final_layout"]
+
             self.layout = TranspileLayout(
                 initial_layout=layout,
-                input_qubit_mapping=pm_property_set.get("original_qubit_indices"),
-                final_layout=pm_property_set.get("final_layout"),
+                input_qubit_mapping=cast("dict[Any, int]", orig),
+                final_layout=final,
                 _output_qubit_list=altered_qc.qubits,
                 _input_qubit_count=self.num_qubits_uncompiled_circuit,
             )
@@ -497,8 +510,8 @@ class PredictorEnv(Env):
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
+
         if action.name == "NoiseAwarePlacement":
-            # Handle NoiseAwarePlacement separately (requires error data)
             if self.node_err is None or self.edge_err is None or self.readout_err is None:
                 self.node_err, self.edge_err, self.readout_err = prepare_noise_data(self.device)
             assert callable(action.transpile_pass)
@@ -507,11 +520,14 @@ class PredictorEnv(Env):
             transpile_pass = (
                 action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
             )
+
         assert isinstance(transpile_pass, list)
-        # Map TKET placement into a Qiskit layout
+
         if action_index in self.actions_layout_indices:
             try:
-                placement = transpile_pass[0].get_placement_map(tket_qc)
+                p0 = transpile_pass[0]
+                assert isinstance(p0, Placement)
+                placement = p0.get_placement_map(tket_qc)
             except Exception as e:
                 logger.warning("Placement failed (%s): %s. Falling back to original circuit.", action.name, e)
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
@@ -531,8 +547,11 @@ class PredictorEnv(Env):
                 ])
                 altered_qc = pm.run(qc_tmp)
 
+                layout2 = pm.property_set.get("layout")
+                assert isinstance(layout2, Layout)
+
                 self.layout = TranspileLayout(
-                    initial_layout=pm.property_set.get("layout"),
+                    initial_layout=layout2,
                     input_qubit_mapping=pm.property_set["original_qubit_indices"],
                     final_layout=pm.property_set["final_layout"],
                     _output_qubit_list=altered_qc.qubits,
@@ -541,8 +560,9 @@ class PredictorEnv(Env):
                 return altered_qc
 
         else:
-            for p in transpile_pass:
-                p.apply(tket_qc)
+            passes = cast("list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]", transpile_pass)
+            for pass_ in passes:
+                pass_.apply(tket_qc)
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
