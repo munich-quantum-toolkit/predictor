@@ -69,6 +69,16 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
+def count_ops_by_name(qc: QuantumCircuit) -> dict[str, int]:
+    """Return count_ops with string keys (gate names)."""
+    raw = qc.count_ops()
+    out: dict[str, int] = {}
+    for k, v in raw.items():
+        name = k if isinstance(k, str) else k.name  # Instruction -> gate name
+        out[name] = out.get(name, 0) + int(v)
+    return out
+
+
 def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
     """Calculates and returns a normalized feature vector of a given quantum circuit gate dictionary."""
     res_dct = dict.fromkeys(get_openqasm_gates_without_u(), 0.0)
@@ -81,32 +91,26 @@ def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
     return res_dct
 
 
-def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float64]]:
-    """Creates a feature dictionary for a given quantum circuit.
+def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
+    """Creates a feature dictionary for a given quantum circuit."""
+    ops = count_ops_by_name(qc)
+    total = sum(v for k, v in ops.items() if k != "barrier")
+    ops_list_dict = dict_to_featurevector(ops)
 
-    Arguments:
-        qc: The quantum circuit for which the feature dictionary is created.
-
-    Returns:
-        The feature dictionary for the given quantum circuit.
-    """
-    ops_list = qc.count_ops()
-    total = sum(val for key, val in ops_list.items() if key != "barrier")
-    ops_list_dict = dict_to_featurevector(ops_list)
-
-    feature_dict = {
+    feature_dict: dict[str, int | NDArray[np.float32]] = {
         **{key: np.array([val], dtype=np.float32) for key, val in ops_list_dict.items()},
-        "measure": np.array([ops_list.get("measure", 0) / total if total > 0 else 0.0], dtype=np.float32),
-        "num_qubits": qc.num_qubits,
-        "depth": qc.depth(),
+        "measure": np.array([ops.get("measure", 0) / total if total > 0 else 0.0], dtype=np.float32),
+        "num_qubits": int(qc.num_qubits),
+        "depth": int(qc.depth()),
     }
+
     supermarq_features = calc_supermarq_features(qc)
-    # for all dict values, put them in a list each
     feature_dict["program_communication"] = np.array([supermarq_features.program_communication], dtype=np.float32)
     feature_dict["critical_depth"] = np.array([supermarq_features.critical_depth], dtype=np.float32)
     feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)
     feature_dict["parallelism"] = np.array([supermarq_features.parallelism], dtype=np.float32)
     feature_dict["liveness"] = np.array([supermarq_features.liveness], dtype=np.float32)
+
     return feature_dict
 
 

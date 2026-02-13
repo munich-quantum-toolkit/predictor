@@ -707,7 +707,7 @@ def add_cregs_and_measurements(
 
 if not IS_WIN_PY313:
 
-    class SafeAIRouting(AIRouting):  # type: ignore[misc]
+    class SafeAIRouting(AIRouting):
         """Custom AIRouting wrapper that removes classical registers before routing.
 
         This prevents failures in AIRouting when classical bits are present by
