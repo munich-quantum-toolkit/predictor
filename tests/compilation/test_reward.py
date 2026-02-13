@@ -132,3 +132,4 @@ def test_esp_data_available_invalid_target(kwargs: dict[str, float | bool]) -> N
     """Test that `esp_data_available` returns False for invalid device configurations."""
     target = make_target(**kwargs)  # ty: ignore[invalid-argument-type]
     assert not esp_data_available(target)
+    
