@@ -15,7 +15,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 
 if TYPE_CHECKING:
     import numpy as np
@@ -48,55 +48,6 @@ def get_path_training_circuits() -> Path:
 def get_path_training_circuits_compiled() -> Path:
     """Returns the path to the compiled training circuits folder."""
     return get_path_training_data() / "training_circuits_compiled"
-
-
-def get_openqasm_gates() -> list[str]:
-    """Returns a list of all quantum gates within the openQASM 2.0 standard header."""
-    # according to https://github.com/Qiskit/qiskit-terra/blob/main/qiskit/qasm/libs/qelib1.inc
-    return [
-        "u3",
-        "u2",
-        "u1",
-        "cx",
-        "id",
-        "u0",
-        "u",
-        "p",
-        "x",
-        "y",
-        "z",
-        "h",
-        "s",
-        "sdg",
-        "t",
-        "tdg",
-        "rx",
-        "ry",
-        "rz",
-        "sx",
-        "sxdg",
-        "cz",
-        "cy",
-        "swap",
-        "ch",
-        "ccx",
-        "cswap",
-        "crx",
-        "cry",
-        "crz",
-        "cu1",
-        "cp",
-        "cu3",
-        "csx",
-        "cu",
-        "rxx",
-        "rzz",
-        "rccx",
-        "rc3x",
-        "c3x",
-        "c3sqrtx",
-        "c4x",
-    ]
 
 
 def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, int]:
