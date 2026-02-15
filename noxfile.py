@@ -92,7 +92,13 @@ def _run_tests(
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session)
+    _run_tests(
+        session,
+        pytest_run_args=[
+            r"-Wignore:invalid escape sequence '\\w':SyntaxWarning:qiskit_ibm_transpiler\..*",
+            r"-Wignore:\"is\" with a literal:SyntaxWarning:qiskit_ibm_transpiler\..*",
+        ],
+    )
 
 
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
