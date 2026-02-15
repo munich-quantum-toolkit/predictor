@@ -493,8 +493,8 @@ class PredictorEnv(Env):
 
         layout = pm_property_set.get("layout")
         if layout is not None:
-            orig = pm_property_set["original_qubit_indices"]
-            final = pm_property_set["final_layout"]
+            orig = pm_property_set.get("original_qubit_indices")
+            final = pm_property_set.get("final_layout")
 
             self.layout = TranspileLayout(
                 initial_layout=layout,
