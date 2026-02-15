@@ -147,7 +147,7 @@ def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         predictor.env, "calculate_reward", lambda _circ: (_ for _ in ()).throw(RuntimeError("fake error"))
     )
-    compiled_qc, prop_set = predictor.env.fom_aware_compile(dummy_action, None, qc, max_iteration=1)
+    compiled_qc, prop_set = predictor.env.fom_aware_compile(dummy_action, predictor.env.device, qc, max_iteration=1)
 
     assert isinstance(compiled_qc, QuantumCircuit)
     assert isinstance(prop_set, dict)
