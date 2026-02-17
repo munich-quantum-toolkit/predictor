@@ -86,6 +86,7 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
+    from qiskit.passmanager import PropertySet
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
 
@@ -143,7 +144,7 @@ class DeviceDependentAction(Action):
             Callable[..., tuple[Any, ...] | Circuit],
         ]
     )
-    do_while: Callable[[dict[str, Circuit]], bool] | None = None
+    do_while: Callable[[PropertySet], bool] | None = None
 
 
 # Registry of actions
