@@ -109,7 +109,7 @@ class Predictor:
             n_steps = 2048
             n_epochs = 10
             batch_size = 64
-            progress_bar = False
+            progress_bar = True
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
         model = MaskablePPO(

@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
-    from pytket.circuit import Node
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
@@ -111,7 +110,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         self.actions_mapping_and_routing_indices = []
         self.actions_opt_indices = []
         self.actions_final_optimization_indices = []
-        self.actions_structure_preserving_indices = []  # Actions that preserves the mapping and native gates
         self.used_actions: list[str] = []
         self.device = device
 
@@ -128,12 +126,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             self.action_set[index] = elem
             self.actions_synthesis_indices.append(index)
             index += 1
-        for elem in action_dict[PassType.OPT]:
-            self.action_set[index] = elem
-            self.actions_opt_indices.append(index)
-            if getattr(elem, "preserve_layout", False):
-                self.actions_structure_preserving_indices.append(index)
-            index += 1
         for elem in action_dict[PassType.LAYOUT]:
             self.action_set[index] = elem
             self.actions_layout_indices.append(index)
@@ -141,6 +133,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
         for elem in action_dict[PassType.ROUTING]:
             self.action_set[index] = elem
             self.actions_routing_indices.append(index)
+            index += 1
+        for elem in action_dict[PassType.OPT]:
+            self.action_set[index] = elem
+            self.actions_opt_indices.append(index)
             index += 1
         for elem in action_dict[PassType.MAPPING]:
             self.action_set[index] = elem
@@ -183,10 +179,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-        self.max_iter = 20
-        self.node_err: dict[Node, float] | None = None
-        self.edge_err: dict[tuple[Node, Node], float] | None = None
-        self.readout_err: dict[Node, float] | None = None
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
@@ -226,7 +218,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator)
+        # In case the Qiskit.QuantumCircuit has unitary or u gates or clifford in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator)
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
         elif self.state.count_ops().get("clifford"):
@@ -436,9 +428,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 placement = transpile_pass[0].get_placement_map(tket_qc)
             except Exception as e:
                 logger.warning("Placement failed (%s): %s. Falling back to original circuit.", action.name, e)
-                return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
+                return tk_to_qiskit(tket_qc, replace_implicit_swaps=True, perm_warning=False)
             else:
-                qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
+                qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True, perm_warning=False)
 
                 qiskit_mapping = {
                     qc_tmp.qubits[i]: placement[list(placement.keys())[i]].index[0] for i in range(len(placement))
@@ -468,7 +460,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
+        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True, perm_warning=False)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
@@ -562,9 +554,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         actions = []
 
-        flexible = True  # no restrictions
-        strict = False  # masters thesis
-        og = False  # original paper
+        flexible = True  # No restrictions
+        og = False  # Original paper
 
         # Initial state
         if not synthesized and not mapped and not routed:
@@ -572,9 +563,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_mapping_and_routing_indices)
                 actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
             if og:
                 actions.extend(self.actions_synthesis_indices)
@@ -585,48 +573,35 @@ class PredictorEnv(Env):  # type: ignore[misc]
                 actions.extend(self.actions_mapping_and_routing_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend(self.actions_mapping_and_routing_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_structure_preserving_indices)
             if og:
                 actions.extend(self.actions_mapping_and_routing_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
 
-        # Not depicted in paper/thesis, but covered in implementation because optimization can destroy the native gate set.
+        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
         if not synthesized and mapped and not routed:
             if flexible:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
             if og:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
 
-        # Not depicted in paper, but possible due to mapping-only passes
+        # Not *depicted* in paper; necessary because of mapping-only passes
         if synthesized and mapped and not routed:
             if flexible:
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend(self.actions_routing_indices)
             if og:
                 actions.extend(self.actions_routing_indices)
 
-        # Not depicted in paper/thesis, but possible since routing can insert non-native SWAPs
+        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
         if not synthesized and mapped and routed:
             if flexible:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_structure_preserving_indices)
             if og:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -636,10 +611,6 @@ class PredictorEnv(Env):  # type: ignore[misc]
             if flexible:
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
-            if strict:
-                actions.extend([self.action_terminate_index])
-                actions.extend(self.actions_structure_preserving_indices)
-                actions.extend(self.actions_final_optimization_indices)
             if og:
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
