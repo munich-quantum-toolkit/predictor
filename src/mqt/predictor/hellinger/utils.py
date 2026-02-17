@@ -23,7 +23,7 @@ from mqt.predictor.utils import calc_supermarq_features
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from qiskit import QuantumCircuit
-    from qiskit.compiler import Target
+    from qiskit.transpiler import Target
 
 
 def hellinger_distance(p: NDArray[np.float64], q: NDArray[np.float64]) -> float:

@@ -50,7 +50,7 @@ class Predictor:
 
     def compile_as_predicted(
         self,
-        qc: QuantumCircuit,
+        qc: QuantumCircuit | str,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
