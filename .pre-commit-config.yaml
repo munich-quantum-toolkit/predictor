@@ -139,7 +139,7 @@ repos:
       - id: ty-check
         name: ty check
         entry: uv run ty check
-        language: unsupported
+        language: system
         require_serial: true
         types_or: [python, pyi, jupyter]
         exclude: ^(docs/)
