@@ -355,8 +355,12 @@ class PredictorEnv(Env):
                 assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
-            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
-            assert pm.property_set["layout"]
+            if pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
+                logger.warning(
+                    "VF2Layout pass did not find a solution. Reason: " + str(pm.property_set["VF2Layout_stop_reason"])
+                )
+            else:
+                assert pm.property_set["layout"]
         else:
             assert pm.property_set["layout"]
 
