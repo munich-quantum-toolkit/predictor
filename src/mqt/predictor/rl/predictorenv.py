@@ -333,7 +333,7 @@ class PredictorEnv(Env):
             passes = cast("list[Task]", passes_)
             pm = PassManager(passes)
 
-            altered_qc = pm.run(self.state)
+        altered_qc = pm.run(self.state)
 
         if action_index in (
             self.actions_layout_indices + self.actions_mapping_indices + self.actions_final_optimization_indices
@@ -476,8 +476,8 @@ class PredictorEnv(Env):
 
         actions = []
 
-        flexible = True  # No restrictions
-        og = False  # Original paper
+        og = True  # Original (restricted) MDP
+        flexible = False  # General MDP
 
         # Initial state
         if not synthesized and not laid_out and not routed:
