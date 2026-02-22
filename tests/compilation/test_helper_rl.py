@@ -25,7 +25,10 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model,
 from mqt.predictor.rl.parsing import postprocess_vf2postlayout
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from qiskit.passmanager.base_tasks import Task
+    from qiskit.transpiler import Target
 
 
 def test_create_feature_dict() -> None:
@@ -58,8 +61,8 @@ def test_vf2_layout_and_postlayout() -> None:
         passes: list[Task] | None = None
         for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
             if layout_action.name == "VF2Layout":
-                assert callable(layout_action.transpile_pass)
-                passes = cast("list[Task]", layout_action.transpile_pass(dev))
+                factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
+                passes = factory(dev)
                 break
         assert passes is not None
         pm = PassManager(passes)
@@ -76,8 +79,8 @@ def test_vf2_layout_and_postlayout() -> None:
     post_layout_passes: list[Task] | None = None
     for layout_action in get_actions_by_pass_type()[PassType.FINAL_OPT]:
         if layout_action.name == "VF2PostLayout":
-            assert callable(layout_action.transpile_pass)
-            post_layout_passes = cast("list[Task]", layout_action.transpile_pass(dev_success))
+            factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
+            post_layout_passes = factory(dev_success)
             break
     assert post_layout_passes is not None
 
