@@ -185,8 +185,8 @@ def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: Quant
 
 
 def final_layout_bqskit_to_qiskit(
-    bqskit_initial_layout: list[int],
-    bqskit_final_layout: list[int],
+    bqskit_initial_layout: tuple[int, ...],
+    bqskit_final_layout: tuple[int, ...],
     compiled_qc: QuantumCircuit,
     initial_qc: QuantumCircuit,
 ) -> TranspileLayout:
