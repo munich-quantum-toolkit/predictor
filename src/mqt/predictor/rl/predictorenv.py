@@ -359,7 +359,8 @@ class PredictorEnv(Env):
         elif action.name == "VF2Layout":
             if pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
                 logger.warning(
-                    "VF2Layout pass did not find a solution. Reason: " + str(pm.property_set["VF2Layout_stop_reason"])
+                    "VF2Layout pass did not find a solution. Reason: %s",
+                    pm.property_set["VF2Layout_stop_reason"],
                 )
             else:
                 assert pm.property_set["layout"]
