@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import zipfile
 from importlib import resources
 from pathlib import Path
@@ -344,7 +345,7 @@ class Predictor:
 
         num_not_empty_entries = 0
         for dev in self.devices:
-            if scores[dev.description] != -1.0:
+            if not math.isclose(scores[dev.description], -1.0):
                 num_not_empty_entries += 1
 
         if num_not_empty_entries == 0:

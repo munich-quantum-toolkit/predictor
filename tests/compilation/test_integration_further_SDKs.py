@@ -17,7 +17,6 @@ import pytest
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from bqskit.ir.circuit import Circuit
 from mqt.bench.targets import get_available_device_names, get_device
-from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
@@ -27,16 +26,21 @@ from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl.actions import CompilationOrigin, PassType, get_actions_by_pass_type
 from mqt.predictor.rl.parsing import (
-    PreProcessTKETRoutingAfterQiskitLayout,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pytket._tket.passes import BasePass as TketBasePass
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
     from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.parsing import (
+        PreProcessTKETRoutingAfterQiskitLayout,
+    )
 
 
 @pytest.fixture
@@ -58,8 +62,8 @@ def test_bqskit_o2_action(available_actions_dict: dict[PassType, list[Action]]) 
     qc.cx(0, 1)
 
     bqskit_qc = qiskit_to_bqskit(qc)
-    assert callable(action_bqskit_o2.transpile_pass)
-    bqskit_qc_optimized = action_bqskit_o2.transpile_pass(bqskit_qc)
+    factory = cast("Callable[[Circuit], Circuit]", action_bqskit_o2.transpile_pass)
+    bqskit_qc_optimized = factory(bqskit_qc)
     assert isinstance(bqskit_qc_optimized, Circuit)
     optimized_qc = bqskit_to_qiskit(bqskit_qc_optimized)
 
@@ -83,9 +87,8 @@ def test_bqskit_synthesis_action(device: Target, available_actions_dict: dict[Pa
     check_nat_gates(qc)
     assert not check_nat_gates.property_set["all_gates_in_basis"]
 
-    assert callable(action_bqskit_synthesis_action.transpile_pass)
-    lambda_ = action_bqskit_synthesis_action.transpile_pass(device)
-    assert callable(lambda_)
+    factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action_bqskit_synthesis_action.transpile_pass)
+    lambda_ = factory(device)
     bqskit_qc = qiskit_to_bqskit(qc)
     if "rigetti" in device.description or "ionq" in device.description or "iqm" in device.description:
         with pytest.raises(ValueError, match=re.escape("not supported in BQSKIT")):
@@ -122,10 +125,11 @@ def test_bqskit_mapping_action_swaps_necessary(available_actions_dict: dict[Pass
 
     device = get_device("ibm_falcon_27")
     bqskit_qc = qiskit_to_bqskit(qc)
-    assert callable(bqskit_mapping_action.transpile_pass)
-    lambda_ = bqskit_mapping_action.transpile_pass(device)
-    assert callable(lambda_)
-    bqskit_qc_mapped, input_mapping, output_mapping = lambda_(bqskit_qc)
+    factory = cast(
+        "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
+        bqskit_mapping_action.transpile_pass,
+    )
+    bqskit_qc_mapped, input_mapping, output_mapping = factory(device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
     layout = final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc)
 
@@ -186,10 +190,11 @@ def test_bqskit_mapping_action_no_swaps_necessary(available_actions_dict: dict[P
     device = get_device("quantinuum_h2_56")
 
     bqskit_qc = qiskit_to_bqskit(qc_no_swap_needed)
-    assert callable(bqskit_mapping_action.transpile_pass)
-    lambda_ = bqskit_mapping_action.transpile_pass(device)
-    assert callable(lambda_)
-    bqskit_qc_mapped, input_mapping, output_mapping = lambda_(bqskit_qc)
+    factory = cast(
+        "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
+        bqskit_mapping_action.transpile_pass,
+    )
+    bqskit_qc_mapped, input_mapping, output_mapping = factory(device)(bqskit_qc)
     mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
     layout = final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc_no_swap_needed)
     assert layout is not None
@@ -211,8 +216,8 @@ def test_tket_routing(available_actions_dict: dict[PassType, list[Action]]) -> N
     device = get_device("quantinuum_h2_56")
 
     layout_action = available_actions_dict[PassType.LAYOUT][0]
-    assert callable(layout_action.transpile_pass)
-    passes_ = cast("list[Task]", layout_action.transpile_pass(device))
+    factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
+    passes_ = factory(device)
     pm = PassManager(passes_)
     layouted_qc = pm.run(qc)
     initial_layout = pm.property_set["layout"]
@@ -225,11 +230,11 @@ def test_tket_routing(available_actions_dict: dict[PassType, list[Action]]) -> N
     assert routing_action is not None
 
     tket_qc = qiskit_to_tk(layouted_qc, preserve_param_uuid=True)
-    assert callable(routing_action.transpile_pass)
-    passes = routing_action.transpile_pass(device)
-    assert isinstance(passes, list)
+    factory = cast(
+        "Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]]", routing_action.transpile_pass
+    )
+    passes = factory(device)
     for pass_ in passes:
-        assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
         pass_.apply(tket_qc)
 
     qbs = tket_qc.qubits

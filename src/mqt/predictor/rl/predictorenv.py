@@ -457,17 +457,19 @@ class PredictorEnv(Env):
 
     def _apply_qiskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-            assert callable(action.transpile_pass)
-            passes_ = action.transpile_pass(
+            factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
+            passes = factory(
                 self.device.operation_names,
                 CouplingMap(self.device.build_coupling_map()) if self.layout else None,
             )
-            passes = cast("list[Task]", passes_)
             assert action.do_while is not None
             pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
         else:
-            passes_ = action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-            passes = cast("list[Task]", passes_)
+            if callable(action.transpile_pass):
+                factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
+                passes = factory(self.device)
+            else:
+                passes = cast("list[Task]", action.transpile_pass)
             pm = PassManager(passes)
 
         altered_qc = pm.run(self.state)
@@ -509,6 +511,7 @@ class PredictorEnv(Env):
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
+<<<<<<< new_RL
         transpile_pass = (
             action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
         )
@@ -516,6 +519,16 @@ class PredictorEnv(Env):
         for p in transpile_pass:
             assert isinstance(p, (TketBasePass, PreProcessTKETRoutingAfterQiskitLayout))
             p.apply(tket_qc)
+=======
+        if callable(action.transpile_pass):
+            factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
+            passes = factory(self.device)
+        else:
+            passes = cast("list[Task]", action.transpile_pass)
+        for pass_ in passes:
+            assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
+            pass_.apply(tket_qc)
+>>>>>>> main
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
@@ -541,7 +554,6 @@ class PredictorEnv(Env):
             ValueError: If the action index is not in the action set or if the action origin is not supported.
         """
         bqskit_qc = qiskit_to_bqskit(self.state)
-        assert callable(action.transpile_pass)
         if action_index in self.actions_opt_indices:
             transpile = cast("Callable[[Circuit], Circuit]", action.transpile_pass)
             bqskit_compiled_qc = transpile(bqskit_qc)
@@ -550,7 +562,7 @@ class PredictorEnv(Env):
             bqskit_compiled_qc = factory(self.device)(bqskit_qc)
         elif action_index in self.actions_mapping_indices:
             factory = cast(
-                "Callable[[Target], Callable[[Circuit], tuple[Circuit, list[int], list[int]]]]",
+                "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
                 action.transpile_pass,
             )
             bqskit_compiled_qc, initial, final = factory(self.device)(bqskit_qc)

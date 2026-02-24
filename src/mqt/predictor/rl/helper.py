@@ -62,9 +62,10 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
         found_suitable_qc = True
 
     try:
-        qc = QuantumCircuit.from_qasm_file(file_list[random_index])
-    except Exception:
-        raise RuntimeError("Could not read QuantumCircuit from: " + str(file_list[random_index])) from None
+        qc = QuantumCircuit.from_qasm_file(file_list[random_index])  # ty: ignore[invalid-argument-type]
+    except Exception as e:
+        msg = f"Could not read QuantumCircuit from: {file_list[random_index]}"
+        raise RuntimeError(msg) from e
 
     return qc, str(file_list[random_index])
 
