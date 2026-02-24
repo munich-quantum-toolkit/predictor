@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 import warnings
 from contextlib import suppress
+from math import isclose
 from typing import cast
 
 import numpy as np
@@ -256,7 +257,11 @@ class PredictorEnv(Env):
             if self.prev_reward_kind != new_kind:
                 delta_reward = 0.0
 
-            reward_val = self.reward_scale * delta_reward if delta_reward != 0.0 else self.no_effect_penalty
+            reward_val = (
+                self.reward_scale * delta_reward
+                if not isclose(delta_reward, 0.0, abs_tol=1e-12)
+                else self.no_effect_penalty
+            )
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         self.state._layout = self.layout  # noqa: SLF001
@@ -511,15 +516,6 @@ class PredictorEnv(Env):
 
     def _apply_tket_action(self, action: Action, action_index: int) -> QuantumCircuit:
         tket_qc = qiskit_to_tk(self.state, preserve_param_uuid=True)
-<<<<<<< new_RL
-        transpile_pass = (
-            action.transpile_pass(self.device) if callable(action.transpile_pass) else action.transpile_pass
-        )
-        assert isinstance(transpile_pass, list)
-        for p in transpile_pass:
-            assert isinstance(p, (TketBasePass, PreProcessTKETRoutingAfterQiskitLayout))
-            p.apply(tket_qc)
-=======
         if callable(action.transpile_pass):
             factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
             passes = factory(self.device)
@@ -528,7 +524,6 @@ class PredictorEnv(Env):
         for pass_ in passes:
             assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
             pass_.apply(tket_qc)
->>>>>>> main
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
