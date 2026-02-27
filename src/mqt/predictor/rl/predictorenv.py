@@ -448,9 +448,9 @@ class PredictorEnv(Env):
         return True
 
     def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
-        """Check if a circuit is fully routed/mapped to the device, including directionality.
+        """Check if a circuit is fully routed to the device, including directionality.
 
-        A circuit is considered mapped if all two-qubit gates are on qubits
+        A circuit is considered routed if all two-qubit gates are on qubits
         allowed by the coupling map and follow the allowed direction.
 
         Args:
@@ -458,7 +458,7 @@ class PredictorEnv(Env):
             coupling_map: CouplingMap of the target device.
 
         Returns:
-            True if fully mapped and directed, False otherwise.
+            True if fully routed, False otherwise.
         """
         # Create a set of directed edges for fast lookup
         directed_edges = set(coupling_map.get_edges())
