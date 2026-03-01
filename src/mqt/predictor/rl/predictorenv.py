@@ -203,7 +203,7 @@ class PredictorEnv(Env):
         altered_qc = self.apply_action(action)
         if altered_qc is None:
             return None
-        
+
         # in case the Qiskit.QuantumCircuit has unitary or clifford or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
         for gate_type in ("unitary", "clifford"):
             if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
