@@ -21,14 +21,13 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import InstructionProperties, Target
+    from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
 
 
 import warnings
-from contextlib import suppress
 from math import isclose
 from typing import cast
 
@@ -62,7 +61,11 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
 )
-from mqt.predictor.rl.approx_reward import BLACKLIST, approx_estimated_success_probability, approx_expected_fidelity
+from mqt.predictor.rl.approx_reward import (
+    approx_estimated_success_probability,
+    approx_expected_fidelity,
+    compute_device_averages_from_target,
+)
 from mqt.predictor.rl.helper import (
     create_feature_dict,
     get_path_training_circuits,
@@ -200,7 +203,8 @@ class PredictorEnv(Env):
         altered_qc = self.apply_action(action)
         if altered_qc is None:
             return None
-
+        
+        # in case the Qiskit.QuantumCircuit has unitary or clifford or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
         for gate_type in ("unitary", "clifford"):
             if altered_qc.count_ops().get(gate_type):  # ty: ignore[invalid-argument-type]
                 altered_qc = altered_qc.decompose(gates_to_decompose=gate_type)
@@ -239,7 +243,7 @@ class PredictorEnv(Env):
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
-            reward_val = self.calculate_reward(mode="exact")[0] if done else self.no_effect_penalty
+            reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
             return create_feature_dict(self.state), reward_val, done, False, {}
 
@@ -596,119 +600,13 @@ class PredictorEnv(Env):
         return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
 
     def _ensure_device_averages_cached(self) -> None:
-        """Cache per-basis-gate averages for error, duration, and a coherence scale.
-
-        Backend-dependent preprocessing step used by the approximate reward model.
-
-        It computes and caches:
-            - _err_by_gate: dict[str, float] mapping basis gate -> mean error rate
-            - _dur_by_gate: dict[str, float] mapping basis gate -> mean duration (seconds)
-            - _tbar: median of min(T1, T2) over all qubits (seconds), if available
-
-        Assumes a modern Qiskit Target (e.g. IBM backends) and raises a RuntimeError
-        if the required Target API is not available or if no calibration data exists.
-        """
+        """Cache per-basis-gate averages for error, duration, and a coherence scale."""
         if self._dev_avgs_cached:
             return
 
-        target = self.device
+        err_by_gate, dur_by_gate, tbar = compute_device_averages_from_target(self.device)
 
-        # Hard requirements: these must exist for the approximate model to make sense
-        try:
-            num_qubits = target.num_qubits
-            op_names = list(target.operation_names)
-            coupling_map = target.build_coupling_map()
-            qubit_props = target.qubit_properties
-        except AttributeError as exc:
-            msg = "Device target does not expose the required Target API for approximate reward computation."
-            raise RuntimeError(msg) from exc
-
-        basis_ops = [name for name in op_names if name not in BLACKLIST]
-
-        twoq_edges = coupling_map.get_edges()  # list[(i, j)]
-
-        def _get_props(name: str, qargs: tuple[int, ...]) -> InstructionProperties | None:
-            """Return calibration properties for (name, qargs) or None if unavailable."""
-            try:
-                props_map = target[name]
-            except KeyError:
-                return None
-            return props_map.get(qargs, None)
-
-        # Accumulate raw samples per gate name
-        err_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
-        dur_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
-
-        arity_by_name: dict[str, int] = {}
-        for name in basis_ops:
-            with suppress(KeyError, AttributeError, TypeError):
-                op = target.operation_from_name(name)
-                arity_by_name[name] = int(op.num_qubits)
-
-        # --- Aggregate error/duration per basis gate --------------------------------
-        for name in basis_ops:
-            arity = arity_by_name.get(name)
-            if arity is None:
-                continue
-
-            if arity == 1:
-                for q in range(num_qubits):
-                    props = _get_props(name, (q,))
-                    if props is None:
-                        continue
-                    err = getattr(props, "error", None)
-                    if err is not None:
-                        err_samples[name].append(float(err))
-                    dur = getattr(props, "duration", None)
-                    if dur is not None:
-                        dur_samples[name].append(float(dur))
-
-            elif arity == 2:
-                for i, j in twoq_edges:
-                    props = _get_props(name, (i, j))
-                    if props is None:
-                        # Try flipped orientation for uni-directional couplings
-                        props = _get_props(name, (j, i))
-                    if props is None:
-                        continue
-                    err = getattr(props, "error", None)
-                    if err is not None:
-                        err_samples[name].append(float(err))
-                    dur = getattr(props, "duration", None)
-                    if dur is not None:
-                        dur_samples[name].append(float(dur))
-
-            else:
-                # Ignore gates with arity > 2 for the approximation model
-                continue
-
-        # Flatten for global fallback means (conservative default for missing gates)
-        all_err = [x for xs in err_samples.values() for x in xs]
-        all_dur = [x for xs in dur_samples.values() for x in xs]
-
-        if not all_err and not all_dur:
-            msg = "No valid calibration data found in Target, cannot compute approximate reward."
-            raise RuntimeError(msg)
-
-        global_err = float(np.mean(all_err)) if all_err else 0.0
-        global_dur = float(np.mean(all_dur)) if all_dur else 0.0
-
-        # Reduce to per-gate means; fall back to global mean if a gate has no samples
-        self._err_by_gate = {name: (float(np.mean(vals)) if vals else global_err) for name, vals in err_samples.items()}
-        self._dur_by_gate = {name: (float(np.mean(vals)) if vals else global_dur) for name, vals in dur_samples.items()}
-
-        # --- Compute a single coherence scale tbar from T1/T2 ------------------------
-        tmins: list[float] = []
-        if qubit_props:
-            for i in range(num_qubits):
-                props = qubit_props[i]
-                if props is None:
-                    continue
-                t1v = getattr(props, "t1", None)
-                t2v = getattr(props, "t2", None)
-                vals = [v for v in (t1v, t2v) if v is not None]
-                if vals:
-                    tmins.append(float(min(vals)))
-
-        self._tbar = float(np.median(tmins)) if tmins else None
+        self._err_by_gate = err_by_gate
+        self._dur_by_gate = dur_by_gate
+        self._tbar = tbar
         self._dev_avgs_cached = True
