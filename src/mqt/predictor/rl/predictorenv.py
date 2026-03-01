@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import Target
+    from qiskit.transpiler import Layout, Target
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
@@ -40,7 +40,7 @@ from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
-from qiskit.transpiler.passes import CheckMap, GatesInBasis
+from qiskit.transpiler.passes import GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.hellinger import get_hellinger_model_path
@@ -357,8 +357,13 @@ class PredictorEnv(Env):
                 assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
-            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
-            assert pm.property_set["layout"]
+            if pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
+                logger.warning(
+                    "VF2Layout pass did not find a solution. Reason: %s",
+                    pm.property_set["VF2Layout_stop_reason"],
+                )
+            else:
+                assert pm.property_set["layout"]
         else:
             assert pm.property_set["layout"]
 
@@ -428,27 +433,117 @@ class PredictorEnv(Env):
 
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
+    def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
+        """True if every logical qubit in the circuit has a physical assignment."""
+        if isinstance(layout, TranspileLayout):
+            # Use final_layout if available; otherwise fallback to initial_layout
+            layout = layout.final_layout or layout.initial_layout
+
+        v2p = layout.get_virtual_bits()
+        for instr in circuit.data:
+            for q in instr.qubits:
+                if q not in v2p:
+                    # Logical qubit not assigned
+                    return False
+        return True
+
+    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
+        """Check if a circuit is fully routed/mapped to the device, including directionality.
+
+        A circuit is considered mapped if all two-qubit gates are on qubits
+        allowed by the coupling map and follow the allowed direction.
+
+        Args:
+            circuit: QuantumCircuit to check.
+            coupling_map: CouplingMap of the target device.
+
+        Returns:
+            True if fully mapped and directed, False otherwise.
+        """
+        # Create a set of directed edges for fast lookup
+        directed_edges = set(coupling_map.get_edges())
+
+        for instr in circuit.data:
+            qubits = [q._index for q in instr.qubits]  # noqa: SLF001
+            if len(qubits) == 2:
+                q0, q1 = qubits
+                # If this two-qubit gate is not allowed in the device coupling map, return False
+                if (q0, q1) not in directed_edges:
+                    return False
+        return True
+
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determines and returns the valid actions for the current state."""
+        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
-        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+        synthesized = check_nat_gates.property_set["all_gates_in_basis"]
+        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        # Routing is only allowed after layout
+        routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        )
 
-        if not only_nat_gates:
-            actions = self.actions_synthesis_indices + self.actions_opt_indices
-            if self.layout is not None:
-                actions += self.actions_routing_indices
-            return actions
+        actions = []
 
-        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
-        check_mapping(self.state)
-        mapped = check_mapping.property_set["is_swap_mapped"]
+        og = True  # Original (restricted) MDP
+        flexible = False  # General MDP
 
-        if mapped and self.layout is not None:  # The circuit is correctly mapped.
-            return [self.action_terminate_index, *self.actions_opt_indices]
+        # Initial state
+        if not synthesized and not laid_out and not routed:
+            if flexible:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
 
-        if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
-            return self.actions_routing_indices
+        if synthesized and not laid_out and not routed:
+            if flexible:
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
 
-        # No layout applied yet
-        return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
+        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
+        if not synthesized and laid_out and not routed:
+            if flexible:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+
+        # Not *depicted* in paper; necessary because of mapping-only passes
+        if synthesized and laid_out and not routed:
+            if flexible:
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend(self.actions_routing_indices)
+
+        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
+        if not synthesized and laid_out and routed:
+            if flexible:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
+
+        # Final state
+        if synthesized and laid_out and routed:
+            if flexible:
+                actions.extend([self.action_terminate_index])
+                actions.extend(self.actions_opt_indices)
+            if og:
+                actions.extend([self.action_terminate_index])
+                actions.extend(self.actions_opt_indices)
+
+        return actions

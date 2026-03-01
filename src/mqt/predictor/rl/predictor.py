@@ -104,6 +104,7 @@ class Predictor:
             batch_size = 10
             progress_bar = False
         else:
+            set_random_seed(0)
             # default PPO values
             n_steps = 2048
             n_epochs = 10
