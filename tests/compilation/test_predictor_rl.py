@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -19,7 +20,7 @@ from mqt.bench.targets import get_device
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Target
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -32,13 +33,16 @@ from mqt.predictor.rl.actions import (
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
+if TYPE_CHECKING:
+    from mqt.predictor.reward import figure_of_merit
+
 
 def test_predictor_env_reset_from_string() -> None:
     """Test the reset function of the predictor environment with a quantum circuit given as a string as input."""
     device = get_device("ibm_eagle_127")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
     assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
@@ -94,15 +98,19 @@ def test_qcompile_with_newly_trained_models() -> None:
     check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+    check_mapping = CheckMap(coupling_map=device.build_coupling_map())
+    check_mapping(qc_compiled)
+    mapped = check_mapping.property_set["is_swap_mapped"]
 
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
+    assert mapped, "Circuit should be mapped to the device's coupling map."
 
 
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 5)
     with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
         rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
     with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
@@ -136,3 +144,35 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
+
+
+@pytest.mark.parametrize(
+    "fom",
+    ["expected_fidelity", "estimated_success_probability"],
+)
+def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> None:
+    """Ensure approx reward path runs and uses cached per-basis-gate calibration maps.
+
+    We don't test exact numeric values (backend-dependent), only that:
+      - approx path runs,
+      - cached maps are populated,
+      - output is a valid probability in [0, 1].
+    """
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+    device = get_device("ibm_heron_133")
+    predictor = Predictor(figure_of_merit=fom, device=device)
+
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="approx")
+    assert kind == "approx"
+    assert 0.0 <= val <= 1.0
+
+    # Ensure caching produced per-gate mappings
+    assert predictor.env._dev_avgs_cached  # noqa: SLF001
+    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
+    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
+    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
+
+    if fom == "estimated_success_probability":
+        assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
+        # tbar is optional depending on backend calibration; just sanity-check type
+        assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001
