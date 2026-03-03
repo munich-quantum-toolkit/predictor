@@ -390,7 +390,7 @@ class PredictorEnv(Env):
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc)
+        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
@@ -447,27 +447,33 @@ class PredictorEnv(Env):
                     return False
         return True
 
-    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
+    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap, layout: TranspileLayout) -> bool:
         """Check if a circuit is fully routed to the device, including directionality.
 
-        A circuit is considered routed if all two-qubit gates are on qubits
-        allowed by the coupling map and follow the allowed direction.
+        A circuit is considered routed if all two-qubit gates are on qubit pairs
+        that exist as directed edges in the device coupling map, using the physical
+        qubit indices resolved via the layout (virtual → physical mapping).
 
         Args:
             circuit: QuantumCircuit to check.
             coupling_map: CouplingMap of the target device.
+            layout: The transpile layout mapping virtual qubits to physical qubits.
 
         Returns:
             True if fully routed, False otherwise.
         """
-        # Create a set of directed edges for fast lookup
         directed_edges = set(coupling_map.get_edges())
 
+        # Resolve virtual → physical using the layout.
+        # q._index is register-local and must NOT be used here; v2p[q] gives the
+        # correct physical qubit index as seen by the device.
+        resolved_layout = layout.final_layout or layout.initial_layout
+        v2p = resolved_layout.get_virtual_bits()
+
         for instr in circuit.data:
-            qubits = [q._index for q in instr.qubits]  # noqa: SLF001
-            if len(qubits) == 2:
-                q0, q1 = qubits
-                # If this two-qubit gate is not allowed in the device coupling map, return False
+            if len(instr.qubits) == 2:
+                q0 = v2p[instr.qubits[0]]
+                q1 = v2p[instr.qubits[1]]
                 if (q0, q1) not in directed_edges:
                     return False
         return True
@@ -480,7 +486,9 @@ class PredictorEnv(Env):
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
         # Routing is only allowed after layout
         routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()), self.layout)
+            if laid_out
+            else False
         )
 
         actions = []
