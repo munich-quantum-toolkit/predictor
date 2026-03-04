@@ -40,7 +40,6 @@ from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
-from qiskit.transpiler.passes import GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.hellinger import get_hellinger_model_path
@@ -195,15 +194,14 @@ class PredictorEnv(Env):
             raise RuntimeError(msg)
 
         if action == self.action_terminate_index:
+            if action not in self.valid_actions:
+                msg = "Terminate action is not valid but was chosen."
+                raise RuntimeError(msg)
             reward_val = self.calculate_reward()
             done = True
         else:
             reward_val = 0
             done = False
-
-        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
-        if self.state.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
-            self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
@@ -345,6 +343,11 @@ class PredictorEnv(Env):
         elif action_index in self.actions_routing_indices and self.layout:
             self.layout.final_layout = pm.property_set["final_layout"]
 
+        # BasisTranslator errors on unitary gates; decompose them immediately so
+        # the circuit is always in a consistent state after a Qiskit action.
+        if altered_qc.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
+            altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
+
         return altered_qc
 
     def _handle_qiskit_layout_postprocessing(
@@ -447,48 +450,57 @@ class PredictorEnv(Env):
                     return False
         return True
 
-    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap, layout: TranspileLayout) -> bool:
+    def is_circuit_synthesized(self, circuit: QuantumCircuit) -> bool:
+        """Check if the circuit uses only native gates of the device.
+
+        Verifies that every gate name in the circuit is present in
+        ``device.operation_names``, equivalent to the ``GatesInBasis`` pass.
+
+        Args:
+            circuit: QuantumCircuit to check.
+
+        Returns:
+            True if all gates are native to the device.
+        """
+        native_names = set(self.device.operation_names)
+        return all(
+            instr.operation.name in native_names or instr.operation.name in ("barrier", "measure")
+            for instr in circuit.data
+        )
+
+    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
         """Check if a circuit is fully routed to the device, including directionality.
 
         A circuit is considered routed if all two-qubit gates are on qubit pairs
-        that exist as directed edges in the device coupling map, using the physical
-        qubit indices resolved via the layout (virtual → physical mapping).
+        that exist as directed edges in the device coupling map.
+
+        After a layout pass the circuit's qubits are already physical qubits, so
+        ``circuit.find_bit(q).index`` gives the physical index directly —
+        consistent with how ``reward.py`` looks up gate calibrations.
 
         Args:
             circuit: QuantumCircuit to check.
             coupling_map: CouplingMap of the target device.
-            layout: The transpile layout mapping virtual qubits to physical qubits.
 
         Returns:
             True if fully routed, False otherwise.
         """
         directed_edges = set(coupling_map.get_edges())
-
-        # Resolve virtual → physical using the layout.
-        # q._index is register-local and must NOT be used here; v2p[q] gives the
-        # correct physical qubit index as seen by the device.
-        resolved_layout = layout.final_layout or layout.initial_layout
-        v2p = resolved_layout.get_virtual_bits()
-
         for instr in circuit.data:
             if len(instr.qubits) == 2:
-                q0 = v2p[instr.qubits[0]]
-                q1 = v2p[instr.qubits[1]]
+                q0 = circuit.find_bit(instr.qubits[0]).index
+                q1 = circuit.find_bit(instr.qubits[1]).index
                 if (q0, q1) not in directed_edges:
                     return False
         return True
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
-        check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
-        check_nat_gates(self.state)
-        synthesized = check_nat_gates.property_set["all_gates_in_basis"]
+        synthesized = self.is_circuit_synthesized(self.state)
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
         # Routing is only allowed after layout
         routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()), self.layout)
-            if laid_out
-            else False
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
         )
 
         actions = []
