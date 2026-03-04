@@ -188,22 +188,21 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
+        self.state._layout = self.layout  # noqa: SLF001
+
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
         if action == self.action_terminate_index:
-            if action not in self.valid_actions:
-                msg = "Terminate action is not valid but was chosen."
-                raise RuntimeError(msg)
+            assert action in self.valid_actions, "Terminate action is not valid but was chosen."
             reward_val = self.calculate_reward()
             done = True
         else:
             reward_val = 0
             done = False
 
-        self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
@@ -266,10 +265,14 @@ class PredictorEnv(Env):
         """Returns a list of valid actions for the current state."""
         action_mask = [action in self.valid_actions for action in self.action_set]
 
-        # it is not clear how tket will handle the layout, so we remove all actions that are from "origin"=="tket" if a layout is set
+        # TKET layout/optimization actions must not run after a Qiskit layout has been set
+        # (it is not clear how tket will handle the layout). TKET routing actions are
+        #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
         if self.layout is not None:
             action_mask = [
-                action_mask[i] and self.action_set[i].origin != CompilationOrigin.TKET for i in range(len(action_mask))
+                action_mask[i]
+                and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
+                for i in range(len(action_mask))
             ]
 
         if self.has_parameterized_gates or self.layout is not None:
@@ -340,7 +343,9 @@ class PredictorEnv(Env):
         ):
             altered_qc = self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
 
-        elif action_index in self.actions_routing_indices and self.layout:
+        elif (
+            action_index in self.actions_routing_indices and self.layout and pm.property_set["final_layout"] is not None
+        ):
             self.layout.final_layout = pm.property_set["final_layout"]
 
         # BasisTranslator errors on unitary gates; decompose them immediately so
