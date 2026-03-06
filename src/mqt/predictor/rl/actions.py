@@ -97,9 +97,9 @@ if TYPE_CHECKING:
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as tket_BasePass
-    from qiskit.passmanager import PropertySet
     from qiskit.circuit import ClassicalRegister, Clbit, Instruction, Qubit
     from qiskit.dagcircuit import DAGCircuit
+    from qiskit.passmanager import PropertySet
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
 

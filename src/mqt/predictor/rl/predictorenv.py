@@ -50,10 +50,8 @@ from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
-    CheckMap,
     EnlargeWithAncilla,
     FullAncillaAllocation,
-    GatesInBasis,
     SetLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
@@ -479,11 +477,12 @@ class PredictorEnv(Env):
         ):
             self.layout.final_layout = pm_property_set["final_layout"]
 
-
         # BasisTranslator errors on unitary gates; decompose them immediately so
         # the circuit is always in a consistent state after a Qiskit action.
         if altered_qc.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
             altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
+        elif altered_qc.count_ops().get("clifford"):  # ty: ignore[invalid-argument-type]
+            altered_qc = altered_qc.decompose(gates_to_decompose="clifford")
 
         return altered_qc
 
@@ -502,11 +501,11 @@ class PredictorEnv(Env):
                 assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
-        if pm_property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
-            logger.warning(
-                "VF2Layout pass did not find a solution. Reason: %s",
-                pm_property_set["VF2Layout_stop_reason"],
-            )
+            if pm_property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
+                logger.warning(
+                    "VF2Layout pass did not find a solution. Reason: %s",
+                    pm_property_set["VF2Layout_stop_reason"],
+                )
         else:
             assert pm_property_set["layout"]
 
@@ -718,7 +717,6 @@ class PredictorEnv(Env):
         )
 
         actions = []
-        
         # Initial state
         if not synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
@@ -797,4 +795,3 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_final_optimization_indices)
 
         return actions
-
