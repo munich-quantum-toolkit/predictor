@@ -11,6 +11,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Improved the MDP and extended the RL predictor's action/state space (expanded observation vector, support for stochastic passes, wrapped stochastic actions) ([#449]) ([**@Shaobo-Zhou**])
+- ✨ Added AIRouting and new optimization actions (KAKDecomposition, ElidePermutations) to the RL action set ([#449]) ([**@Shaobo-Zhou**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
@@ -46,6 +48,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
