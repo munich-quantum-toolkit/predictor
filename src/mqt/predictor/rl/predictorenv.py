@@ -315,7 +315,7 @@ class PredictorEnv(Env):
         if self.layout is not None:
             action_mask = [
                 action_mask[i]
-                and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
+                and (self.action_set[i].origin != CompilationOrigin.TKET)
                 for i in range(len(action_mask))
             ]
 
