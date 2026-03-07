@@ -403,7 +403,7 @@ register_action(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
-        transpile_pass=lambda device: VF2PostLayout(target=device, time_limit=100),
+        transpile_pass=lambda device: VF2PostLayout(target=device, call_limit=5000),
     )
 )
 
@@ -427,7 +427,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
         transpile_pass=lambda device: [
-            VF2Layout(target=device),
+            VF2Layout(target=device, call_limit=5000),
             ConditionalController(
                 [
                     FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
