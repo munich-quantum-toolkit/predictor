@@ -68,6 +68,7 @@ class PredictorEnv(Env):
     def __init__(
         self,
         device: Target,
+        mdp: str = "paper",
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
     ) -> None:
@@ -75,6 +76,7 @@ class PredictorEnv(Env):
 
         Arguments:
             device: The target device to be used for compilation.
+            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline (synthesis -> (layout->routing) / mapping), while "flexible" allows for a cyclical approach where actions can be interleaved or reversed.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
 
@@ -94,6 +96,9 @@ class PredictorEnv(Env):
         self.actions_final_optimization_indices = []
         self.used_actions: list[str] = []
         self.device = device
+
+        logger.info("MDP: " + mdp)
+        self.mdp = mdp
 
         # check for uni-directional coupling map
         coupling_set = {tuple(pair) for pair in self.device.build_coupling_map()}
@@ -510,64 +515,61 @@ class PredictorEnv(Env):
 
         actions = []
 
-        og = True  # Original (restricted) MDP
-        flexible = False  # General MDP
-
         # Initial state
         if not synthesized and not laid_out and not routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
 
         if synthesized and not laid_out and not routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
 
         # Not *depicted* in paper; necessary because optimization can destroy the native gate set
         if not synthesized and laid_out and not routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
 
-        # Not *depicted* in paper; necessary because of mapping-only passes
+        # Not *depicted* in paper; necessary because of layout-only passes
         if synthesized and laid_out and not routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend(self.actions_routing_indices)
 
         # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
         if not synthesized and laid_out and routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
 
         # Final state
         if synthesized and laid_out and routed:
-            if flexible:
+            if self.mdp == "flexible":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
-            if og:
+            if self.mdp == "paper":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
 
