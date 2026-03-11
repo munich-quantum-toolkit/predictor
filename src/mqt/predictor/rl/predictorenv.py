@@ -461,12 +461,7 @@ class PredictorEnv(Env):
             layout = layout.final_layout or layout.initial_layout
 
         v2p = layout.get_virtual_bits()
-        for instr in circuit.data:
-            for q in instr.qubits:
-                if q not in v2p:
-                    # Logical qubit not assigned
-                    return False
-        return True
+        return all(q in v2p for q in circuit.qubits)
 
     def is_circuit_synthesized(self, circuit: QuantumCircuit) -> bool:
         """Check if the circuit uses only native gates of the device.
