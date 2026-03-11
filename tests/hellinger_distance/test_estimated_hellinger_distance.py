@@ -196,7 +196,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
 
         rl_predictor.train_model(
-            timesteps=5,
+            timesteps=100,
             test=True,
         )
 
