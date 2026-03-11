@@ -60,26 +60,20 @@ from qiskit.transpiler.passes import (
     CommutativeInverseCancellation,
     ConsolidateBlocks,
     DenseLayout,
-    Depth,
     ElidePermutations,
     EnlargeWithAncilla,
-    FixedPoint,
     FullAncillaAllocation,
-    GatesInBasis,
     InverseCancellation,
-    MinimumPoint,
     Optimize1qGatesDecomposition,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
     SabreSwap,
-    Size,
     UnitarySynthesis,
     VF2Layout,
     VF2PostLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
-from qiskit.transpiler.preset_passmanagers import common
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
@@ -350,35 +344,6 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [RemoveRedundancies()],
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        "QiskitO3",
-        CompilationOrigin.QISKIT,
-        PassType.OPT,
-        transpile_pass=lambda native_gate, coupling_map: [
-            Collect2qBlocks(),
-            ConsolidateBlocks(basis_gates=native_gate),
-            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-            Optimize1qGatesDecomposition(basis=native_gate),
-            CommutativeCancellation(basis_gates=native_gate),
-            GatesInBasis(native_gate),
-            ConditionalController(
-                common.generate_translation_passmanager(
-                    target=None, basis_gates=native_gate, coupling_map=coupling_map
-                ).to_flow_controller(),
-                condition=lambda property_set: not property_set["all_gates_in_basis"],
-            ),
-            Depth(recurse=True),
-            FixedPoint("depth"),
-            Size(recurse=True),
-            FixedPoint("size"),
-            MinimumPoint(["depth", "size"], "optimization_loop"),
-        ],
-        do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
-        preserve_layout=True,
     )
 )
 

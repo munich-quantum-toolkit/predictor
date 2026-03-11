@@ -314,8 +314,7 @@ class PredictorEnv(Env):
         #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
         if self.layout is not None:
             action_mask = [
-                action_mask[i]
-                and (self.action_set[i].origin != CompilationOrigin.TKET)
+                action_mask[i] and (self.action_set[i].origin != CompilationOrigin.TKET)
                 for i in range(len(action_mask))
             ]
 
