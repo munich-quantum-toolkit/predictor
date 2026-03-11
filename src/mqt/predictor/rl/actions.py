@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -82,7 +83,25 @@ from mqt.predictor.rl.parsing import (
 
 IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
 if not IS_WIN_PY313:
-    from qiskit_ibm_transpiler.ai.routing import AIRouting
+    # qiskit-ibm-transpiler currently emits import-time warnings from
+    # these can not be ignored by the filterwarnings in pyproject.toml
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"invalid escape sequence '\\w'",
+            category=DeprecationWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"invalid escape sequence '\\w'",
+            category=SyntaxWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r'"is" with (?:a literal|\'str\' literal)',
+            category=SyntaxWarning,
+        )
+        from qiskit_ibm_transpiler.ai.routing import AIRouting
 
 
 if TYPE_CHECKING:

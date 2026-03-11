@@ -25,9 +25,7 @@ if TYPE_CHECKING:
     from qiskit.dagcircuit import DAGCircuit
 
 if not IS_WIN_PY313:
-    from qiskit_ibm_transpiler.ai.routing import AIRouting
-
-    from mqt.predictor.rl.actions import SafeAIRouting
+    from mqt.predictor.rl.actions import AIRouting, SafeAIRouting
 
 
 pytestmark = pytest.mark.skipif(IS_WIN_PY313, reason="SafeAIRouting is disabled on Windows + Python 3.13")
