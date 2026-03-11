@@ -296,7 +296,15 @@ class PredictorEnv(Env):
 
         self.layout = None
 
-        self.valid_actions = self.actions_opt_indices + self.actions_synthesis_indices
+        if self.mdp == "flexible":
+            self.valid_actions = (
+                self.actions_synthesis_indices
+                + self.actions_mapping_indices
+                + self.actions_layout_indices
+                + self.actions_opt_indices
+            )
+        else:
+            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
         self.error_occurred = False
 
@@ -314,7 +322,8 @@ class PredictorEnv(Env):
         #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
         if self.layout is not None:
             action_mask = [
-                action_mask[i] and (self.action_set[i].origin != CompilationOrigin.TKET)
+                action_mask[i]
+                and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
                 for i in range(len(action_mask))
             ]
 
@@ -655,12 +664,7 @@ class PredictorEnv(Env):
             layout = layout.final_layout or layout.initial_layout
 
         v2p = layout.get_virtual_bits()
-        for instr in circuit.data:
-            for q in instr.qubits:
-                if q not in v2p:
-                    # Logical qubit not assigned
-                    return False
-        return True
+        return all(q in v2p for q in circuit.qubits)
 
     def is_circuit_synthesized(self, circuit: QuantumCircuit) -> bool:
         """Check if the circuit uses only native gates of the device.
