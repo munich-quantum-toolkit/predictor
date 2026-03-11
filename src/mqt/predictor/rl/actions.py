@@ -83,7 +83,7 @@ from mqt.predictor.rl.parsing import (
 
 IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
 if not IS_WIN_PY313:
-    # qiskit-ibm-transpiler currently emits import-time warnings from
+    # qiskit-ibm-transpiler currently emits import-time warnings
     # these can not be ignored by the filterwarnings in pyproject.toml
     with warnings.catch_warnings():
         warnings.filterwarnings(
