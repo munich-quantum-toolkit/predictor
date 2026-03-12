@@ -13,24 +13,25 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, QuantumRegister
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout
 
-# from mqt.predictor.rl.actions import IS_WIN_PY313
+from mqt.predictor.rl.actions import IS_WIN_PY313
 
 if TYPE_CHECKING:
-    import pytest
     from qiskit.dagcircuit import DAGCircuit
 
-# if not IS_WIN_PY313:
-from mqt.predictor.rl.actions import AIRouting, SafeAIRouting
-
-# pytestmark = pytest.mark.skipif(IS_WIN_PY313, reason="SafeAIRouting is disabled on Windows + Python 3.13")
+if not IS_WIN_PY313:
+    from mqt.predictor.rl.actions import AIRouting, SafeAIRouting
 
 
-# @pytest.mark.skipif(IS_WIN_PY313, reason="SafeAIRouting is unavailable on this platform")
+pytestmark = pytest.mark.skipif(IS_WIN_PY313, reason="SafeAIRouting is disabled on Windows + Python 3.13")
+
+
+@pytest.mark.skipif(IS_WIN_PY313, reason="SafeAIRouting is unavailable on this platform")
 def test_safe_airouting_preserves_and_remaps_measurements(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure SafeAIRouting preserves classical structure and remaps measured qubits."""
     q0 = QuantumRegister(2, "qa")
