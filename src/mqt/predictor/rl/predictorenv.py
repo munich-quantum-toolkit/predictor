@@ -715,6 +715,7 @@ class PredictorEnv(Env):
         )
 
         actions = []
+
         # Initial state
         if not synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
