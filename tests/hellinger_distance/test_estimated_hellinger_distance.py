@@ -195,8 +195,9 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         # 1. Train the reinforcement learning model for circuit compilation
         rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
 
+        # Alibi; real RL training is in other test
         rl_predictor.train_model(
-            timesteps=100,
+            timesteps=10,
             test=True,
         )
 
@@ -217,7 +218,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Generate compiled circuits (using trained RL model)
         ml_predictor.compile_training_circuits(
-            timeout=6000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
+            timeout=1000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
         )
 
         # Generate training data from the compiled circuits

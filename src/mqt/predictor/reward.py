@@ -189,7 +189,6 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 )
                 continue
             res *= 1 - device[gate_type][first_qubit_idx,].error
-
         else:
             second_qubit_idx = scheduled_circ.find_bit(qargs[1]).index
             res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error

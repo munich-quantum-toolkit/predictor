@@ -81,7 +81,7 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
-from mqt.predictor.utils import get_openqasm_gates_without_u
+from mqt.predictor.utils import get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -182,7 +182,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates_without_u()}
+        gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates_for_rl()}
 
         spaces = {
             "num_qubits": Discrete(self.device.num_qubits + 1),
