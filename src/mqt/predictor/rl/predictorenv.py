@@ -44,7 +44,6 @@ from pytket.placement import Placement
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.exceptions import QiskitError
-from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
 from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.passes import (
@@ -449,17 +448,13 @@ class PredictorEnv(Env):
                 max_iteration=self.max_iter,
             )
         else:
-            if action.name in ["QiskitO3", "Opt2qBlocks_preserve"] and isinstance(action, DeviceDependentAction):
+            if action.name == "Opt2qBlocks_preserve" and isinstance(action, DeviceDependentAction):
                 passes_ = action.transpile_pass(
                     self.device.operation_names,
                     CouplingMap(self.device.build_coupling_map()) if self.layout else None,
                 )
                 passes = cast("list[Task]", passes_)
-                if action.name == "QiskitO3":
-                    assert action.do_while is not None
-                    pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
-                else:
-                    pm = PassManager(passes)
+                pm = PassManager(passes)
                 altered_qc = pm.run(self.state)
                 pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
             else:
