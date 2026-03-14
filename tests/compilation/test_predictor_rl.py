@@ -12,17 +12,20 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
+from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Target
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
+    Action,
     CompilationOrigin,
     DeviceIndependentAction,
     PassType,
@@ -31,6 +34,9 @@ from mqt.predictor.rl.actions import (
     remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from _pytest.monkeypatch import MonkeyPatch
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -94,10 +100,14 @@ def test_qcompile_with_newly_trained_models() -> None:
     check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc_compiled)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
+    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
+    check_mapping(qc_compiled)
+    mapped = check_mapping.property_set["is_swap_mapped"]
 
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
+    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
+    assert mapped, "Circuit should be mapped to the device's coupling map."
 
 
 def test_qcompile_with_false_input() -> None:
@@ -118,6 +128,58 @@ def test_warning_for_unidirectional_device() -> None:
     msg = "The connectivity of the device 'uni-directional device' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
     with pytest.warns(UserWarning, match=re.escape(msg)):
         Predictor(figure_of_merit="expected_fidelity", device=target)
+
+
+def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
+    """Test fallback of the fom_aware_compile function in case of a compilation failure."""
+    qc = QuantumCircuit(2)
+    qc.swap(0, 1)
+
+    dummy_action = Action(
+        name="DummyAction",
+        origin=CompilationOrigin.QISKIT,
+        pass_type=PassType.MAPPING,
+        transpile_pass=lambda _device: [],  # no passes applied
+    )
+
+    predictor = Predictor(figure_of_merit="critical_depth", device=get_device("ibm_eagle_127"))
+    monkeypatch.setattr(
+        predictor.env, "calculate_reward", lambda _circ: (_ for _ in ()).throw(RuntimeError("fake error"))
+    )
+    compiled_qc, prop_set = predictor.env.fom_aware_compile(dummy_action, predictor.env.device, qc, max_iteration=1)
+
+    assert isinstance(compiled_qc, QuantumCircuit)
+    assert isinstance(prop_set, dict)
+    assert "swap" in compiled_qc.count_ops()
+
+
+def test_tket_action_layout_failure() -> None:
+    """Test fallback in case of TKET layout placement failure."""
+    qc = QuantumCircuit(1)
+
+    class FakePass:
+        def get_placement_map(self, _: object) -> None:
+            msg = "fake placement failure"
+            raise RuntimeError(msg)
+
+        def apply(self, _: object) -> None:
+            pass
+
+    dummy_action = Action(
+        name="DummyLayout",
+        origin=CompilationOrigin.TKET,
+        pass_type=PassType.LAYOUT,
+        transpile_pass=lambda _device: [FakePass()],
+    )
+
+    predictor = Predictor(figure_of_merit="estimated_success_probability", device=get_device("ibm_eagle_127"))
+    predictor.env.actions_layout_indices.append(0)
+    predictor.env.state = qc
+    apply_tket = predictor.env._apply_tket_action  # noqa: SLF001
+    result_qc = apply_tket(dummy_action, 0)
+
+    assert isinstance(result_qc, QuantumCircuit)
+    assert result_qc.num_qubits == 1
 
 
 def test_register_action() -> None:

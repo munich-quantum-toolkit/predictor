@@ -18,9 +18,9 @@ from bqskit.ir import gates
 from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
-from qiskit.circuit import QuantumRegister
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.transpiler import Layout, TranspileLayout
+from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
 if TYPE_CHECKING:
@@ -240,11 +240,49 @@ def postprocess_vf2postlayout(
     Returns:
         A tuple of the transformed circuit and the ApplyLayout used.
     """
+    # `ApplyLayout` requires that every virtual qubit in `layout` has a
+    # corresponding entry in `original_qubit_indices`. Some layouts include
+    # ancilla virtual qubits that are missing from `input_qubit_mapping`.
+    original_qubit_indices = dict(layout_before.input_qubit_mapping)
+    for virt, phys in layout_before.initial_layout.get_virtual_bits().items():
+        if virt not in original_qubit_indices:
+            original_qubit_indices[virt] = phys
+
     apply_layout = ApplyLayout()
     apply_layout.property_set["layout"] = layout_before.initial_layout
-    apply_layout.property_set["original_qubit_indices"] = layout_before.input_qubit_mapping
+    apply_layout.property_set["original_qubit_indices"] = original_qubit_indices
     apply_layout.property_set["final_layout"] = layout_before.final_layout
     apply_layout.property_set["post_layout"] = post_layout
 
     altered_qc = apply_layout.run(circuit_to_dag(qc))
     return dag_to_circuit(altered_qc), apply_layout
+
+
+def prepare_noise_data(device: Target) -> tuple[dict[Node, float], dict[tuple[Node, Node], float], dict[Node, float]]:
+    """Extract node, edge, and readout errors from the device target."""
+    node_err: dict[Node, float] = {}
+    edge_err: dict[tuple[Node, Node], float] = {}
+    readout_err: dict[Node, float] = {}
+
+    # Collect errors from operation properties
+    for op_name in device.operation_names:
+        inst_props = device[op_name]
+        if inst_props is None:
+            continue
+        for qtuple, props in inst_props.items():
+            if props is None or not hasattr(props, "error") or props.error is None:
+                continue
+            if len(qtuple) == 1:  # single-qubit op
+                q = qtuple[0]
+                node_err[Node(q)] = props.error
+            elif len(qtuple) == 2:  # two-qubit op
+                q1, q2 = qtuple
+                edge_err[Node(q1), Node(q2)] = props.error
+
+    # Collect readout errors
+    if "measure" in device:
+        for (q,), props in device["measure"].items():
+            if props is not None and hasattr(props, "error") and props.error is not None:
+                readout_err[Node(q)] = props.error
+
+    return node_err, edge_err, readout_err

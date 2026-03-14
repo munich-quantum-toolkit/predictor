@@ -30,10 +30,10 @@ dynamic = ["version"]
 
 dependencies = [
     "mqt.bench>=2.0.0",
-    "qiskit>=1.3.3",
-    "pytket>=1.29.0", # lowest version that supports the used pytket AutoRebase pass instead of auto_rebase
-    "pytket_qiskit>=0.61.0",
-    "qiskit-ibm-runtime>=0.30.0",
+    "qiskit>=1.4.2",
+    "pytket>=1.29.0",
+    "pytket_qiskit>=0.65.0",
+    "qiskit-ibm-runtime>=0.37.0",
     "sb3_contrib>=2.0.0",
     "tqdm>=4.66.0",
     "rich>=12.6.0",
@@ -44,6 +44,9 @@ dependencies = [
     "numpy>=1.26; python_version >= '3.12'",
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
+    "typing-extensions>=4.1",  # for `assert_never`
+    "qiskit-ibm-transpiler>=0.15.0; sys_platform != 'win32' or python_version != '3.13'", # pulls qiskit-serverless, which pulls ray[default], and the resolved ray 2.54.0 has no win_amd64 cp313 wheel
+    "qiskit-ibm-ai-local-transpiler>=0.5.5",
 ]
 
 classifiers = [
@@ -105,7 +108,7 @@ source = "vcs"
 version-file = "src/mqt/predictor/_version.py"
 
 
-[tool.pytest]
+[tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
 strict = true
@@ -125,6 +128,9 @@ filterwarnings = [
     'ignore:.*qiskit.providers.models is deprecated since Qiskit 1.2*:DeprecationWarning:',
     'ignore:.*The class ``qiskit.qobj.*`` is deprecated as of Qiskit 1.3.*:DeprecationWarning:',
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
+    # Windows: Python 3.13 can emit a RuntimeWarning about unsupported timeouts; keep tests strict otherwise.
+    'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
+
 ]
 
 
@@ -252,6 +258,12 @@ ignore = [
   "PC170", # We do not use rST files anymore
 ]
 
+[tool.uv]
+# mqt-bench>=2.0.0 requires networkx>=2.8.8.
+# qiskit-ibm-ai-local-transpiler==0.5.5 requires networkx==2.8.5
+override-dependencies = [
+  "networkx==2.8.5",
+]
 
 [tool.check-sdist]
 sdist-only = ["src/mqt/predictor/_version.py"]

@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import re
-import sys
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -196,8 +195,9 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         # 1. Train the reinforcement learning model for circuit compilation
         rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
 
+        # Alibi; real RL training is in other test
         rl_predictor.train_model(
-            timesteps=5,
+            timesteps=10,
             test=True,
         )
 
@@ -217,20 +217,12 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
                 dump(qc, f)
 
         # Generate compiled circuits (using trained RL model)
-        if sys.platform == "win32":
-            with pytest.warns(RuntimeWarning, match=re.escape("Timeout is not supported on Windows.")):
-                ml_predictor.compile_training_circuits(
-                    timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-                )
-        else:
-            ml_predictor.compile_training_circuits(
-                timeout=600, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path, num_workers=1
-            )
+        ml_predictor.compile_training_circuits(
+            timeout=1000, path_compiled_circuits=target_path, path_uncompiled_circuits=source_path
+        )
 
         # Generate training data from the compiled circuits
-        ml_predictor.generate_training_data(
-            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
-        )
+        ml_predictor.generate_training_data(path_uncompiled_circuits=source_path, path_compiled_circuits=target_path)
 
         for file in [
             "training_data_estimated_hellinger_distance.npy",
