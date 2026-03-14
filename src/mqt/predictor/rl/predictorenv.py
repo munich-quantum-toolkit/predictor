@@ -834,6 +834,7 @@ class PredictorEnv(Env):
                 if (q0, q1) not in directed_edges:
                     return False
         return True
+
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         synthesized = self.is_circuit_synthesized(self.state)

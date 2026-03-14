@@ -37,6 +37,7 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+
     from mqt.predictor.reward import figure_of_merit
 
 
