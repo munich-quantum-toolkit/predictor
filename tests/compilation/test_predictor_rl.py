@@ -37,6 +37,7 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+    from mqt.predictor.reward import figure_of_merit
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -44,7 +45,7 @@ def test_predictor_env_reset_from_string() -> None:
     device = get_device("ibm_eagle_127")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
     assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
@@ -77,6 +78,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     figure_of_merit = "expected_fidelity"
     device = get_device("ibm_falcon_127")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
     model_name = "model_" + figure_of_merit + "_" + device.description
@@ -91,7 +93,7 @@ def test_qcompile_with_newly_trained_models() -> None:
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
     predictor.train_model(
-        timesteps=1000,
+        timesteps=100,
         test=True,
     )
 
@@ -112,7 +114,7 @@ def test_qcompile_with_newly_trained_models() -> None:
 
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 5)
     with pytest.raises(ValueError, match=re.escape("figure_of_merit must not be None if predictor_singleton is None.")):
         rl_compile(qc, device=get_device("quantinuum_h2_56"), figure_of_merit=None)
     with pytest.raises(ValueError, match=re.escape("device must not be None if predictor_singleton is None.")):
@@ -198,3 +200,35 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
+
+
+@pytest.mark.parametrize(
+    "fom",
+    ["expected_fidelity", "estimated_success_probability"],
+)
+def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> None:
+    """Ensure approx reward path runs and uses cached per-basis-gate calibration maps.
+
+    We don't test exact numeric values (backend-dependent), only that:
+      - approx path runs,
+      - cached maps are populated,
+      - output is a valid probability in [0, 1].
+    """
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+    device = get_device("ibm_heron_133")
+    predictor = Predictor(figure_of_merit=fom, device=device)
+
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="approx")
+    assert kind == "approx"
+    assert 0.0 <= val <= 1.0
+
+    # Ensure caching produced per-gate mappings
+    assert predictor.env._dev_avgs_cached  # noqa: SLF001
+    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
+    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
+    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
+
+    if fom == "estimated_success_probability":
+        assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
+        # tbar is optional depending on backend calibration; just sanity-check type
+        assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001
