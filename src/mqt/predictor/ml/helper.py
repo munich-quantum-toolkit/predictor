@@ -15,7 +15,6 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 import numpy as np
 import torch
 from qiskit import transpile
@@ -25,7 +24,7 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import RemoveBarriers
 from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, mean_squared_error, r2_score
 
-from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 
 if TYPE_CHECKING:
     import torch_geometric

@@ -26,20 +26,16 @@ from typing_extensions import Unpack
 from mqt.predictor.ml.gnn import GNN
 
 if sys.version_info >= (3, 11) and TYPE_CHECKING:  # pragma: no cover
-    from typing import assert_never
-else:
-    from typing_extensions import assert_never
+    pass
 
 import gc
 import json
-from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import torch
 from joblib import Parallel, delayed, load
-from joblib import dump as joblib_dump
 from mqt.bench.targets import get_device
 from optuna.samplers import TPESampler
 

@@ -184,8 +184,7 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
     noiseless = np.zeros_like(noisy)
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
-    
-    
+
     if not gnn:
         labels_list = np.full(n_circuits, distance_label)
         training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
