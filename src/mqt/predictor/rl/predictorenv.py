@@ -50,10 +50,8 @@ from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
-    CheckMap,
     EnlargeWithAncilla,
     FullAncillaAllocation,
-    GatesInBasis,
     SetLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
@@ -348,13 +346,8 @@ class PredictorEnv(Env):
         elif mode == "approx":
             kind = "approx"
         else:  # "auto"
-            check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
-            check_nat_gates(qc)
-            only_native = bool(check_nat_gates.property_set["all_gates_in_basis"])
-
-            check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
-            check_mapping(qc)
-            mapped = bool(check_mapping.property_set["is_swap_mapped"])
+            only_native = self.is_circuit_synthesized(qc)
+            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map()))
 
             kind = "exact" if (only_native and mapped) else "approx"
 
