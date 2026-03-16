@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -20,12 +19,19 @@ if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import InstructionProperties, Target
 
-BLACKLIST: set[str] = {"measure", "reset", "delay", "barrier"}  # These gates do not directly contribute to the error
+ALWAYS_EXCLUDED_OPS: set[str] = {"barrier", "delay", "id"}
 
 
 def get_basis_gates_from_target(device: Target) -> list[str]:
     """Return the basis gate names from a Qiskit Target."""
-    return sorted([g for g in device.operation_names if g not in BLACKLIST])
+    basis_gates = [g for g in device.operation_names if g not in ALWAYS_EXCLUDED_OPS]
+
+    # Reset fidelity is SPAM-related and not consistently exposed on all targets.
+    # Only include it when the target actually provides calibration entries.
+    if "reset" in basis_gates and not device["reset"]:
+        basis_gates.remove("reset")
+
+    return sorted(basis_gates)
 
 
 def estimate_basis_gate_counts(qc: QuantumCircuit, *, basis_gates: list[str]) -> dict[str, int]:
@@ -34,7 +40,7 @@ def estimate_basis_gate_counts(qc: QuantumCircuit, *, basis_gates: list[str]) ->
     counts = dict.fromkeys(basis_gates, 0)
     for ci in qc_t.data:
         name = ci.operation.name
-        if name in BLACKLIST:
+        if name in ALWAYS_EXCLUDED_OPS:
             continue
         if name in counts:
             counts[name] += 1
@@ -133,46 +139,25 @@ def compute_device_averages_from_target(
     # ---- Hard requirements -------------------------------------------------------
     try:
         num_qubits = device.num_qubits
-        op_names = list(device.operation_names)
+        list(device.operation_names)
         coupling_map = device.build_coupling_map()
         qubit_props = device.qubit_properties
     except AttributeError as exc:
         msg = "Device target does not expose the required Target API for approximate reward computation."
         raise RuntimeError(msg) from exc
 
-    basis_ops = [name for name in op_names if name not in BLACKLIST]
+    basis_ops = get_basis_gates_from_target(device)
     twoq_edges = coupling_map.get_edges()  # list[tuple[int, int]]
 
     # ---- Helpers ----------------------------------------------------------------
     def _get_props(name: str, qargs: tuple[int, ...]) -> InstructionProperties | None:
         """Return calibration properties for (name, qargs) or None if unavailable."""
-        with suppress(KeyError):
-            return device[name].get(qargs, None)
-        return None
-
-    def _infer_arity(name: str) -> int | None:
-        """Infer operation arity from Target (best effort)."""
-        # Preferred: operation_from_name
-        with suppress(AttributeError, KeyError, TypeError):
-            op = device.operation_from_name(name)
-            return int(op.num_qubits)
-
-        # Fallback: infer from any qargs key in device[name]
-        with suppress(KeyError, TypeError):
-            props_map = device[name]
-            for qargs in props_map:
-                return len(qargs)
-        return None
+        return device[name].get(qargs, None)
 
     # ---- Accumulate raw samples --------------------------------------------------
     err_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
     dur_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
-
-    arity_by_name: dict[str, int] = {}
-    for name in basis_ops:
-        arity = _infer_arity(name)
-        if arity is not None:
-            arity_by_name[name] = arity
+    arity_by_name = {name: int(device.operation_from_name(name).num_qubits) for name in basis_ops}
 
     # ---- Aggregate error/duration per gate --------------------------------------
     for name in basis_ops:

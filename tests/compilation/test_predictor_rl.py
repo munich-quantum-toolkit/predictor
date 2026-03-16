@@ -220,12 +220,12 @@ def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> N
     assert 0.0 <= val <= 1.0
 
     # Ensure caching produced per-gate mappings
-    assert predictor.env._dev_avgs_cached  # noqa: SLF001
-    assert isinstance(predictor.env._err_by_gate, dict)  # noqa: SLF001
-    assert isinstance(predictor.env._dur_by_gate, dict)  # noqa: SLF001
-    assert len(predictor.env._err_by_gate) > 0  # noqa: SLF001
+    assert predictor.env.dev_avgs_cached
+    assert isinstance(predictor.env.err_by_gate, dict)
+    assert isinstance(predictor.env.dur_by_gate, dict)
+    assert len(predictor.env.err_by_gate) > 0
 
     if fom == "estimated_success_probability":
-        assert len(predictor.env._dur_by_gate) > 0  # noqa: SLF001
+        assert len(predictor.env.dur_by_gate) > 0
         # tbar is optional depending on backend calibration; just sanity-check type
-        assert predictor.env._tbar is None or predictor.env._tbar > 0.0  # noqa: SLF001
+        assert predictor.env.tbar is None or predictor.env.tbar > 0.0

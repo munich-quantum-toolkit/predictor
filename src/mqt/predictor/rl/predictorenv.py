@@ -214,10 +214,10 @@ class PredictorEnv(Env):
         self.no_effect_penalty = no_effect_penalty
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
-        self._err_by_gate: dict[str, float] = {}
-        self._dur_by_gate: dict[str, float] = {}
-        self._tbar: float | None = None
-        self._dev_avgs_cached = False
+        self.err_by_gate: dict[str, float] = {}
+        self.dur_by_gate: dict[str, float] = {}
+        self.tbar: float | None = None
+        self.dev_avgs_cached = False
         self.state: QuantumCircuit = QuantumCircuit()
 
         self.error_occurred = False
@@ -364,7 +364,7 @@ class PredictorEnv(Env):
             val = approx_expected_fidelity(
                 qc,
                 device=self.device,
-                error_rates=self._err_by_gate,
+                error_rates=self.err_by_gate,
             )
             return val, "approx"
 
@@ -373,9 +373,9 @@ class PredictorEnv(Env):
         val = approx_estimated_success_probability(
             qc,
             device=self.device,
-            error_rates=self._err_by_gate,
-            gate_durations=self._dur_by_gate,
-            tbar=self._tbar,
+            error_rates=self.err_by_gate,
+            gate_durations=self.dur_by_gate,
+            tbar=self.tbar,
             par_feature=float(feats.parallelism),
             liv_feature=float(feats.liveness),
             n_qubits=int(qc.num_qubits),
@@ -919,12 +919,12 @@ class PredictorEnv(Env):
 
     def _ensure_device_averages_cached(self) -> None:
         """Cache per-basis-gate averages for error, duration, and a coherence scale."""
-        if self._dev_avgs_cached:
+        if self.dev_avgs_cached:
             return
 
         err_by_gate, dur_by_gate, tbar = compute_device_averages_from_target(self.device)
 
-        self._err_by_gate = err_by_gate
-        self._dur_by_gate = dur_by_gate
-        self._tbar = tbar
-        self._dev_avgs_cached = True
+        self.err_by_gate = err_by_gate
+        self.dur_by_gate = dur_by_gate
+        self.tbar = tbar
+        self.dev_avgs_cached = True
