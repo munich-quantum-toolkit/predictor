@@ -839,6 +839,7 @@ class PredictorEnv(Env):
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         synthesized = self.is_circuit_synthesized(self.state)
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        # Routing is only allowed after layout
         routed = (
             self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
         )
