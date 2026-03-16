@@ -238,8 +238,7 @@ def test_tket_routing(available_actions_dict: dict[PassType, list[Action]]) -> N
         pass_.apply(tket_qc)
 
     qbs = tket_qc.qubits
-    qubit_map = {qbs[i]: Qubit("q", i) for i in range(len(qbs))}
-    tket_qc.rename_units(qubit_map)
+    tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
 
     mapped_qc = tk_to_qiskit(tket_qc)
 

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from bqskit import Circuit
+    from gymnasium.spaces import Space
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
@@ -151,7 +152,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        spaces = {
+        spaces: dict[str, Space] = {
             "num_qubits": Discrete(128),
             "depth": Discrete(1000000),
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
