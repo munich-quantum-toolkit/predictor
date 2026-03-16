@@ -154,10 +154,20 @@ def compute_device_averages_from_target(
         """Return calibration properties for (name, qargs) or None if unavailable."""
         return device[name].get(qargs, None)
 
+    def _infer_arity(name: str) -> int | None:
+        """Infer operation arity from Target (best effort)."""
+        op = device.operation_from_name(name)
+        return int(op.num_qubits)
+
     # ---- Accumulate raw samples --------------------------------------------------
     err_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
     dur_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
-    arity_by_name = {name: int(device.operation_from_name(name).num_qubits) for name in basis_ops}
+
+    arity_by_name: dict[str, int] = {}
+    for name in basis_ops:
+        arity = _infer_arity(name)
+        if arity is not None:
+            arity_by_name[name] = arity
 
     # ---- Aggregate error/duration per gate --------------------------------------
     for name in basis_ops:

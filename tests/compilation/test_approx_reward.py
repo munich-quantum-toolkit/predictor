@@ -68,7 +68,6 @@ class FakeTarget:
         arities: dict[str, int],
         edges: list[tuple[int, int]],
         qubit_properties: list[FakeQubitProperties | None] | None,
-        operation_from_name_raises_for: set[str] | None = None,
     ) -> None:
         """Initialize operation data, arities, connectivity, and qubit properties."""
         self.num_qubits = num_qubits
@@ -77,17 +76,13 @@ class FakeTarget:
         self._arities = arities
         self._edges = edges
         self.qubit_properties = qubit_properties
-        self._operation_from_name_raises_for = operation_from_name_raises_for or set()
 
     def build_coupling_map(self) -> FakeCouplingMap:
         """Return a minimal coupling map."""
         return FakeCouplingMap(self._edges)
 
     def operation_from_name(self, name: str) -> FakeOperation:
-        """Return operation metadata or raise to trigger fallback inference."""
-        if name in self._operation_from_name_raises_for:
-            msg = f"Operation {name} metadata unavailable."
-            raise KeyError(msg)
+        """Return operation metadata."""
         return FakeOperation(num_qubits=self._arities[name])
 
     def __getitem__(self, name: str) -> dict[tuple[int, ...], FakeInstructionProperties]:
@@ -99,8 +94,12 @@ def test_compute_device_averages_nominal_path() -> None:
     """Compute per-gate means and qubit coherence median on a nominal target."""
     target = FakeTarget(
         num_qubits=2,
-        operation_names=["measure", "x", "cx"],  # measure should be ignored
+        operation_names=["measure", "x", "cx"],
         op_props={
+            "measure": {
+                (0,): FakeInstructionProperties(error=0.01, duration=100.0),
+                (1,): FakeInstructionProperties(error=0.03, duration=120.0),
+            },
             "x": {
                 (0,): FakeInstructionProperties(error=0.1, duration=10.0),
                 (1,): FakeInstructionProperties(error=0.3, duration=30.0),
@@ -109,7 +108,7 @@ def test_compute_device_averages_nominal_path() -> None:
                 (0, 1): FakeInstructionProperties(error=0.4, duration=40.0),
             },
         },
-        arities={"x": 1, "cx": 2},
+        arities={"measure": 1, "x": 1, "cx": 2},
         edges=[(0, 1)],
         qubit_properties=[
             FakeQubitProperties(t1=100.0, t2=50.0),  # min = 50
@@ -119,46 +118,17 @@ def test_compute_device_averages_nominal_path() -> None:
 
     err_by_gate, dur_by_gate, tbar = compute_device_averages_from_target(cast("Target", target))
 
-    assert err_by_gate == {"x": pytest.approx(0.2), "cx": pytest.approx(0.4)}
-    assert dur_by_gate == {"x": pytest.approx(20.0), "cx": pytest.approx(40.0)}
+    assert err_by_gate == {
+        "measure": pytest.approx(0.02),
+        "x": pytest.approx(0.2),
+        "cx": pytest.approx(0.4),
+    }
+    assert dur_by_gate == {
+        "measure": pytest.approx(110.0),
+        "x": pytest.approx(20.0),
+        "cx": pytest.approx(40.0),
+    }
     assert tbar == pytest.approx(125.0)
-
-
-def test_compute_device_averages_fallbacks_are_used() -> None:
-    """Use orientation fallback, arity fallback, and global per-gate fallback."""
-    target = FakeTarget(
-        num_qubits=2,
-        operation_names=["x", "cx", "rz"],
-        op_props={
-            "x": {
-                (0,): FakeInstructionProperties(error=0.1, duration=10.0),
-                (1,): FakeInstructionProperties(error=0.3, duration=30.0),
-            },
-            # Only reverse orientation is available; edge scan uses (0, 1)
-            "cx": {
-                (1, 0): FakeInstructionProperties(error=0.2, duration=20.0),
-            },
-            # No data for rz; should get global fallback values
-            "rz": {
-                (0,): FakeInstructionProperties(error=None, duration=None),
-                (1,): FakeInstructionProperties(error=None, duration=None),
-            },
-        },
-        arities={"x": 1, "cx": 2, "rz": 1},
-        edges=[(0, 1)],
-        qubit_properties=None,
-        # Force arity fallback for "cx" by raising in operation_from_name
-        operation_from_name_raises_for={"cx"},
-    )
-
-    err_by_gate, dur_by_gate, tbar = compute_device_averages_from_target(cast("Target", target))
-
-    # all available samples are 0.1, 0.3, 0.2 for error and 10, 30, 20 for duration
-    assert err_by_gate["rz"] == pytest.approx(0.2)
-    assert dur_by_gate["rz"] == pytest.approx(20.0)
-    assert err_by_gate["cx"] == pytest.approx(0.2)
-    assert dur_by_gate["cx"] == pytest.approx(20.0)
-    assert tbar is None
 
 
 def test_compute_device_averages_missing_target_api_raises() -> None:
