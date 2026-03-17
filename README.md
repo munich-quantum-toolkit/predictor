@@ -100,9 +100,7 @@ from mqt.predictor import qcompile
 from mqt.bench import get_benchmark, BenchmarkLevel
 
 # Get a benchmark circuit from MQT Bench
-qc_uncompiled = get_benchmark(
-    benchmark="ghz", level=BenchmarkLevel.ALG, circuit_size=5
-)
+qc_uncompiled = get_benchmark(benchmark="ghz", level=BenchmarkLevel.ALG, circuit_size=5)
 
 # Compile it using the MQT Predictor
 qc_compiled, compilation_information, quantum_device = qcompile(
