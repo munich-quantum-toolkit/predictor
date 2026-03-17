@@ -279,13 +279,16 @@ class PredictorEnv(Env):
         else:
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
+            reward_kind_changed = self.prev_reward_kind != new_kind
 
-            if self.prev_reward_kind != new_kind:
+            if reward_kind_changed:
                 delta_reward = 0.0
 
             reward_val = (
                 self.reward_scale * delta_reward
                 if not isclose(delta_reward, 0.0, abs_tol=1e-12)
+                else 0.0
+                if reward_kind_changed
                 else self.no_effect_penalty
             )
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
