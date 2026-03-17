@@ -22,7 +22,7 @@ from mqt.predictor import qcompile
 ## Get Uncompiled Quantum Circuit
 
 ```{code-cell} ipython3
-qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=5)
+qc = get_benchmark("ghz", level=BenchmarkLevel.INDEP, circuit_size=5)
 qc.draw()
 ```
 

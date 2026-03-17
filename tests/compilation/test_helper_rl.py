@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 5)
     features = create_feature_dict(qc)
     for feature in features.values():
         assert isinstance(feature, np.ndarray | int)
@@ -55,7 +55,7 @@ def test_get_path_training_circuits() -> None:
 
 def test_vf2_layout_and_postlayout() -> None:
     """Test the VF2Layout and VF2PostLayout passes."""
-    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
 
     for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
         passes: list[Task] | None = None
