@@ -23,7 +23,7 @@ from mqt.predictor.ml.helper import (
 
 def test_create_feature_vector() -> None:
     """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", BenchmarkLevel.INDEP, 3)
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     feature_vector = create_feature_vector(qc)
     assert feature_vector is not None
 

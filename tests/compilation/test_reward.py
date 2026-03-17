@@ -43,7 +43,7 @@ def device() -> Target:
 @pytest.fixture
 def compiled_qc(device: Target) -> QuantumCircuit:
     """Return a compiled quantum circuit."""
-    qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     return transpile(qc, target=device)
 
 

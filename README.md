@@ -101,7 +101,7 @@ from mqt.bench import get_benchmark, BenchmarkLevel
 
 # Get a benchmark circuit from MQT Bench
 qc_uncompiled = get_benchmark(
-    benchmark="ghz", level=BenchmarkLevel.INDEP, circuit_size=5
+    benchmark="ghz", level=BenchmarkLevel.ALG, circuit_size=5
 )
 
 # Compile it using the MQT Predictor

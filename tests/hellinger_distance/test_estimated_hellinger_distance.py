@@ -211,7 +211,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
             target_path.mkdir()
 
         for i in range(2, 5):
-            qc = get_benchmark("ghz", BenchmarkLevel.INDEP, i)
+            qc = get_benchmark("ghz", BenchmarkLevel.ALG, i)
             path = source_path / f"qc{i}.qasm"
             with path.open("w", encoding="utf-8") as f:
                 dump(qc, f)
@@ -234,7 +234,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
 
         # Train the ML model
         ml_predictor.train_random_forest_model()
-        qc = get_benchmark("ghz", BenchmarkLevel.INDEP, 3)
+        qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
         predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit)
