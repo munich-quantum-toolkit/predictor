@@ -35,6 +35,7 @@ dependencies = [
     "pytket_qiskit>=0.65.0",
     "qiskit-ibm-runtime>=0.37.0",
     "sb3_contrib>=2.0.0",
+    "stable-baselines3>=2.7.0",
     "tqdm>=4.66.0",
     "rich>=12.6.0",
     "scikit-learn>=1.5.1",
