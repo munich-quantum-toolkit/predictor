@@ -21,7 +21,6 @@ from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import CouplingMap, InstructionProperties, Target
-from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -37,6 +36,8 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
+
+    from mqt.predictor.reward import figure_of_merit
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -77,6 +78,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     figure_of_merit = "expected_fidelity"
     device = get_device("ibm_falcon_127")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
     model_name = "model_" + figure_of_merit + "_" + device.description
@@ -97,17 +99,14 @@ def test_qcompile_with_newly_trained_models() -> None:
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
-    check_nat_gates(qc_compiled)
-    only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-    check_mapping = CheckMap(coupling_map=CouplingMap(device.build_coupling_map()))
-    check_mapping(qc_compiled)
-    mapped = check_mapping.property_set["is_swap_mapped"]
-
     assert qc_compiled.layout is not None
     assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such."
-    assert mapped, "Circuit should be mapped to the device's coupling map."
+    assert predictor.env.is_circuit_synthesized(qc_compiled), (
+        "Circuit should only contain native gates but was not detected as such."
+    )
+    assert predictor.env.is_circuit_routed(qc_compiled, CouplingMap(device.build_coupling_map())), (
+        "Circuit should be mapped to the device's coupling map."
+    )
 
 
 def test_qcompile_with_false_input() -> None:
@@ -237,3 +236,35 @@ def test_register_action() -> None:
 
     with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
         remove_action("wrong_action_name")
+
+
+@pytest.mark.parametrize(
+    "fom",
+    ["expected_fidelity", "estimated_success_probability"],
+)
+def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> None:
+    """Ensure approx reward path runs and uses cached per-basis-gate calibration maps.
+
+    We don't test exact numeric values (backend-dependent), only that:
+      - approx path runs,
+      - cached maps are populated,
+      - output is a valid probability in [0, 1].
+    """
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    device = get_device("ibm_heron_133")
+    predictor = Predictor(figure_of_merit=fom, device=device)
+
+    val, kind = predictor.env.calculate_reward(qc=qc, mode="approx")
+    assert kind == "approx"
+    assert 0.0 <= val <= 1.0
+
+    # Ensure caching produced per-gate mappings
+    assert predictor.env.dev_avgs_cached
+    assert isinstance(predictor.env.err_by_gate, dict)
+    assert isinstance(predictor.env.dur_by_gate, dict)
+    assert len(predictor.env.err_by_gate) > 0
+
+    if fom == "estimated_success_probability":
+        assert len(predictor.env.dur_by_gate) > 0
+        # tbar is optional depending on backend calibration; just sanity-check type
+        assert predictor.env.tbar is None or predictor.env.tbar > 0.0
