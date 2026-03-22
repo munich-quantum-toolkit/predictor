@@ -177,7 +177,7 @@ class Predictor:
         for filename in path_uncompiled_circuits.iterdir():
             if filename.suffix != ".qasm":
                 continue
-            qc = QuantumCircuit.from_qasm_file(filename)  # ty: ignore[invalid-argument-type]
+            qc = QuantumCircuit.from_qasm_file(filename)
             if qc.num_qubits > dev_max_qubits:
                 continue
 
@@ -354,7 +354,7 @@ class Predictor:
         scores_list = list(scores.values())
         target_label = max(scores, key=lambda k: scores[k])
 
-        qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)  # ty: ignore[invalid-argument-type]
+        qc = QuantumCircuit.from_qasm_file(path_uncompiled_circuit / file)
         feature_vec = create_feature_vector(qc)
         training_sample = (feature_vec, target_label)
         circuit_name = str(file).split(".")[0]
@@ -465,7 +465,7 @@ def predict_device_for_figure_of_merit(
         ValueError: If no suitable device is found for the given quantum circuit.
     """
     if isinstance(qc, Path) and qc.exists():
-        qc = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
+        qc = QuantumCircuit.from_qasm_file(qc)
     assert isinstance(qc, QuantumCircuit)
 
     path = get_path_trained_model(figure_of_merit)

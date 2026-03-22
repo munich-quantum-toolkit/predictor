@@ -203,7 +203,7 @@ class PredictorEnv(Env):
             done = False
 
         # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
-        if self.state.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
+        if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
@@ -247,7 +247,7 @@ class PredictorEnv(Env):
         if isinstance(qc, QuantumCircuit):
             self.state = qc
         elif qc:
-            self.state = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
+            self.state = QuantumCircuit.from_qasm_file(qc)
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
 
