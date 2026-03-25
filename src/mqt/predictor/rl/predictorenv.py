@@ -11,11 +11,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from bqskit import Circuit
     from pytket._tket.passes import BasePass as TketBasePass
@@ -214,6 +214,8 @@ class PredictorEnv(Env):
         self.no_effect_penalty = no_effect_penalty
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
+        self.episode_count = 0
+        self.current_circuit_name = "<unknown>"
         self.err_by_gate: dict[str, float] = {}
         self.dur_by_gate: dict[str, float] = {}
         self.tbar: float | None = None
@@ -239,6 +241,23 @@ class PredictorEnv(Env):
 
         return altered_qc
 
+    def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
+        """Log the chosen action and resulting reward for the current episode step."""
+        logger.info(
+            "Episode %d step %d: action=%s reward=%.6f",
+            self.episode_count,
+            step_index,
+            action_name,
+            reward_val,
+        )
+        if done:
+            logger.info(
+                "Episode %d finished: circuit=%s final_reward=%.6f",
+                self.episode_count,
+                self.current_circuit_name,
+                reward_val,
+            )
+
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
@@ -254,11 +273,14 @@ class PredictorEnv(Env):
             - For the terminate action, the episode ends and the final reward is
             the exact (calibration-aware) metric.
         """
-        self.used_actions.append(str(self.action_set[action].name))
-        logger.info("Applying %s", self.action_set[action].name)
+        action_name = str(self.action_set[action].name)
+        step_index = self.num_steps + 1
+        self.used_actions.append(action_name)
+        logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
+            self._log_step_reward(step_index, action_name, 0.0, done=True)
             return create_feature_dict(self.state), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
@@ -266,6 +288,7 @@ class PredictorEnv(Env):
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
+            self._log_step_reward(step_index, action_name, reward_val, done)
             return create_feature_dict(self.state), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
@@ -294,6 +317,7 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         obs = create_feature_dict(self.state)
+        self._log_step_reward(step_index, action_name, reward_val, done)
         return obs, reward_val, done, False, {}
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
@@ -409,14 +433,20 @@ class PredictorEnv(Env):
 
         if isinstance(qc, QuantumCircuit):
             self.state = qc
+            self.filename = ""
+            self.current_circuit_name = qc.name or "<unnamed>"
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
+            self.filename = str(qc)
+            self.current_circuit_name = Path(str(qc)).stem
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
+            self.current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
+        self.episode_count += 1
 
         self.layout = None
 
@@ -437,6 +467,7 @@ class PredictorEnv(Env):
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
+        logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
         return create_feature_dict(self.state), {}
 
