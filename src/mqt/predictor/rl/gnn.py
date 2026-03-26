@@ -10,14 +10,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as f
 from torch_geometric.nn import GraphNorm, SAGEConv, global_mean_pool
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from torch_geometric.data import Data
 
 
@@ -31,11 +33,23 @@ class GraphConvolutionSageEncoder(nn.Module):
         num_conv_wo_resnet: int,
         num_resnet_layers: int,
         *,
-        conv_activation: Callable[..., torch.Tensor] = F.leaky_relu,
+        conv_activation: Callable[..., torch.Tensor] = f.leaky_relu,
         conv_act_kwargs: dict[str, Any] | None = None,
         dropout_p: float = 0.2,
         bidirectional: bool = True,
     ) -> None:
+        """Initialize the GraphConvolutionSageEncoder.
+
+        Args:
+            in_feats: Dimension of input node features.
+            hidden_dim: Dimension of hidden layers and output graph embedding.
+            num_conv_wo_resnet: Number of initial convolutional layers without residual connections.
+            num_resnet_layers: Number of subsequent convolutional layers with residual connections.
+            conv_activation: Activation function to apply after each convolutional layer.
+            conv_act_kwargs: Optional keyword arguments for the activation function.
+            dropout_p: Dropout probability to apply after each convolutional layer.
+            bidirectional: If True, apply each SAGEConv in both directions and average the results.
+        """
         super().__init__()
 
         if num_conv_wo_resnet < 1:
@@ -74,6 +88,16 @@ class GraphConvolutionSageEncoder(nn.Module):
         x: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
+        """Apply the convolution in both directions if bidirectional is True, otherwise apply it once.
+
+        Args:
+            conv: The SAGEConv layer to apply.
+            x: Node feature tensor of shape [num_nodes, in_feats].
+            edge_index: Edge index tensor of shape [2, num_edges].
+
+        Returns:
+            The output node features after applying the convolution (and averaging if bidirectional).
+        """
         x_f = conv(x, edge_index)
         if not self.bidirectional:
             return x_f
@@ -81,6 +105,14 @@ class GraphConvolutionSageEncoder(nn.Module):
         return 0.5 * (x_f + x_b)
 
     def forward(self, data: Data) -> torch.Tensor:
+        """Encode the input graph data into a graph embedding.
+
+        Args:
+            data: A PyG Data object containing at least 'x' (node features) and 'edge_index' (graph connectivity).
+
+        Returns:
+            A tensor of shape [num_graphs, graph_emb_dim] representing the encoded graph embeddings.
+        """
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
         for i, conv in enumerate(self.convs):
@@ -114,6 +146,18 @@ class SAGEActorCritic(nn.Module):
         bidirectional: bool = True,
         global_feature_dim: int = 0,
     ) -> None:
+        """Initialize the SAGEActorCritic model.
+
+        Args:
+            in_feats: Dimension of input node features.
+            hidden_dim: Dimension of hidden layers and graph embedding.
+            num_conv_wo_resnet: Number of initial convolutional layers without residual connections in the encoder.
+            num_resnet_layers: Number of subsequent convolutional layers with residual connections in the encoder.
+            num_actions: Number of discrete actions for the actor head output.
+            dropout_p: Dropout probability to apply in the encoder and trunk.
+            bidirectional: If True, apply each SAGEConv in both directions and average the results.
+            global_feature_dim: If > 0, the dimension of optional global features to concatenate to the graph embedding before the actor and critic heads.
+        """
         super().__init__()
 
         self.global_feature_dim = global_feature_dim
@@ -163,14 +207,18 @@ class SAGEActorCritic(nn.Module):
             global_features = getattr(data, "global_features", None)
             if global_features is not None:
                 # Reshape to [B, global_feature_dim] in case PyG batched it differently.
-                global_features = global_features.view(output_encoder.shape[0], self.global_feature_dim).to(output_encoder.device)
-                output_encoder = torch.cat([output_encoder, global_features], dim=-1)  # [B, emb_dim + global_feature_dim]
+                global_features = global_features.view(output_encoder.shape[0], self.global_feature_dim).to(
+                    output_encoder.device
+                )
+                output_encoder = torch.cat(
+                    [output_encoder, global_features], dim=-1
+                )  # [B, emb_dim + global_feature_dim]
             else:
                 # No global features available — pad with zeros so the model still runs.
                 pad = torch.zeros(output_encoder.shape[0], self.global_feature_dim, device=output_encoder.device)
                 output_encoder = torch.cat([output_encoder, pad], dim=-1)
 
-        output_common_model = self.trunk(output_encoder)       # [B, emb_dim]
+        output_common_model = self.trunk(output_encoder)  # [B, emb_dim]
         logits = self.actor(output_common_model)  # Dimension batch, num_actions
         value = self.critic(output_common_model)  # Dimension batch, 1
         return logits, value

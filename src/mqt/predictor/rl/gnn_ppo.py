@@ -6,34 +6,30 @@
 #
 # Licensed under the MIT License
 
-"""
-PPO training loop for the GNN-based RL compilation predictor.
-Needed because GNN can't be used with the existing MaskablePPO implementation which assumes fixed-size vector inputs and action masks.
-For this reason, the GNN-PPO implementation is separate and custom-built to handle variable-size graph inputs and action masks but reusing all the advances of the other approach.
-"""
-
+"""GNN-based PPO implementation for training a RL compilation predictor on variable-size circuit graphs."""
 
 from __future__ import annotations
 
-import csv
-import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
-from torch_geometric.data import Batch, Data
+from torch_geometric.data import Batch
 
 from mqt.predictor.rl.gnn import SAGEActorCritic
+
+if TYPE_CHECKING:
+    from gymnasium import Env
+    from torch_geometric.data import Data
 
 
 @dataclass
 class RolloutBuffer:
-    """Collect data during rollout and convert to tensors for PPO update.
-    Data collected in lists during rollout, then converted to tensors in finalize() for efficient batch processing during PPO updates.
+    """Collect data during rollout and convert to tensors for PPO update. Data collected in lists during rollout, then converted to tensors in finalize() for efficient batch processing during PPO updates.
+
     Object saved:
         - graphs: list of PyG Data objects (the circuit graph at each step)
         - actions_list: list of ints (action indices taken)
@@ -41,7 +37,7 @@ class RolloutBuffer:
         - values_list: list of floats (critic value estimates at each step)
         - rewards_list: list of floats (rewards received at each step)
         - dones_list: list of bools (whether episode ended at each step)
-        - masks_list: list of np.ndarray of bools (action masks at each step)
+        - masks_list: list of np.ndarray of bools (action masks at each step).
     """
 
     graphs: list[Data] = field(default_factory=list)
@@ -61,9 +57,7 @@ class RolloutBuffer:
     masks: torch.Tensor = field(init=False)
 
     def clear(self) -> None:
-        """
-        Clear all collected data to start a new rollout.
-        """
+        """Clear all collected data to start a new rollout."""
         self.graphs = []
         self.actions_list = []
         self.log_probs_list = []
@@ -82,16 +76,16 @@ class RolloutBuffer:
         done: bool,
         mask: np.ndarray | list[bool],
     ) -> None:
-        """
-        Add a step to the rollout buffer.
+        """Add a step to the rollout buffer.
+
         Args:
-            - graph: PyG Data object representing the circuit graph at this step
-            - action: int, index of the action taken
-            - log_prob: float, log probability of the taken action under the current policy
-            - value: float, critic value estimate for the current state
-            - reward: float, reward received after taking the action
-            - done: bool, whether the episode ended after this step
-            - mask: np.ndarray or list of bools, action mask for this step (True for valid actions, False for invalid)
+            graph: PyG Data object representing the circuit graph at this step
+            action: int, index of the action taken
+            log_prob: float, log probability of the taken action under the current policy
+            value: float, critic value estimate for the current state
+            reward: float, reward received after taking the action
+            done: bool, whether the episode ended after this step
+            mask: np.ndarray or list of bools, action mask for this step (True for valid actions, False for invalid).
         """
         self.graphs.append(graph)
         self.actions_list.append(action)
@@ -102,10 +96,10 @@ class RolloutBuffer:
         self.masks_list.append(np.asarray(mask, dtype=np.bool_))
 
     def finalize(self, device: str) -> None:
-        """
-        Convert collected lists to tensors for PPO update.
+        """Convert collected lists to tensors for PPO update.
+
         Args:
-            - device: 'cuda' or 'cpu' where the tensors should be located
+            device: 'cuda' or 'cpu' where the tensors should be located.
         """
         self.actions = torch.tensor(self.actions_list, dtype=torch.long, device=device)
         self.log_probs = torch.tensor(self.log_probs_list, dtype=torch.float32, device=device)
@@ -113,7 +107,6 @@ class RolloutBuffer:
         self.rewards = torch.tensor(self.rewards_list, dtype=torch.float32, device=device)
         self.dones = torch.tensor(self.dones_list, dtype=torch.float32, device=device)
         self.masks = torch.tensor(np.stack(self.masks_list), device=device, dtype=torch.bool)
-
 
 
 def compute_gae(
@@ -125,27 +118,28 @@ def compute_gae(
     lam: float = 0.95,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute Generalized Advantage Estimation (GAE) for the PPO update.
+
     Args:
         rewards: shape (T,)
         dones: shape (T,)
         values: shape (T,)
         last_value: scalar tensor — V(s_T) for bootstrapping
         gamma: discount factor
-        lam: GAE lambda
+        lam: GAE lambda.
 
     Returns:
         returns: shape (T,)
-        advantages: shape (T,) 
+        advantages: shape (T,)
     """
     # Takes the number of timesteps
-    T = rewards.size(0)
+    timesteps = rewards.size(0)
     # Initialize tensors for advantages and returns
-    advantages = torch.zeros(T, device=rewards.device, dtype=torch.float32)
+    advantages = torch.zeros(timesteps, device=rewards.device, dtype=torch.float32)
 
     gae = 0.0
     # for each timestep t, starting from the end of the trajectory and moving backwards
-    for t in reversed(range(T)):
-        next_value = last_value if t == T - 1 else values[t + 1]
+    for t in reversed(range(timesteps)):
+        next_value = last_value if t == timesteps - 1 else values[t + 1]
         not_done = 1.0 - dones[t]
         delta = rewards[t] + gamma * next_value * not_done - values[t]
         gae = delta + gamma * lam * not_done * gae
@@ -156,7 +150,7 @@ def compute_gae(
 
 
 def collect_rollout(
-    env,
+    env: Env,
     policy: SAGEActorCritic,
     steps: int,
     device: str,
@@ -174,7 +168,6 @@ def collect_rollout(
         last_value: bootstrap value for GAE
         episode_rewards: total reward accumulated per completed episode
     """
-
     buffer = RolloutBuffer()
     episode_rewards: list[float] = []
     episode_return: float = 0.0
@@ -195,7 +188,7 @@ def collect_rollout(
                 obs, _ = env.reset()
                 episode_return = 0.0
                 continue
-            
+
             mask = torch.as_tensor(mask_cpu, device=device, dtype=torch.bool)
             # Mask invalid actions by setting their logits to -inf, so they have zero probability after softmax.
             # Invert mask because True means valid, but we want to set invalid (False) logits to -inf.
@@ -208,7 +201,8 @@ def collect_rollout(
 
             try:
                 next_obs, reward, terminated, truncated, _info = env.step(int(action.item()))
-            except Exception:
+            except (RuntimeError, ValueError, TypeError, AssertionError) as e:
+                print(f"Error occurred while stepping in environment: {e}")
                 obs, _ = env.reset()
                 episode_return = 0.0
                 continue
@@ -257,7 +251,7 @@ def ppo_update(
     max_grad_norm: float = 0.5,
     epochs: int = 10,
     minibatch_size: int = 64,
-    target_kl: Optional[float] = 0.01,
+    target_kl: float | None = 0.01,
 ) -> dict[str, float]:
     """PPO update with variable-size graph minibatching.
 
@@ -292,32 +286,33 @@ def ppo_update(
     old_log_probs = buffer.log_probs
     old_values = buffer.values
 
-    N = len(graphs)
+    num_circuits = len(graphs)
     # Clamp minibatch size to the number of samples so we don't get empty batches.
-    effective_mb = min(minibatch_size, N)
-    indices = np.arange(N)
+    effective_mb = min(minibatch_size, num_circuits)
+    indices = np.arange(num_circuits)
+    rng = np.random.default_rng()
 
     all_kl: list[float] = []
     all_policy_loss: list[float] = []
     all_value_loss: list[float] = []
     all_entropy: list[float] = []
-
+    # train policy for the specified number of epochs, shuffling and creating minibatches each epoch
     policy.train()
-    for epoch in range(epochs):
-        np.random.shuffle(indices)
+    for _epoch in range(epochs):
+        rng.shuffle(indices)
 
-        for start in range(0, N, effective_mb):
+        for start in range(0, num_circuits, effective_mb):
             mb_idx = indices[start : start + effective_mb]
 
             mb_graphs = [graphs[i] for i in mb_idx]
             mb_batch = Batch.from_data_list(mb_graphs).to(device)
-            
+
             mb_actions = actions[mb_idx]
             mb_old_logp = old_log_probs[mb_idx]
             mb_old_values = old_values[mb_idx]
             mb_returns = returns[mb_idx]
             mb_adv = advantages[mb_idx]
-            
+
             logits, new_values = policy(mb_batch)
             mb_masks = buffer.masks[mb_idx]
             logits = logits.masked_fill(~mb_masks, float("-inf"))
@@ -325,7 +320,7 @@ def ppo_update(
             new_logp = dist.log_prob(mb_actions)
             entropy = dist.entropy().mean()
             new_values = new_values.squeeze(-1)
-
+            # Compute the PPO clipped surrogate objective for the policy loss.
             logp_diff = torch.clamp(new_logp - mb_old_logp, -20.0, 20.0)
             ratio = torch.exp(logp_diff)
             surr1 = ratio * mb_adv
@@ -366,7 +361,7 @@ def ppo_update(
 
 
 def train_ppo_with_gnn(
-    env,
+    env: Env,
     policy: SAGEActorCritic,
     num_iterations: int = 1000,
     steps_per_iteration: int = 2048,
@@ -381,7 +376,7 @@ def train_ppo_with_gnn(
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
     max_grad_norm: float = 0.5,
-    target_kl: Optional[float] = 0.01,
+    target_kl: float | None = 0.01,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> SAGEActorCritic:
     """Train a GNN-PPO agent on variable-size circuit graphs.
@@ -422,15 +417,15 @@ def train_ppo_with_gnn(
         {"params": policy.critic.parameters(), "lr": lr},
     ])
 
-    for iteration in range(num_iterations):
-        buffer, last_value, ep_rewards = collect_rollout(
+    for _iteration in range(num_iterations):
+        buffer, last_value, _ep_rewards = collect_rollout(
             env=env,
             policy=policy,
             steps=steps_per_iteration,
             device=device,
         )
         # Perform PPO update with the collected rollout data and get training metrics.
-        metrics = ppo_update(
+        ppo_update(
             policy=policy,
             optimizer=optimizer,
             buffer=buffer,
@@ -448,7 +443,6 @@ def train_ppo_with_gnn(
             target_kl=target_kl,
         )
 
-    
     return policy
 
 

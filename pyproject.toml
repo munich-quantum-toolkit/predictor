@@ -250,6 +250,8 @@ aer = "aer"
 fom = "fom"
 TPE = "TPE"
 TPESampler = "TPESampler"
+gae = "gae"
+GAE = "GAE"
 
 
 [tool.repo-review]
