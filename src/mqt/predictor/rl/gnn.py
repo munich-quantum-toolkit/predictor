@@ -114,9 +114,11 @@ class GraphConvolutionSageEncoder(nn.Module):
             A tensor of shape [num_graphs, graph_emb_dim] representing the encoded graph embeddings.
         """
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        assert x is not None
+        assert edge_index is not None
 
         for i, conv in enumerate(self.convs):
-            x_new = self._apply_conv_bidir(conv, x, edge_index)
+            x_new = self._apply_conv_bidir(conv, x, edge_index)  # ty: ignore[invalid-argument-type]
             x_new = self.norms[i](x_new, batch=batch)
             x_new = self.conv_activation(x_new, **self.conv_act_kwargs)
             x_new = self.drop(x_new)

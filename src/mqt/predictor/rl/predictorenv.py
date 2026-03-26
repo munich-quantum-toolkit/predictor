@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pytket.circuit import Node
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
+    from torch_geometric.data import Data
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
@@ -242,7 +243,7 @@ class PredictorEnv(Env):
 
         return altered_qc
 
-    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+    def step(self, action: int) -> tuple[dict[str, Any] | Data, float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
         This method:
@@ -397,7 +398,7 @@ class PredictorEnv(Env):
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[dict[str, Any] | Data, dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
@@ -553,7 +554,7 @@ class PredictorEnv(Env):
 
                 except (QiskitError, TranspilerError, RuntimeError, ValueError, TypeError) as e:
                     logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
-                    swap_count = out_circ.count_ops().get("swap", 0)  # ty: ignore[no-matching-overload]
+                    swap_count = out_circ.count_ops().get("swap", 0)
                     if best_result is None or swap_count < best_swap_count:
                         best_swap_count = swap_count
                         best_result = out_circ
@@ -612,9 +613,9 @@ class PredictorEnv(Env):
 
         # BasisTranslator errors on unitary gates; decompose them immediately so
         # the circuit is always in a consistent state after a Qiskit action.
-        if altered_qc.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
+        if altered_qc.count_ops().get("unitary"):
             altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
-        elif altered_qc.count_ops().get("clifford"):  # ty: ignore[invalid-argument-type]
+        elif altered_qc.count_ops().get("clifford"):
             altered_qc = altered_qc.decompose(gates_to_decompose="clifford")
         return altered_qc
 

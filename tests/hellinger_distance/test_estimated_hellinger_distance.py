@@ -211,12 +211,18 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
         trained_model = pred.train_random_forest_model(training_data)
 
     if not gnn:
+        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor  # noqa: PLC0415
+
+        assert isinstance(trained_model, (RandomForestRegressor, RandomForestClassifier))
         assert np.isclose(trained_model.predict([feature_vector]), distance_label)
     else:
+        import torch.nn as nn  # noqa: PLC0415
+
+        assert isinstance(trained_model, nn.Module)
         trained_model.eval()
         model_device = next(trained_model.parameters()).device
         with torch.no_grad():
-            batch = Batch.from_data_list(training_data.X_train).to(model_device)
+            batch = Batch.from_data_list(training_data.X_train).to(model_device)  # ty: ignore[invalid-argument-type,unresolved-attribute]
             out = trained_model(batch)
             out = out.squeeze(-1)
             predicted_values = out.cpu().numpy()

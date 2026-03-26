@@ -22,8 +22,9 @@ from torch_geometric.data import Batch
 from mqt.predictor.rl.gnn import SAGEActorCritic
 
 if TYPE_CHECKING:
-    from gymnasium import Env
     from torch_geometric.data import Data
+
+    from mqt.predictor.rl.predictorenv import PredictorEnv
 
 
 @dataclass
@@ -150,7 +151,7 @@ def compute_gae(
 
 
 def collect_rollout(
-    env: Env,
+    env: PredictorEnv,
     policy: SAGEActorCritic,
     steps: int,
     device: str,
@@ -178,7 +179,7 @@ def collect_rollout(
     with torch.no_grad():
         for _ in range(steps):
             # Convert the current observation (PyG Data) to a batch of size 1 and move to device
-            batch = Batch.from_data_list([obs]).to(device)
+            batch = Batch.from_data_list([obs]).to(device)  # ty: ignore[invalid-argument-type,unresolved-attribute]
             # Get action logits and value estimate from the policy
             logits, value = policy(batch)
             # get the mask of valid action from the environment
@@ -212,7 +213,7 @@ def collect_rollout(
             episode_return += float(reward)
 
             buffer.add(
-                graph=obs,
+                graph=obs,  # ty: ignore[invalid-argument-type]
                 action=int(action.item()),
                 log_prob=float(log_prob.item()),
                 value=float(value.squeeze(-1).item()),
@@ -229,7 +230,7 @@ def collect_rollout(
                 obs = next_obs
 
         # Bootstrap value for the current (possibly mid-episode) obs.
-        last_batch = Batch.from_data_list([obs]).to(device)
+        last_batch = Batch.from_data_list([obs]).to(device)  # ty: ignore[invalid-argument-type,unresolved-attribute]
         _, last_value = policy(last_batch)
         last_value = last_value.squeeze(-1).squeeze(0)
 
@@ -305,7 +306,7 @@ def ppo_update(
             mb_idx = indices[start : start + effective_mb]
 
             mb_graphs = [graphs[i] for i in mb_idx]
-            mb_batch = Batch.from_data_list(mb_graphs).to(device)
+            mb_batch = Batch.from_data_list(mb_graphs).to(device)  # ty: ignore[unresolved-attribute]
 
             mb_actions = actions[mb_idx]
             mb_old_logp = old_log_probs[mb_idx]
@@ -361,7 +362,7 @@ def ppo_update(
 
 
 def train_ppo_with_gnn(
-    env: Env,
+    env: PredictorEnv,
     policy: SAGEActorCritic,
     num_iterations: int = 1000,
     steps_per_iteration: int = 2048,

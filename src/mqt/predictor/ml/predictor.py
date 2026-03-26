@@ -73,7 +73,6 @@ from mqt.predictor.rl import rl_compile
 from mqt.predictor.utils import timeout_watcher
 
 if TYPE_CHECKING:
-    import torch_geometric
     from numpy._typing import NDArray
     from qiskit.transpiler import Target
 
@@ -233,7 +232,7 @@ class Predictor:
         for filename in path_uncompiled_circuits.iterdir():
             if filename.suffix != ".qasm":
                 continue
-            qc = QuantumCircuit.from_qasm_file(filename)  # ty: ignore[invalid-argument-type]
+            qc = QuantumCircuit.from_qasm_file(filename)
             if qc.num_qubits > dev_max_qubits:
                 continue
 
@@ -458,7 +457,7 @@ class Predictor:
     def objective(
         self,
         trial: optuna.Trial,
-        dataset: NDArray[np.float64] | list[torch_geometric.data.Data],
+        dataset: NDArray[np.float64] | list[Data],
         task: str,
         in_feats: int,
         num_outputs: int,
@@ -697,7 +696,7 @@ class Predictor:
             restore_best=True,
         )
         if verbose and training_data.X_test is not None and len(training_data.X_test) > 0:
-            test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)
+            test_loader = DataLoader(training_data.X_test, batch_size=16, shuffle=False)  # ty: ignore[invalid-argument-type]
             if task == "regression":
                 avg_loss_test, dict_results, _ = evaluate_regression_model(
                     model, test_loader, loss_fn=loss_fn, device=device, verbose=verbose
@@ -863,7 +862,7 @@ def predict_device_for_figure_of_merit(
         ValueError: If no suitable device is found for the given quantum circuit.
     """
     if isinstance(qc, Path) and qc.exists():
-        qc = QuantumCircuit.from_qasm_file(qc)  # ty: ignore[invalid-argument-type]
+        qc = QuantumCircuit.from_qasm_file(qc)
     assert isinstance(qc, QuantumCircuit)
     path = get_path_trained_model(figure_of_merit) if not gnn else get_path_trained_model_gnn(figure_of_merit)
     if not path.exists():

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -38,6 +38,8 @@ from mqt.predictor.rl.actions import (
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from _pytest.monkeypatch import MonkeyPatch
 
     from mqt.predictor.reward import figure_of_merit
@@ -95,7 +97,7 @@ def test_qcompile_with_false_input() -> None:
     ],
 )
 @pytest.mark.usefixtures("_cleanup_gnn_model_expected_fidelity_ibm_falcon_127")
-def test_train_and_compile(graph: bool, device_name: str, train_kwargs: dict[str, object]) -> None:
+def test_train_and_compile(graph: bool, device_name: str, train_kwargs: dict[str, Any]) -> None:
     """Test the training and compilation pipeline for both MaskablePPO and GNN approaches.
 
     Important: The non-GNN trained models are used in later tests and must not be deleted.
@@ -282,7 +284,7 @@ def test_model_not_trained_raises(graph: bool, model_file: str, error_match: str
 
 
 @pytest.fixture
-def _cleanup_gnn_model_expected_fidelity_ibm_falcon_127() -> None:
+def _cleanup_gnn_model_expected_fidelity_ibm_falcon_127() -> Generator[None, None, None]:
     """Remove the GNN checkpoint created by GNN training tests."""
     yield
     model_path = get_path_trained_model() / "gnn_expected_fidelity_ibm_falcon_127.pt"

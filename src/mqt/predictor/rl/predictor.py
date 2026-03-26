@@ -106,7 +106,7 @@ class Predictor:
             gates_before = sum(v for k, v in self.env.state.count_ops().items() if k != "barrier")
 
             action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)  # ty: ignore[invalid-argument-type]
             action = int(action)
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
@@ -155,7 +155,7 @@ class Predictor:
         """
         obs, _ = self.env.reset(qc, seed=0)
 
-        policy = self._load_gnn_model(obs.x.shape[1])
+        policy = self._load_gnn_model(obs.x.shape[1])  # ty: ignore[unresolved-attribute]
         torch_device = "cuda" if torch.cuda.is_available() else "cpu"
         policy = policy.to(torch_device)
         policy.eval()
@@ -167,7 +167,7 @@ class Predictor:
         with torch.no_grad():
             while not (terminated or truncated):
                 # get the observable in the form of a PyG Batch (with batch size 1) and move to the same device as the model
-                batch_obs = Batch.from_data_list([obs]).to(torch_device)
+                batch_obs = Batch.from_data_list([obs]).to(torch_device)  # ty: ignore[invalid-argument-type,unresolved-attribute]
                 # evaluate the policy to get action logits and values
                 logits, _val = policy(batch_obs)
                 # mask the action not allowed by the environment
@@ -212,7 +212,7 @@ class Predictor:
             state_dict = checkpoint
             cfg = {}
         # extract model hyperparameters from the config, using defaults if not present
-        num_actions = self.env.action_space.n
+        num_actions = self.env.action_space.n  # ty: ignore[unresolved-attribute]
         hidden_dim = int(cfg.get("hidden_dim", 128))
         num_conv_wo_resnet = int(cfg.get("num_conv_wo_resnet", 2))
         num_resnet_layers = int(cfg.get("num_resnet_layers", 5))
@@ -326,17 +326,17 @@ class Predictor:
             kwargs.setdefault("num_resnet_layers", 5)
 
         sample_obs, _ = self.env.reset()
-        node_feature_dim = sample_obs.x.shape[1]
+        node_feature_dim = sample_obs.x.shape[1]  # ty: ignore[unresolved-attribute]
 
-        hidden_dim = int(kwargs.get("hidden_dim", 128))
-        num_conv_wo_resnet = int(kwargs.get("num_conv_wo_resnet", 3))
-        num_resnet_layers = int(kwargs.get("num_resnet_layers", 5))
-        dropout_p = float(kwargs.get("dropout_p", 0.2))
+        hidden_dim = int(kwargs.get("hidden_dim", 128))  # ty: ignore[invalid-argument-type]
+        num_conv_wo_resnet = int(kwargs.get("num_conv_wo_resnet", 3))  # ty: ignore[invalid-argument-type]
+        num_resnet_layers = int(kwargs.get("num_resnet_layers", 5))  # ty: ignore[invalid-argument-type]
+        dropout_p = float(kwargs.get("dropout_p", 0.2))  # ty: ignore[invalid-argument-type]
         bidirectional = bool(kwargs.get("bidirectional", True))
 
         policy = create_gnn_policy(
             node_feature_dim=node_feature_dim,
-            num_actions=self.env.action_space.n,
+            num_actions=self.env.action_space.n,  # ty: ignore[unresolved-attribute]
             hidden_dim=hidden_dim,
             num_conv_wo_resnet=num_conv_wo_resnet,
             num_resnet_layers=num_resnet_layers,
@@ -366,7 +366,7 @@ class Predictor:
                 "dropout_p": dropout_p,
                 "bidirectional": bidirectional,
                 "node_feature_dim": node_feature_dim,
-                "num_actions": self.env.action_space.n,
+                "num_actions": self.env.action_space.n,  # ty: ignore[unresolved-attribute]
                 "global_feature_dim": GLOBAL_FEATURE_DIM,
             },
         }

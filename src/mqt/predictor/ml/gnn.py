@@ -118,7 +118,7 @@ class GraphConvolutionSage(nn.Module):
             self.sag_pool: SAGPooling | None = SAGPooling(
                 in_channels=self.out_dim,
                 ratio=sag_ratio,
-                GNN=SAGEConv,
+                GNN=SAGEConv,  # ty: ignore[invalid-argument-type]
                 nonlinearity=sag_nonlinearity,
             )
         else:
@@ -167,6 +167,8 @@ class GraphConvolutionSage(nn.Module):
             per input graph.
         """
         x, edge_index, batch = data.x, data.edge_index, data.batch
+        assert x is not None
+        assert edge_index is not None
 
         for i, conv in enumerate(self.convs):
             x_new = self._apply_conv_bidir(conv, x, edge_index)

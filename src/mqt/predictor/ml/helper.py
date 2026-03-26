@@ -27,10 +27,11 @@ from sklearn.metrics import accuracy_score, classification_report, mean_absolute
 from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
-    import torch_geometric
     from numpy._typing import NDArray
     from qiskit import QuantumCircuit
     from torch import nn
+    from torch_geometric.data import Data
+    from torch_geometric.loader import DataLoader
 
 
 def get_path_training_data() -> Path:
@@ -171,7 +172,7 @@ def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
         The feature dictionary of the given quantum circuit.
     """
     ops_list = qc.count_ops()
-    ops_list_dict = dict_to_featurevector(ops_list)  # ty: ignore[invalid-argument-type]
+    ops_list_dict = dict_to_featurevector(ops_list)
 
     feature_dict = {}
     for key in ops_list_dict:
@@ -350,7 +351,7 @@ def get_results_classes(preds: torch.Tensor, targets: torch.Tensor) -> tuple[tor
 # ---------------------------------------------------
 def evaluate_classification_model(
     model: nn.Module,
-    loader: torch_geometric.loader.DataLoader,
+    loader: DataLoader,
     loss_fn: nn.Module,
     device: str | torch.device,
     *,
@@ -432,7 +433,7 @@ def evaluate_classification_model(
 
 def evaluate_regression_model(
     model: nn.Module,
-    loader: torch_geometric.loader.DataLoader,
+    loader: DataLoader,
     loss_fn: nn.Module,
     device: str | torch.device,
     *,
@@ -496,7 +497,7 @@ def evaluate_regression_model(
 
 def train_model(
     model: nn.Module,
-    train_loader: torch_geometric.loader.DataLoader,
+    train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: nn.Module,
     num_epochs: int,
@@ -504,7 +505,7 @@ def train_model(
     *,
     device: str | torch.device | None = None,
     verbose: bool = True,
-    val_loader: torch_geometric.loader.DataLoader | None = None,
+    val_loader: DataLoader | None = None,
     patience: int = 10,
     min_delta: float = 0.0,
     restore_best: bool = True,
@@ -614,9 +615,9 @@ def train_model(
 class TrainingData:
     """Container for training/test data for both classical (numpy) and GNN (graph) models."""
 
-    X_train: NDArray[np.float64] | list[torch_geometric.data.Data]
+    X_train: NDArray[np.float64] | list[Data]
     y_train: NDArray[np.float64] | torch.Tensor
-    X_test: NDArray[np.float64] | list[torch_geometric.data.Data] | None = None
+    X_test: NDArray[np.float64] | list[Data] | None = None
     y_test: NDArray[np.float64] | torch.Tensor | None = None
     indices_train: list[int] | None = None
     indices_test: list[int] | None = None
