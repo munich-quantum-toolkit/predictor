@@ -82,26 +82,34 @@ from mqt.predictor.rl.parsing import (
 )
 
 IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
+
+# Try to import AIRouting; it is optional (requires qiskit-ibm-transpiler).
+HAS_AI_ROUTING = False
 if not IS_WIN_PY313:
-    # qiskit-ibm-transpiler currently emits import-time warnings
-    # these can not be ignored by the filterwarnings in pyproject.toml
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"invalid escape sequence '\\w'",
-            category=DeprecationWarning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r"invalid escape sequence '\\w'",
-            category=SyntaxWarning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r'"is" with (?:a literal|\'str\' literal)',
-            category=SyntaxWarning,
-        )
-        from qiskit_ibm_transpiler.ai.routing import AIRouting
+    try:
+        # qiskit-ibm-transpiler currently emits import-time warnings
+        # these cannot be suppressed via pyproject.toml filterwarnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence '\\w'",
+                category=DeprecationWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence '\\w'",
+                category=SyntaxWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r'"is" with (?:a literal|\'str\' literal)',
+                category=SyntaxWarning,
+            )
+            from qiskit_ibm_transpiler.ai.routing import AIRouting
+
+            HAS_AI_ROUTING = True
+    except ImportError:
+        pass
 
 
 if TYPE_CHECKING:
@@ -479,7 +487,7 @@ register_action(
     )
 )
 
-if not IS_WIN_PY313:
+if HAS_AI_ROUTING:
     register_action(
         DeviceDependentAction(
             "AIRouting",
@@ -690,7 +698,7 @@ def add_cregs_and_measurements(
     return qc
 
 
-if not IS_WIN_PY313:
+if HAS_AI_ROUTING:
 
     class SafeAIRouting(AIRouting):
         """Custom AIRouting wrapper that removes classical registers before routing.

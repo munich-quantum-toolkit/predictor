@@ -178,17 +178,18 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
         x, edge_index, number_of_gates = create_dag(qc)
         training_sample = [(x, edge_index, number_of_gates)] * n_circuits
 
+    # 2. Label Generation
     rng = np.random.default_rng()
     noisy = rng.random(device.num_qubits)
     noisy /= np.sum(noisy)
     noiseless = np.zeros_like(noisy)
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
-
+    labels_list = [distance_label] * n_circuits
+    # Creation of the training data object, which is different for RF and GNN models
     if not gnn:
-        labels_list = np.full(n_circuits, distance_label)
-        training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
-        labels_list = [distance_label] * n_circuits
+        labels_array = np.asarray(labels_list, dtype=np.float64)
+        training_data = TrainingData(X_train=feature_vector_list, y_train=labels_array)
     else:
         training_data_list = []
         for i in range(n_circuits):
@@ -200,7 +201,7 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
                 num_nodes=n_nodes,
             )
             training_data_list.append(gnn_training_sample)
-        training_data = TrainingData(X_train=training_data_list, y_train=labels)
+        training_data = TrainingData(X_train=training_data_list, y_train=np.asarray(labels_list, dtype=np.float32))
 
     # 3. Model Training
     pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)

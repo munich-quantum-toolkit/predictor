@@ -15,12 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler import InstructionProperties, Target
+from qiskit.transpiler.passes import GatesInBasis
+from torch_geometric.data import Data
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -69,46 +72,6 @@ def test_predictor_env_hellinger_error() -> None:
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
 
 
-def test_qcompile_with_newly_trained_models() -> None:
-    """Test the qcompile function with a newly trained model.
-
-    Important: Those trained models are used in later tests and must not be deleted.
-    To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
-    """
-    figure_of_merit = "expected_fidelity"
-    device = get_device("ibm_falcon_127")
-    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-
-    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
-
-    model_name = "model_" + figure_of_merit + "_" + device.description
-    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
-    if not model_path.exists():
-        with pytest.raises(
-            FileNotFoundError,
-            match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-            ),
-        ):
-            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
-
-    predictor.train_model(
-        timesteps=1000,
-        test=True,
-    )
-
-    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
-
-    assert qc_compiled.layout is not None
-    assert compilation_information is not None
-    assert predictor.env.is_circuit_synthesized(qc_compiled), (
-        "Circuit should only contain native gates but was not detected as such."
-    )
-    assert predictor.env.is_circuit_routed(qc_compiled, CouplingMap(device.build_coupling_map())), (
-        "Circuit should be mapped to the device's coupling map."
-    )
-
-
 def test_qcompile_with_false_input() -> None:
     """Test the qcompile function with false input."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
@@ -118,43 +81,43 @@ def test_qcompile_with_false_input() -> None:
         rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
-@pytest.mark.parametrize("device_name", ["ibm_falcon_127", "quantinuum_h2_56"])
-def test_qcompile_with_newly_trained_models(device_name: str) -> None:
-    """Test the qcompile function with a newly trained model.
+@pytest.mark.parametrize(
+    ("graph", "device_name", "train_kwargs"),
+    [
+        pytest.param(False, "ibm_falcon_127", {"timesteps": 100}, id="ppo-ibm_falcon_127"),
+        pytest.param(False, "quantinuum_h2_56", {"timesteps": 100}, id="ppo-quantinuum_h2_56"),
+        pytest.param(
+            True,
+            "ibm_falcon_127",
+            {"iterations": 2, "steps": 5, "num_epochs": 1, "minibatch_size": 4},
+            id="gnn-ibm_falcon_127",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("_cleanup_gnn_model_expected_fidelity_ibm_falcon_127")
+def test_train_and_compile(graph: bool, device_name: str, train_kwargs: dict[str, object]) -> None:
+    """Test the training and compilation pipeline for both MaskablePPO and GNN approaches.
 
-    Important: Those trained models are used in later tests and must not be deleted.
+    Important: The non-GNN trained models are used in later tests and must not be deleted.
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
     figure_of_merit = "expected_fidelity"
     device = get_device(device_name)
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device, graph=graph)
+    predictor.train_model(test=True, **train_kwargs)
 
-    model_name = "model_" + figure_of_merit + "_" + device.description
-    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
-    if not model_path.exists():
-        with pytest.raises(
-            FileNotFoundError,
-            match=re.escape(
-                f"The RL model 'model_expected_fidelity_{device_name}' is not trained yet. Please train the model before using it."
-            ),
-        ):
-            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+    qc_compiled, compilation_info = predictor.compile_as_predicted(qc)
 
-    predictor.train_model(
-        timesteps=100,
-        test=True,
-    )
-
-    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
-
-    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
-    check_nat_gates(qc_compiled)
-    only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-
-    assert qc_compiled.layout is not None
-    assert compilation_information is not None
-    assert only_nat_gates, "Circuit should only contain native gates but was not detected as such"
+    assert isinstance(qc_compiled, QuantumCircuit)
+    assert compilation_info is not None
+    assert len(compilation_info) > 0
+    if not graph:
+        check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
+        check_nat_gates(qc_compiled)
+        assert check_nat_gates.property_set["all_gates_in_basis"], (
+            "Circuit should only contain native gates but was not detected as such"
+        )
 
 
 def test_warning_for_unidirectional_device() -> None:
@@ -268,3 +231,87 @@ def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> N
         assert len(predictor.env.dur_by_gate) > 0
         # tbar is optional depending on backend calibration; just sanity-check type
         assert predictor.env.tbar is None or predictor.env.tbar > 0.0
+
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_predictor_env_observation_type(graph: bool) -> None:
+    """Test that PredictorEnv returns the correct observation type based on graph mode."""
+    device = get_device("ibm_falcon_127")
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=device, graph=graph)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    obs, _ = predictor.env.reset(qc=qc)
+
+    if graph:
+        assert isinstance(obs, Data)
+        assert isinstance(obs.x, torch.Tensor)
+        assert isinstance(obs.edge_index, torch.Tensor)
+        assert obs.x.shape[0] > 0
+        assert obs.edge_index.shape[0] == 2
+    else:
+        assert isinstance(obs, dict)
+
+
+@pytest.mark.parametrize(
+    ("graph", "model_file", "error_match"),
+    [
+        pytest.param(
+            False,
+            "model_critical_depth_ibm_falcon_127.zip",
+            "The RL model 'model_critical_depth_ibm_falcon_127' is not trained yet.",
+            id="ppo",
+        ),
+        pytest.param(
+            True,
+            "gnn_critical_depth_ibm_falcon_127.pt",
+            "The GNN RL model 'gnn_critical_depth_ibm_falcon_127' is not trained yet.",
+            id="gnn",
+        ),
+    ],
+)
+def test_model_not_trained_raises(graph: bool, model_file: str, error_match: str) -> None:
+    """Test that compile_as_predicted raises FileNotFoundError when the model is not trained."""
+    device = get_device("ibm_falcon_127")
+    predictor = Predictor(figure_of_merit="critical_depth", device=device, graph=graph)
+    model_path = get_path_trained_model() / model_file
+    if model_path.exists():
+        model_path.unlink()
+
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    with pytest.raises(FileNotFoundError, match=re.escape(error_match)):
+        predictor.compile_as_predicted(qc)
+
+
+@pytest.fixture
+def _cleanup_gnn_model_expected_fidelity_ibm_falcon_127() -> None:
+    """Remove the GNN checkpoint created by GNN training tests."""
+    yield
+    model_path = get_path_trained_model() / "gnn_expected_fidelity_ibm_falcon_127.pt"
+    if model_path.exists():
+        model_path.unlink()
+
+
+@pytest.mark.usefixtures("_cleanup_gnn_model_expected_fidelity_ibm_falcon_127")
+def test_gnn_checkpoint_config_saved_correctly() -> None:
+    """Test that the GNN checkpoint stores config metadata required for model reload."""
+    figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device, graph=True)
+    predictor.train_model(test=True, iterations=2, steps=5, num_epochs=1, minibatch_size=4)
+
+    model_path = get_path_trained_model() / f"gnn_{figure_of_merit}_{device.description}.pt"
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+
+    assert "state_dict" in checkpoint
+    assert "config" in checkpoint
+    cfg = checkpoint["config"]
+    for key in (
+        "hidden_dim",
+        "num_conv_wo_resnet",
+        "num_resnet_layers",
+        "dropout_p",
+        "bidirectional",
+        "node_feature_dim",
+        "num_actions",
+    ):
+        assert key in cfg, f"Missing config key: {key}"

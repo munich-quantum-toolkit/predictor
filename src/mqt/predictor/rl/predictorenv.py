@@ -102,6 +102,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         reward_scale: float = 1.0,
         no_effect_penalty: float = -0.001,
+        graph: bool = False,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -112,12 +113,14 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
             no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
+            graph: If True, observations are returned as PyG Data objects for GNN-based agents. Defaults to False.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
         """
         logger.info("Init env: " + reward_function)
 
+        self.graph = graph
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
 
         self.action_set = {}
@@ -259,14 +262,14 @@ class PredictorEnv(Env):
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
-            return create_feature_dict(self.state), 0.0, True, False, {}
+            return create_feature_dict(self.state, graph=self.graph), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
-            return create_feature_dict(self.state), reward_val, done, False, {}
+            return create_feature_dict(self.state, graph=self.graph), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -293,7 +296,7 @@ class PredictorEnv(Env):
             )
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
-        obs = create_feature_dict(self.state)
+        obs = create_feature_dict(self.state, graph=self.graph)
         return obs, reward_val, done, False, {}
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
@@ -438,7 +441,7 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
-        return create_feature_dict(self.state), {}
+        return create_feature_dict(self.state, graph=self.graph), {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""

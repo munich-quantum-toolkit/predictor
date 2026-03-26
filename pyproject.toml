@@ -45,10 +45,6 @@ dependencies = [
     "numpy>=1.26; python_version >= '3.12'",
     "numpy>=1.24; python_version >= '3.11'",
     "numpy>=1.22",
-    "torch>=2.8.0",
-    "optuna>=4.5.0",
-    "torch-geometric>=2.6.1",
-    "safetensors>=0.4.0",
     "typing-extensions>=4.1",  # for `assert_never`
     "qiskit-ibm-transpiler>=0.15.0; sys_platform != 'win32' or python_version != '3.13'", # pulls qiskit-serverless, which pulls ray[default], and the resolved ray 2.54.0 has no win_amd64 cp313 wheel
     "qiskit-ibm-ai-local-transpiler>=0.5.5",
@@ -125,8 +121,6 @@ log_level = "INFO"
 filterwarnings = [
     'error',
     'ignore:.*pytorch.*:UserWarning:',
-    "ignore:`torch_geometric.distributed` has been deprecated:DeprecationWarning:torch_geometric",
-    "ignore:.*'type_params' parameter of 'typing\\._eval_type'.*:DeprecationWarning:",
     'ignore:.*Values in x.*:RuntimeWarning:',
     'ignore:.*The least populated class in y has only 3 members, which is less than n_splits=5.*:UserWarning:',
     'ignore:.*divide by zero encountered in det.*:RuntimeWarning:',
@@ -137,9 +131,7 @@ filterwarnings = [
     'ignore:.*The property ``qiskit.circuit.instruction.Instruction.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
     # Windows: Python 3.13 can emit a RuntimeWarning about unsupported timeouts; keep tests strict otherwise.
     'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
-    'ignore:.*`torch_geometric\\.distributed` has been deprecated since 2\\.7\\.0.*:DeprecationWarning:',
-    "ignore::DeprecationWarning:torch_geometric.distributed",
-    'error',
+
 ]
 
 
@@ -168,20 +160,6 @@ exclude = [
     "docs/**",
 ]
 
-[[tool.mypy.overrides]]
-# `mqt.bench` and `sb3_contrib` are fully typed but take forever to install in the environment.
-# recent versions of `gym` are typed, but stable-baselines3 pins a very old version of gym.
-# qiskit is not yet marked as typed, but is typed mostly.
-# the other libraries do not have type stubs.
-module = ["qiskit.*", "joblib.*", "sklearn.*", "matplotlib.*", "gymnasium.*", "mqt.bench.*", "sb3_contrib.*", "bqskit.*", "qiskit_ibm_runtime.*", "networkx.*", "stable_baselines3.*", "torch", "torch.*", "torch_geometric", "torch_geometric.*", "optuna.*", "safetensors", "safetensors.torch", "safetensors.*" ]
-ignore_missing_imports = true
-
-# Relax type checking for the GNN module since torch and torch_geometric expose
-# many APIs as Any due to incomplete type stubs; the GNN implementation must
-# work with these untyped returns and may need to subclass Any-typed classes.
-[[tool.mypy.overrides]]
-module = ["mqt.predictor.ml.gnn"]
-disallow_subclassing_any = false
 
 [tool.ruff]
 line-length = 120
@@ -271,6 +249,7 @@ anc = "anc"
 aer = "aer"
 fom = "fom"
 TPE = "TPE"
+TPESampler = "TPESampler"
 
 
 [tool.repo-review]

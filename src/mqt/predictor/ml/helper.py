@@ -24,7 +24,7 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import RemoveBarriers
 from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, mean_squared_error, r2_score
 
-from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
+from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     import torch_geometric
