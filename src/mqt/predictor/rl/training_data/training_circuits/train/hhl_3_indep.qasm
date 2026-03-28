@@ -1,0 +1,15 @@
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg sys[1];
+qreg phase[1];
+qreg ancilla[1];
+creg c[1];
+x sys[0];
+h phase[0];
+cp(11.366282220687872) phase[0],sys[0];
+h phase[0];
+cry(1.1714210053478946) phase[0],ancilla[0];
+h phase[0];
+cp(-11.366282220687872) phase[0],sys[0];
+h phase[0];
+measure sys[0] -> c[0];

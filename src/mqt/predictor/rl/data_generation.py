@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.benchmarks import get_available_benchmark_names
 from qiskit import transpile
+from qiskit.circuit.exceptions import CircuitError
 from qiskit.qasm2 import dump
 
 from mqt.predictor.rl.helper import (
@@ -35,8 +36,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mqt-predictor")
 
+try:
+    from networkx.exception import NetworkXError
+except ImportError:  # pragma: no cover - networkx is an indirect dependency in this workflow
+    NetworkXError = RuntimeError
+
 GENERATABLE_BENCHMARK_ERRORS = (
+    AssertionError,
     AttributeError,
+    CircuitError,
+    NetworkXError,
     NotImplementedError,
     OSError,
     RuntimeError,
@@ -381,24 +390,39 @@ def split_generated_circuits(
     test_fraction: float = 0.1,
     seed: int = 0,
 ) -> TrainTestSplit:
-    """Split generated circuits into train and test subsets."""
+    """Split generated circuits into train and test subsets per benchmark family."""
     if not 0.0 < test_fraction < 1.0:
         msg = "test_fraction must be strictly between 0 and 1."
         raise ValueError(msg)
 
-    shuffled_circuits = list(circuits)
-    random.Random(seed).shuffle(shuffled_circuits)
+    rng = random.Random(seed)
+    benchmark_families: dict[str, list[GeneratedBenchmarkCircuit]] = {}
+    for circuit in circuits:
+        benchmark_families.setdefault(circuit.benchmark_name, []).append(circuit)
 
-    if len(shuffled_circuits) <= 1:
-        return TrainTestSplit(train_circuits=shuffled_circuits, test_circuits=[])
+    train_circuits: list[GeneratedBenchmarkCircuit] = []
+    test_circuits: list[GeneratedBenchmarkCircuit] = []
 
-    test_count = max(1, round(len(shuffled_circuits) * test_fraction))
-    test_count = min(test_count, len(shuffled_circuits) - 1)
-    split_index = len(shuffled_circuits) - test_count
+    for benchmark_name in sorted(benchmark_families):
+        family_circuits = list(benchmark_families[benchmark_name])
+        rng.shuffle(family_circuits)
+
+        if len(family_circuits) <= 1:
+            train_circuits.extend(family_circuits)
+            continue
+
+        test_count = max(1, round(len(family_circuits) * test_fraction))
+        test_count = min(test_count, len(family_circuits) - 1)
+        split_index = len(family_circuits) - test_count
+        train_circuits.extend(family_circuits[:split_index])
+        test_circuits.extend(family_circuits[split_index:])
+
+    rng.shuffle(train_circuits)
+    rng.shuffle(test_circuits)
 
     return TrainTestSplit(
-        train_circuits=shuffled_circuits[:split_index],
-        test_circuits=shuffled_circuits[split_index:],
+        train_circuits=train_circuits,
+        test_circuits=test_circuits,
     )
 
 
@@ -468,13 +492,13 @@ def main() -> None:
     parser.add_argument(
         "--max-circuit-size",
         type=int,
-        default=200,
+        default=250,
         help="Maximum circuit size to keep. Use 0 to disable the limit.",
     )
     parser.add_argument(
         "--max-circuit-depth",
         type=int,
-        default=200,
+        default=250,
         help="Maximum circuit depth to keep. Use 0 to disable the limit.",
     )
     parser.add_argument("--test-fraction", type=float, default=0.1, help="Fraction of circuits used for testing.")
