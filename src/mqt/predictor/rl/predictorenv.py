@@ -284,8 +284,8 @@ class PredictorEnv(Env):
         )
         return synthesized, laid_out, routed
 
-    @staticmethod
     def _made_structural_progress(
+        self,
         previous_flags: tuple[bool, bool, bool],
         current_flags: tuple[bool, bool, bool],
     ) -> bool:
@@ -341,7 +341,7 @@ class PredictorEnv(Env):
             reward_kind_changed = self.prev_reward_kind != new_kind
             structural_progress = self._made_structural_progress(previous_state_flags, current_state_flags)
 
-            if reward_kind_changed:
+            if reward_kind_changed or structural_progress:
                 delta_reward = 0.0
 
             reward_val = (
