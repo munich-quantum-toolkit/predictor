@@ -275,6 +275,23 @@ class PredictorEnv(Env):
                 reward_val,
             )
 
+    def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        synthesized = self.is_circuit_synthesized(self.state)
+        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        )
+        return synthesized, laid_out, routed
+
+    @staticmethod
+    def _made_structural_progress(
+        previous_flags: tuple[bool, bool, bool],
+        current_flags: tuple[bool, bool, bool],
+    ) -> bool:
+        """Return whether the compilation stage improved structurally."""
+        return any(not before and after for before, after in zip(previous_flags, current_flags, strict=True))
+
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
@@ -294,6 +311,7 @@ class PredictorEnv(Env):
         step_index = self.num_steps + 1
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
+        previous_state_flags = self._get_compilation_state_flags()
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
@@ -317,9 +335,11 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
+            structural_progress = self._made_structural_progress(previous_state_flags, current_state_flags)
 
             if reward_kind_changed:
                 delta_reward = 0.0
@@ -328,7 +348,7 @@ class PredictorEnv(Env):
                 self.reward_scale * delta_reward
                 if not isclose(delta_reward, 0.0, abs_tol=1e-12)
                 else 0.0
-                if reward_kind_changed
+                if reward_kind_changed or structural_progress
                 else self.no_effect_penalty
             )
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
