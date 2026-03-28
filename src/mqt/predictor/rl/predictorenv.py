@@ -107,7 +107,11 @@ class PredictorEnv(Env):
 
         Arguments:
             device: The target device to be used for compilation.
-            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline (synthesis -> (layout->routing) / mapping), while "flexible" allows for a cyclical approach where actions can be interleaved or reversed.
+            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline
+                (synthesis -> (layout->routing) / mapping), "flexible" allows for a cyclical approach
+                where actions can be interleaved or reversed, "thesis" uses the custom action-validity
+                rules defined in ``determine_valid_actions_for_state``, and "hybrid" is flexible before
+                layout but keeps layout/routing locked once they have been established.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
@@ -463,15 +467,7 @@ class PredictorEnv(Env):
 
         self.layout = None
 
-        if self.mdp == "flexible":
-            self.valid_actions = (
-                self.actions_synthesis_indices
-                + self.actions_mapping_indices
-                + self.actions_layout_indices
-                + self.actions_opt_indices
-            )
-        else:
-            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.determine_valid_actions_for_state()
 
         self.error_occurred = False
 
@@ -892,6 +888,11 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -901,6 +902,10 @@ class PredictorEnv(Env):
 
         if synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
@@ -919,6 +924,10 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
@@ -932,6 +941,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_routing_indices)
             if self.mdp == "thesis":
@@ -942,6 +954,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -954,6 +969,10 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend([self.action_terminate_index])
+                actions.extend(self.actions_structure_preserving_indices)
+                actions.extend(self.actions_final_optimization_indices)
             if self.mdp == "paper":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)

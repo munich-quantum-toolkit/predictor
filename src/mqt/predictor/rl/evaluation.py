@@ -148,6 +148,7 @@ def evaluate_trained_predictor(
     model_path: str | Path,
     device: Target,
     figure_of_merit: figure_of_merit = "expected_fidelity",
+    mdp: str = "paper",
     path_training_circuits: str | Path | None = None,
     path_test_circuits: str | Path | None = None,
     max_steps: int = 200,
@@ -170,6 +171,7 @@ def evaluate_trained_predictor(
     predictor = Predictor(
         figure_of_merit=figure_of_merit,
         device=device,
+        mdp=mdp,
         path_training_circuits=training_dir,
     )
     model = load_model_from_path(model_path)

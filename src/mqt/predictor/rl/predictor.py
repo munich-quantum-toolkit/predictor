@@ -36,6 +36,7 @@ class Predictor:
         self,
         figure_of_merit: figure_of_merit,
         device: Target,
+        mdp: str = "paper",
         path_training_circuits: Path | None = None,
         logger_level: int = logging.INFO,
     ) -> None:
@@ -43,7 +44,10 @@ class Predictor:
         logger.setLevel(logger_level)
 
         self.env = PredictorEnv(
-            reward_function=figure_of_merit, device=device, path_training_circuits=path_training_circuits
+            reward_function=figure_of_merit,
+            device=device,
+            mdp=mdp,
+            path_training_circuits=path_training_circuits,
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit

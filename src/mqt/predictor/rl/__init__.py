@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         collect_working_benchmark_circuits,
         generate_rl_train_test_data,
     )
+    from mqt.predictor.rl.evaluate import main as evaluate_main
     from mqt.predictor.rl.evaluation import (
         CircuitEvaluationResult,
         FeatureImportanceResult,
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     )
     from mqt.predictor.rl.predictor import Predictor, rl_compile
     from mqt.predictor.rl.predictorenv import PredictorEnv
+    from mqt.predictor.rl.training import RLTrainingResult, run_rl_training
     from mqt.predictor.rl.workflow import RLWorkflowResult, run_rl_training_workflow
 
 __all__ = [
@@ -41,14 +43,17 @@ __all__ = [
     "Predictor",
     "PredictorEnv",
     "PredictorEvaluationResult",
+    "RLTrainingResult",
     "RLWorkflowResult",
     "TrainTestGenerationResult",
     "TrainTestSplit",
     "collect_working_benchmark_circuits",
     "compute_feature_importance",
+    "evaluate_main",
     "evaluate_trained_predictor",
     "generate_rl_train_test_data",
     "rl_compile",
+    "run_rl_training",
     "run_rl_training_workflow",
 ]
 
@@ -60,6 +65,8 @@ _NAME_TO_MODULE = {
     "Predictor": "mqt.predictor.rl.predictor",
     "PredictorEvaluationResult": "mqt.predictor.rl.evaluation",
     "PredictorEnv": "mqt.predictor.rl.predictorenv",
+    "evaluate_main": "mqt.predictor.rl.evaluate",
+    "RLTrainingResult": "mqt.predictor.rl.training",
     "RLWorkflowResult": "mqt.predictor.rl.workflow",
     "TrainTestGenerationResult": "mqt.predictor.rl.data_generation",
     "TrainTestSplit": "mqt.predictor.rl.data_generation",
@@ -68,6 +75,7 @@ _NAME_TO_MODULE = {
     "evaluate_trained_predictor": "mqt.predictor.rl.evaluation",
     "generate_rl_train_test_data": "mqt.predictor.rl.data_generation",
     "run_rl_training_workflow": "mqt.predictor.rl.workflow",
+    "run_rl_training": "mqt.predictor.rl.training",
     "rl_compile": "mqt.predictor.rl.predictor",
 }
 

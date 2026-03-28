@@ -26,3 +26,4 @@ logger_formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 console_handler.setFormatter(logger_formatter)
 logger.addHandler(console_handler)
 logger.setLevel(logging.DEBUG)
+logger.propagate = False
