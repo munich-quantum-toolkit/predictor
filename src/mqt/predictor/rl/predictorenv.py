@@ -42,7 +42,7 @@ from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from pytket.placement import Placement
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, transpile
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.exceptions import QiskitError
 from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
@@ -230,6 +230,8 @@ class PredictorEnv(Env):
         if altered_qc is None:
             return None
 
+        altered_qc = self._normalize_to_rl_basis(altered_qc)
+
         self.state: QuantumCircuit = altered_qc
 
         self.num_steps += 1
@@ -240,6 +242,17 @@ class PredictorEnv(Env):
             raise RuntimeError(msg)
 
         return altered_qc
+
+    def _normalize_to_rl_basis(self, qc: QuantumCircuit) -> QuantumCircuit:
+        """Translate a circuit into the RL feature-space basis without optimizing it."""
+        normalized_qc = transpile(
+            qc,
+            basis_gates=get_openqasm_gates_for_rl(),
+            optimization_level=0,
+            seed_transpiler=0,
+        )
+        normalized_qc._layout = self.layout  # noqa: SLF001
+        return normalized_qc
 
     def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
         """Log the chosen action and resulting reward for the current episode step."""

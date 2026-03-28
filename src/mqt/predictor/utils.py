@@ -222,11 +222,9 @@ def get_openqasm_gates_for_rl() -> list[str]:
         "crx",
         "cry",
         "crz",
-        "cu1",
         "cp",
         "cu3",
         "csx",
-        "cu",
         "rxx",
         "rzz",
     ]
