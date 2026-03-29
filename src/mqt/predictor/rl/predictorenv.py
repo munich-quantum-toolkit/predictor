@@ -225,6 +225,7 @@ class PredictorEnv(Env):
         self.tbar: float | None = None
         self.dev_avgs_cached = False
         self.state: QuantumCircuit = QuantumCircuit()
+        self.compilation_state_flags: tuple[bool, bool, bool] | None = None
 
         self.error_occurred = False
 
@@ -237,6 +238,7 @@ class PredictorEnv(Env):
         altered_qc = self._normalize_to_rl_basis(altered_qc)
 
         self.state: QuantumCircuit = altered_qc
+        self.compilation_state_flags = None
 
         self.num_steps += 1
         self.state._layout = self.layout  # noqa: SLF001
@@ -277,20 +279,16 @@ class PredictorEnv(Env):
 
     def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        if self.compilation_state_flags is not None:
+            return self.compilation_state_flags
+
         synthesized = self.is_circuit_synthesized(self.state)
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
         routed = (
             self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
         )
-        return synthesized, laid_out, routed
-
-    def _made_structural_progress(
-        self,
-        previous_flags: tuple[bool, bool, bool],
-        current_flags: tuple[bool, bool, bool],
-    ) -> bool:
-        """Return whether the compilation stage improved structurally."""
-        return any(not before and after for before, after in zip(previous_flags, current_flags, strict=True))
+        self.compilation_state_flags = (synthesized, laid_out, routed)
+        return self.compilation_state_flags
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
@@ -339,18 +337,19 @@ class PredictorEnv(Env):
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
-            structural_progress = self._made_structural_progress(previous_state_flags, current_state_flags)
+            state_changed = any(
+                not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
+            )
 
-            if reward_kind_changed or structural_progress:
+            if reward_kind_changed or state_changed:
                 delta_reward = 0.0
 
-            reward_val = (
-                self.reward_scale * delta_reward
-                if not isclose(delta_reward, 0.0, abs_tol=1e-12)
-                else 0.0
-                if reward_kind_changed or structural_progress
-                else self.no_effect_penalty
-            )
+            if not isclose(delta_reward, 0.0, abs_tol=1e-12):
+                reward_val = self.reward_scale * delta_reward
+            elif reward_kind_changed or state_changed:
+                reward_val = 0.0
+            else:
+                reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         obs = create_feature_dict(self.state)
@@ -486,6 +485,7 @@ class PredictorEnv(Env):
         self.episode_count += 1
 
         self.layout = None
+        self.compilation_state_flags = None
 
         self.valid_actions = self.determine_valid_actions_for_state()
 
@@ -893,12 +893,7 @@ class PredictorEnv(Env):
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-        )
+        synthesized, laid_out, routed = self._get_compilation_state_flags()
 
         actions = []
         # Initial state

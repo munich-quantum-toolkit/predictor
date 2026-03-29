@@ -37,15 +37,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mqt-predictor")
 
 try:
-    from networkx.exception import NetworkXError
+    from networkx.exception import NetworkXError as NetworkXErrorType
 except ImportError:  # pragma: no cover - networkx is an indirect dependency in this workflow
-    NetworkXError = RuntimeError
+    NetworkXErrorType: type[BaseException] = RuntimeError
 
-GENERATABLE_BENCHMARK_ERRORS = (
+GENERATABLE_BENCHMARK_ERRORS: tuple[type[BaseException], ...] = (
     AssertionError,
     AttributeError,
     CircuitError,
-    NetworkXError,
+    NetworkXErrorType,
     NotImplementedError,
     OSError,
     RuntimeError,
