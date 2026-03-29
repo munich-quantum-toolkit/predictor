@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,7 @@ NON_GATE_OBSERVATION_FEATURES = [
 FeatureValue = int | NDArray[np.float32]
 Observation = dict[str, FeatureValue]
 PolicyObservation = dict[str, NDArray[np.float32]]
+CompilationStateFlags = tuple[bool, bool, bool]
 
 
 @dataclass(slots=True)
@@ -104,6 +106,26 @@ class FeatureImportanceResult:
 
 
 @dataclass(slots=True)
+class ActionEffectivenessStats:
+    """Aggregated usage/effectiveness statistics for one compilation action."""
+
+    action_name: str
+    total_uses: int
+    effective_uses: int
+    effectiveness_ratio: float
+
+
+@dataclass(slots=True)
+class ActionEffectivenessSummary:
+    """Aggregated action-effectiveness statistics over the full test set."""
+
+    total_uses: int
+    total_effective_uses: int
+    overall_effectiveness_ratio: float
+    per_action: list[ActionEffectivenessStats]
+
+
+@dataclass(slots=True)
 class PredictorEvaluationResult:
     """Full evaluation result for a trained predictor."""
 
@@ -111,6 +133,7 @@ class PredictorEvaluationResult:
     circuits: list[CircuitEvaluationResult]
     average_metrics: FinalCircuitMetrics
     feature_importance: FeatureImportanceResult
+    action_effectiveness: ActionEffectivenessSummary
 
 
 def get_non_gate_observation_features() -> list[str]:
@@ -132,15 +155,26 @@ def split_feature_groups(features: list[str] | None = None) -> tuple[list[str], 
     return original_features, gate_features
 
 
-def is_effective_action(action: Action, reward_value: float) -> bool:
+def is_effective_action(
+    action: Action,
+    reward_value: float,
+    previous_state_flags: CompilationStateFlags,
+    current_state_flags: CompilationStateFlags,
+) -> bool:
     """Return whether a step should count as effective for evaluation."""
-    if action.pass_type in {
-        PassType.SYNTHESIS,
-        PassType.LAYOUT,
-        PassType.ROUTING,
-        PassType.MAPPING,
-    }:
-        return True
+    previous_synthesized, previous_laid_out, previous_routed = previous_state_flags
+    current_synthesized, current_laid_out, current_routed = current_state_flags
+
+    if action.pass_type == PassType.SYNTHESIS:
+        return not previous_synthesized and current_synthesized
+    if action.pass_type == PassType.LAYOUT:
+        return not previous_laid_out and current_laid_out
+    if action.pass_type == PassType.ROUTING:
+        return not previous_routed and current_routed
+    if action.pass_type == PassType.MAPPING:
+        return any(
+            not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
+        )
     return action.pass_type != PassType.TERMINATE and reward_value > 0.0
 
 
@@ -203,6 +237,7 @@ def evaluate_trained_predictor(
         circuits=evaluation_results,
         average_metrics=compute_average_metrics(evaluation_results),
         feature_importance=feature_importance,
+        action_effectiveness=compute_action_effectiveness_summary(evaluation_results),
     )
 
 
@@ -283,9 +318,11 @@ def rollout_circuit(
         action_index = int(action)
         action_item = predictor.env.action_set[action_index]
         used_compilation_passes.append(action_item.name)
+        previous_state_flags = predictor.env.get_compilation_state_flags()
 
         obs, reward_value, terminated, truncated, _ = predictor.env.step(action_index)
-        if is_effective_action(action_item, reward_value):
+        current_state_flags = predictor.env.get_compilation_state_flags()
+        if is_effective_action(action_item, reward_value, previous_state_flags, current_state_flags):
             effective_compilation_passes.append(action_item.name)
             effective_steps += 1
             decision_trace.append(
@@ -392,6 +429,40 @@ def compute_average_metrics(results: list[CircuitEvaluationResult]) -> FinalCirc
         ]),
         depth=round(nanmean_or_nan([result.metrics.depth for result in results])),
         size=round(nanmean_or_nan([result.metrics.size for result in results])),
+    )
+
+
+def compute_action_effectiveness_summary(results: list[CircuitEvaluationResult]) -> ActionEffectivenessSummary:
+    """Aggregate action usage/effectiveness statistics over all evaluated circuits."""
+    total_counter: Counter[str] = Counter()
+    effective_counter: Counter[str] = Counter()
+
+    for result in results:
+        total_counter.update(result.used_compilation_passes)
+        effective_counter.update(result.effective_compilation_passes)
+
+    action_names = sorted(total_counter, key=lambda name: (-total_counter[name], name))
+    per_action = [
+        ActionEffectivenessStats(
+            action_name=action_name,
+            total_uses=total_counter[action_name],
+            effective_uses=effective_counter[action_name],
+            effectiveness_ratio=(
+                effective_counter[action_name] / total_counter[action_name] if total_counter[action_name] > 0 else 0.0
+            ),
+        )
+        for action_name in action_names
+    ]
+
+    total_uses = sum(total_counter.values())
+    total_effective_uses = sum(effective_counter.values())
+    overall_effectiveness_ratio = total_effective_uses / total_uses if total_uses > 0 else 0.0
+
+    return ActionEffectivenessSummary(
+        total_uses=total_uses,
+        total_effective_uses=total_effective_uses,
+        overall_effectiveness_ratio=overall_effectiveness_ratio,
+        per_action=per_action,
     )
 
 

@@ -290,6 +290,10 @@ class PredictorEnv(Env):
         self.compilation_state_flags = (synthesized, laid_out, routed)
         return self.compilation_state_flags
 
+    def get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        return self._get_compilation_state_flags()
+
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 

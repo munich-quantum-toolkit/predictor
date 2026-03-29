@@ -94,6 +94,14 @@ def main() -> None:
         result.feature_importance.average_original_feature_importance,
         result.feature_importance.average_gate_count_feature_importance,
     )
+    print(
+        "Overall action effectiveness:",
+        f"{result.action_effectiveness.total_effective_uses}/{result.action_effectiveness.total_uses}",
+        f"({result.action_effectiveness.overall_effectiveness_ratio:.1%})",
+    )
+    print("Per-action effectiveness:")
+    for stats in result.action_effectiveness.per_action:
+        print(f"  {stats.action_name}: {stats.effective_uses}/{stats.total_uses} ({stats.effectiveness_ratio:.1%})")
 
 
 if __name__ == "__main__":
