@@ -15,7 +15,7 @@ from pathlib import Path
 
 from mqt.bench.targets import get_device
 
-from mqt.predictor.rl.evaluation import evaluate_trained_predictor
+from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor
 from mqt.predictor.rl.helper import (
     get_path_trained_model,
     get_path_training_circuits_test,
