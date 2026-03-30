@@ -55,7 +55,18 @@ def calc_device_specific_features(
         - The single and multi qubit gate ratio
     """
     if ignore_gates is None:
-        ignore_gates = ["barrier", "id", "measure", "if_else", "while_loop", "for_loop", "switch_case", "box", "break", "continue"]
+        ignore_gates = [
+            "barrier",
+            "id",
+            "measure",
+            "if_else",
+            "while_loop",
+            "for_loop",
+            "switch_case",
+            "box",
+            "break",
+            "continue",
+        ]
 
     # Create a dictionary with all native gates
     native_gate_dict = {gate: 0.0 for gate in device.operation_names if gate not in ignore_gates}
