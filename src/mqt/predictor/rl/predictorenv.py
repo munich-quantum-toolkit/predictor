@@ -285,7 +285,7 @@ class PredictorEnv(Env):
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
             self._log_step_reward(step_index, action_name, 0.0, done=True)
-            return create_feature_dict(self.state), 0.0, True, False, {}
+            return create_feature_dict(self.state, graph=self.graph), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
@@ -293,7 +293,7 @@ class PredictorEnv(Env):
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
             self._log_step_reward(step_index, action_name, reward_val, done)
-            return create_feature_dict(self.state), reward_val, done, False, {}
+            return create_feature_dict(self.state, graph=self.graph), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -320,7 +320,7 @@ class PredictorEnv(Env):
             )
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
-        obs = create_feature_dict(self.state)
+        obs = create_feature_dict(self.state, graph=self.graph)
         self._log_step_reward(step_index, action_name, reward_val, done)
         return obs, reward_val, done, False, {}
 

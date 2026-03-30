@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import InstructionProperties, Target
 
-ALWAYS_EXCLUDED_OPS: set[str] = {"barrier", "delay", "id"}
+ALWAYS_EXCLUDED_OPS: set[str] = {"barrier", "delay", "id", "if_else", "while_loop", "for_loop", "switch_case", "box", "break", "continue"}
 
 
 def get_basis_gates_from_target(device: Target) -> list[str]:

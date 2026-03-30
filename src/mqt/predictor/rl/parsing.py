@@ -153,7 +153,7 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     for instr in device.operation_names:
         name = instr
 
-        if name in ["barrier", "measure", "delay", "for_loop", "control", "while_loop", "if_test"]:
+        if name in ["barrier", "measure", "delay", "for_loop", "control", "while_loop", "if_test", "if_else", "switch_case", "box", "break", "continue"]:
             continue
 
         if name not in gate_map:
