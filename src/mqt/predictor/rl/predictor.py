@@ -125,7 +125,7 @@ class Predictor:
             })
 
         log_path = get_path_trained_model() / "actions_maskable_ppo.txt"
-        with log_path.open("a") as f:
+        with log_path.open("a", encoding="utf-8") as f:
             circuit_name = self.env.filename or str(qc)
             f.write(f"circuit={circuit_name}\n")
             for r in step_records:
