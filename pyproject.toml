@@ -50,6 +50,7 @@ dependencies = [
     "qiskit-ibm-ai-local-transpiler>=0.5.5",
     "torch-geometric>=2.6.0",
     "optuna>=3.0.0",
+    "safetensors>=0.7.0"
 ]
 
 classifiers = [

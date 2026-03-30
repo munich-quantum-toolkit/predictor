@@ -262,7 +262,7 @@ class PredictorEnv(Env):
                 reward_val,
             )
 
-    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+    def step(self, action: int) -> tuple[dict[str, Any] | Data, float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
         This method:
