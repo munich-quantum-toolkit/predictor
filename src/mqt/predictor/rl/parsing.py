@@ -149,11 +149,26 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     }
 
     native_gates = []
+    # Some devices declare support for non-gate operations, which some compiler passes can not handle.
+    ignored_non_gate_ops = {
+        "barrier",
+        "measure",
+        "delay",
+        "for_loop",
+        "while_loop",
+        "if_test",
+        "if_else",
+        "switch_case",
+        "break",
+        "continue",
+        "box",
+        "control",
+    }
 
     for instr in device.operation_names:
         name = instr
 
-        if name in ["barrier", "measure", "delay", "for_loop", "control", "while_loop", "if_test"]:
+        if name in ignored_non_gate_ops:
             continue
 
         if name not in gate_map:
