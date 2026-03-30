@@ -845,8 +845,14 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
-            layout = layout.final_layout or layout.initial_layout
+            output_qubits = list(layout._output_qubit_list)
+            final_positions = layout.final_index_layout()
+            return (
+                len(circuit.qubits) == len(output_qubits)
+                and list(circuit.qubits) == output_qubits
+                and len(final_positions) == layout._input_qubit_count
+                and all(0 <= index < len(output_qubits) for index in final_positions)
+            )
 
         v2p = layout.get_virtual_bits()
         return all(q in v2p for q in circuit.qubits)
