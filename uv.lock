@@ -2442,7 +2442,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "stable-baselines3", specifier = ">=2.7.0" },
     { name = "tensorboard", specifier = ">=2.17.0" },
-    { name = "torch-geometric", specifier = ">=2.6.0" },
+    { name = "torch-geometric", specifier = ">=2.7.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "typing-extensions", specifier = ">=4.1" },
 ]
