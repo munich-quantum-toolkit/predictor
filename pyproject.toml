@@ -136,6 +136,7 @@ filterwarnings = [
     'ignore:.*Timeout is not supported on Windows\\.:RuntimeWarning',
     'ignore:.*torch_geometric.distributed.*:DeprecationWarning:',
     'ignore:.*torch.jit.script.*:DeprecationWarning:',
+    "ignore:Failing to pass a value to the 'type_params' parameter of 'typing\\._eval_type':DeprecationWarning"
 
 ]
 
