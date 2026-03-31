@@ -22,9 +22,25 @@ if TYPE_CHECKING:
 ALWAYS_EXCLUDED_OPS: set[str] = {"barrier", "delay", "id"}
 
 
+def _get_operation_arity(device: Target, name: str) -> int | None:
+    """Return the arity of a target entry if it behaves like a gate."""
+    try:
+        op = device.operation_from_name(name)
+    except Exception:
+        return None
+
+    try:
+        return int(op.num_qubits)
+    except (AttributeError, TypeError, ValueError):
+        # e.g.: if_else, box, ...
+        return None
+
+
 def get_basis_gates_from_target(device: Target) -> list[str]:
     """Return the basis gate names from a Qiskit Target."""
-    basis_gates = [g for g in device.operation_names if g not in ALWAYS_EXCLUDED_OPS]
+    basis_gates = [
+        g for g in device.operation_names if g not in ALWAYS_EXCLUDED_OPS and _get_operation_arity(device, g) is not None
+    ]
 
     # Reset fidelity is SPAM-related and not consistently exposed on all targets.
     # Only include it when the target actually provides calibration entries.
@@ -154,18 +170,13 @@ def compute_device_averages_from_target(
         """Return calibration properties for (name, qargs) or None if unavailable."""
         return device[name].get(qargs, None)
 
-    def _infer_arity(name: str) -> int | None:
-        """Infer operation arity from Target (best effort)."""
-        op = device.operation_from_name(name)
-        return int(op.num_qubits)
-
     # ---- Accumulate raw samples --------------------------------------------------
     err_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
     dur_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
 
     arity_by_name: dict[str, int] = {}
     for name in basis_ops:
-        arity = _infer_arity(name)
+        arity = _get_operation_arity(device, name)
         if arity is not None:
             arity_by_name[name] = arity
 
