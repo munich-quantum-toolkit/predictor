@@ -803,7 +803,11 @@ class PredictorEnv(Env):
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
-            self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+            self.layout.final_layout = final_layout_pytket_to_qiskit(
+                tket_qc,
+                list(self.layout._output_qubit_list),
+                self.layout.final_index_layout(),
+            )
 
         return altered_qc
 
@@ -845,14 +849,15 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            output_qubits = list(layout._output_qubit_list)
             final_positions = layout.final_index_layout()
-            return (
-                len(circuit.qubits) == len(output_qubits)
-                and list(circuit.qubits) == output_qubits
-                and len(final_positions) == layout._input_qubit_count
-                and all(0 <= index < len(output_qubits) for index in final_positions)
-            )
+            output_qubits = list(layout._output_qubit_list)
+            if len(final_positions) != layout._input_qubit_count:
+                return False
+            if list(circuit.qubits) == output_qubits:
+                return all(0 <= index < len(output_qubits) for index in final_positions)
+            if layout.final_layout is not None:
+                return all(0 <= index < len(circuit.qubits) for index in final_positions)
+            return False
 
         v2p = layout.get_virtual_bits()
         return all(q in v2p for q in circuit.qubits)

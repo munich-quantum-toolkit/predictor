@@ -19,6 +19,7 @@ from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
 from qiskit import QuantumCircuit, QuantumRegister
+from qiskit.circuit import Qubit as QiskitQubit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
@@ -180,21 +181,27 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     return native_gates
 
 
-def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
-    """Converts a final layout from pytket to qiskit."""
+def final_layout_pytket_to_qiskit(
+    pytket_circuit: Circuit, output_qubits: list[QiskitQubit], initial_positions: list[int]
+) -> Layout:
+    """Convert a pytket routing permutation into a Qiskit final layout.
+
+    The routed pytket circuit may be compacted to only the active qubits. We therefore
+    re-express the permutation on the pre-routing output wires tracked by the existing
+    ``TranspileLayout`` instead of on the compact routed circuit's fresh qubits.
+    """
     pytket_layout = pytket_circuit.qubit_readout
-    size_circuit = pytket_circuit.n_qubits
+    size_circuit = len(output_qubits)
     qiskit_layout = {}
-    qiskit_qreg = qiskit_circuit.qregs[0]
 
     pytket_layout = dict(sorted(pytket_layout.items(), key=operator.itemgetter(1)))
 
     for node, qubit_index in pytket_layout.items():
-        qiskit_layout[node.index[0]] = qiskit_qreg[qubit_index]
+        qiskit_layout[node.index[0]] = output_qubits[initial_positions[qubit_index]]
 
     for i in range(size_circuit):
         if i not in set(pytket_layout.values()):
-            qiskit_layout[i] = qiskit_qreg[i]
+            qiskit_layout[i] = output_qubits[i]
 
     return Layout(input_dict=qiskit_layout)
 
