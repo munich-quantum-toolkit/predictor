@@ -221,7 +221,8 @@ def final_layout_bqskit_to_qiskit(
             qiskit_initial_layout[i] = ancilla[counter_ancilla_qubit]
             counter_ancilla_qubit += 1
 
-    initial_qubit_mapping = {bit: index for index, bit in enumerate(compiled_qc.qubits)}
+    initial_qubit_mapping = {bit: index for index, bit in enumerate(initial_qc.qubits)}
+    initial_qubit_mapping.update({bit: initial_qc.num_qubits + index for index, bit in enumerate(ancilla)})
 
     if bqskit_initial_layout == bqskit_final_layout:
         qiskit_final_layout = None
