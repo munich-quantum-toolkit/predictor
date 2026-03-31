@@ -61,6 +61,7 @@ def test_setup_device_predictor_with_prediction(
         path_compiled_circuits=path_compiled_circuits,
         gnn=gnn,
         verbose=verbose,
+        num_epochs=2,
     )
     assert success
 
@@ -106,6 +107,7 @@ def test_setup_multidevice_predictor_with_prediction_gnn(
         path_compiled_circuits=path_compiled_circuits,
         gnn=True,
         verbose=False,
+        num_epochs=2,
     )
     assert success
 
