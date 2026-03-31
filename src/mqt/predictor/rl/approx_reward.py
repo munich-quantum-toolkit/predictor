@@ -39,7 +39,9 @@ def _get_operation_arity(device: Target, name: str) -> int | None:
 def get_basis_gates_from_target(device: Target) -> list[str]:
     """Return the basis gate names from a Qiskit Target."""
     basis_gates = [
-        g for g in device.operation_names if g not in ALWAYS_EXCLUDED_OPS and _get_operation_arity(device, g) is not None
+        g
+        for g in device.operation_names
+        if g not in ALWAYS_EXCLUDED_OPS and _get_operation_arity(device, g) is not None
     ]
 
     # Reset fidelity is SPAM-related and not consistently exposed on all targets.
