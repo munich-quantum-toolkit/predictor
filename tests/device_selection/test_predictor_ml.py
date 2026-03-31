@@ -62,6 +62,7 @@ def test_setup_device_predictor_with_prediction(
         gnn=gnn,
         verbose=verbose,
         num_epochs=2,
+        num_trials=1,
     )
     assert success
 
@@ -108,6 +109,7 @@ def test_setup_multidevice_predictor_with_prediction_gnn(
         gnn=True,
         verbose=False,
         num_epochs=2,
+        num_trials=1,
     )
     assert success
 

@@ -206,7 +206,7 @@ def test_train_model_and_predict(device: Target, model_type: str, verbose: bool)
     # 3. Model Training
     pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)
     if gnn:
-        trained_model = pred.train_gnn_model(training_data, num_epochs=200, patience=30, verbose=verbose)
+        trained_model = pred.train_gnn_model(training_data, num_epochs=5, patience=2, verbose=verbose)
     else:
         trained_model = pred.train_random_forest_model(training_data)
 

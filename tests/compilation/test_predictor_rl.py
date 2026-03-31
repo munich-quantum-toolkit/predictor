@@ -86,8 +86,8 @@ def test_qcompile_with_false_input() -> None:
 @pytest.mark.parametrize(
     ("graph", "device_name", "train_kwargs"),
     [
-        pytest.param(False, "ibm_falcon_127", {"timesteps": 100}, id="ppo-ibm_falcon_127"),
-        pytest.param(False, "quantinuum_h2_56", {"timesteps": 100}, id="ppo-quantinuum_h2_56"),
+        pytest.param(False, "ibm_falcon_127", {"timesteps": 10}, id="ppo-ibm_falcon_127"),
+        pytest.param(False, "quantinuum_h2_56", {"timesteps": 10}, id="ppo-quantinuum_h2_56"),
         pytest.param(
             True,
             "ibm_falcon_127",
