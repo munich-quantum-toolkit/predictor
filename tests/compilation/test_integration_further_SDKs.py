@@ -243,7 +243,11 @@ def test_tket_routing(available_actions_dict: dict[PassType, list[Action]]) -> N
 
     mapped_qc = tk_to_qiskit(tket_qc)
 
-    final_layout = final_layout_pytket_to_qiskit(tket_qc, mapped_qc)
+    final_layout = final_layout_pytket_to_qiskit(
+        tket_qc,
+        list(mapped_qc.qubits),
+        list(range(len(mapped_qc.qubits))),
+    )
 
     layout = TranspileLayout(
         initial_layout=initial_layout,

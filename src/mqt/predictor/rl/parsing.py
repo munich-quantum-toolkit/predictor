@@ -18,8 +18,7 @@ from bqskit.ir import gates
 from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
-from qiskit import QuantumCircuit, QuantumRegister
-from qiskit.circuit import Qubit as QiskitQubit
+from qiskit import QuantumRegister
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
     from bqskit.ir import Gate
     from pytket import Circuit
     from qiskit import QuantumCircuit
+    from qiskit.circuit import Qubit as QiskitQubit
     from qiskit.transpiler import Target
 
 
@@ -182,7 +182,9 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
 
 
 def final_layout_pytket_to_qiskit(
-    pytket_circuit: Circuit, output_qubits: list[QiskitQubit], initial_positions: list[int]
+    pytket_circuit: Circuit,
+    output_qubits: list[QiskitQubit],
+    initial_positions: list[int],
 ) -> Layout:
     """Convert a pytket routing permutation into a Qiskit final layout.
 

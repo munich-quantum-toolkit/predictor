@@ -26,7 +26,7 @@ def _get_operation_arity(device: Target, name: str) -> int | None:
     """Return the arity of a target entry if it behaves like a gate."""
     try:
         op = device.operation_from_name(name)
-    except Exception:
+    except KeyError:
         return None
 
     try:

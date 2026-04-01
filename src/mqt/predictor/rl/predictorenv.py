@@ -91,6 +91,20 @@ from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_
 logger = logging.getLogger("mqt-predictor")
 
 
+def _layout_output_qubits(layout: TranspileLayout) -> list[Any]:
+    """Return the materialized output wires tracked by a TranspileLayout."""
+    output_qubits = layout._output_qubit_list  # noqa: SLF001
+    assert output_qubits is not None
+    return list(output_qubits)
+
+
+def _layout_input_qubit_count(layout: TranspileLayout) -> int:
+    """Return the number of logical input qubits tracked by a TranspileLayout."""
+    input_qubit_count = layout._input_qubit_count  # noqa: SLF001
+    assert input_qubit_count is not None
+    return input_qubit_count
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -805,7 +819,7 @@ class PredictorEnv(Env):
             assert self.layout is not None
             self.layout.final_layout = final_layout_pytket_to_qiskit(
                 tket_qc,
-                list(self.layout._output_qubit_list),
+                _layout_output_qubits(self.layout),
                 self.layout.final_index_layout(),
             )
 
@@ -850,8 +864,8 @@ class PredictorEnv(Env):
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
             final_positions = layout.final_index_layout()
-            output_qubits = list(layout._output_qubit_list)
-            if len(final_positions) != layout._input_qubit_count:
+            output_qubits = _layout_output_qubits(layout)
+            if len(final_positions) != _layout_input_qubit_count(layout):
                 return False
             if list(circuit.qubits) == output_qubits:
                 return all(0 <= index < len(output_qubits) for index in final_positions)
