@@ -83,7 +83,7 @@ class Predictor:
             obs, _reward_val, terminated, truncated, _info = self.env.step(action)
 
         if not self.env.error_occurred:
-            return self.env.state, used_compilation_passes
+            return self.env.export_circuit(), used_compilation_passes
 
         msg = "Error occurred during compilation."
         raise RuntimeError(msg)

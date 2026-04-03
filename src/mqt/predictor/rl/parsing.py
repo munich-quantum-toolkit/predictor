@@ -195,15 +195,24 @@ def final_layout_pytket_to_qiskit(
     pytket_layout = pytket_circuit.qubit_readout
     size_circuit = len(output_qubits)
     qiskit_layout = {}
+    used_output_positions = set()
 
     pytket_layout = dict(sorted(pytket_layout.items(), key=operator.itemgetter(1)))
 
     for node, qubit_index in pytket_layout.items():
-        qiskit_layout[node.index[0]] = output_qubits[initial_positions[qubit_index]]
+        output_position = initial_positions[qubit_index]
+        qiskit_layout[node.index[0]] = output_qubits[output_position]
+        used_output_positions.add(output_position)
 
-    for i in range(size_circuit):
-        if i not in set(pytket_layout.values()):
-            qiskit_layout[i] = output_qubits[i]
+    remaining_physical_positions = [i for i in range(size_circuit) if i not in qiskit_layout]
+    remaining_output_positions = [i for i in range(size_circuit) if i not in used_output_positions]
+
+    # Layout is bijective: once TKET moves an output wire, the untouched physical positions
+    # must be filled from the remaining unused output wires, not by identity on the index.
+    for physical_position, output_position in zip(
+        remaining_physical_positions, remaining_output_positions, strict=True
+    ):
+        qiskit_layout[physical_position] = output_qubits[output_position]
 
     return Layout(input_dict=qiskit_layout)
 
@@ -237,11 +246,18 @@ def final_layout_bqskit_to_qiskit(
         qiskit_final_layout = None
     else:
         qiskit_final_layout = {}
-        for i in range(compiled_qc.num_qubits):
-            if i in bqskit_final_layout:
-                qiskit_final_layout[i] = compiled_qc.qubits[bqskit_initial_layout[bqskit_final_layout.index(i)]]
-            else:
-                qiskit_final_layout[i] = compiled_qc.qubits[i]
+        used_output_wires = set()
+        for initial_position, final_position in zip(bqskit_initial_layout, bqskit_final_layout, strict=False):
+            qiskit_final_layout[final_position] = compiled_qc.qubits[initial_position]
+            used_output_wires.add(initial_position)
+
+        remaining_physical_positions = [i for i in range(compiled_qc.num_qubits) if i not in qiskit_final_layout]
+        remaining_output_wires = [
+            compiled_qc.qubits[i] for i in range(compiled_qc.num_qubits) if i not in used_output_wires
+        ]
+
+        for physical_position, output_wire in zip(remaining_physical_positions, remaining_output_wires, strict=False):
+            qiskit_final_layout[physical_position] = output_wire
 
     return TranspileLayout(
         initial_layout=Layout(input_dict=qiskit_initial_layout),

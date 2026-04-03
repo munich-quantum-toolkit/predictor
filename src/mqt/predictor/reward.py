@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from joblib import load
-from qiskit import __version__ as qiskit_version
-from qiskit import transpile
+from qiskit.transpiler import InstructionDurations, PassManager, Target
+from qiskit.transpiler.passes import ASAPScheduleAnalysis
 
 from mqt.predictor.hellinger import calc_device_specific_features, get_hellinger_model_path
 from mqt.predictor.utils import calc_supermarq_features
@@ -77,129 +77,146 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
     return float(np.round(res, precision).item())
 
 
-def estimated_success_probability(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:
-    """Calculates the estimated success probability of a given quantum circuit on a given device.
+def _get_instruction_properties(device: Target, gate: str, qubits: tuple[int, ...]) -> object:
+    """Return calibration properties for an instruction or raise if unavailable."""
+    try:
+        properties = device[gate][qubits]
+    except KeyError as exc:
+        msg = f"Missing calibration data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg) from exc
 
-    It is calculated by multiplying the expected fidelity with a min(T1,T2)-dependent
-    decay factor during qubit idle times. To this end, the circuit is scheduled using ASAP scheduling.
+    if properties is None:
+        msg = f"Missing calibration data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg)
 
-    Arguments:
-        qc: The quantum circuit to be compiled.
-        device: The device to be used for compilation.
-        precision: The precision of the returned value. Defaults to 10.
+    return properties
 
-    Returns:
-        The expected success probability of the given quantum circuit on the given device.
-    """
-    exec_time_per_qubit = dict.fromkeys(range(device.num_qubits), 0.0)
 
-    op_times, active_qubits = [], set()
+def _require_gate_error(device: Target, gate: str, qubits: tuple[int, ...]) -> float:
+    """Return a gate error probability or raise if unavailable."""
+    properties = _get_instruction_properties(device, gate, qubits)
+    error = getattr(properties, "error", None)
+    if error is None:
+        msg = f"Missing error data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg)
+    if not 0 <= error <= 1:
+        msg = f"Invalid error data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg)
+    return float(error)
+
+
+def _require_gate_duration(device: Target, gate: str, qubits: tuple[int, ...]) -> float:
+    """Return a gate duration in seconds or raise if unavailable."""
+    properties = _get_instruction_properties(device, gate, qubits)
+    duration = getattr(properties, "duration", None)
+    if duration is None:
+        msg = f"Missing duration data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg)
+    if duration < 0:
+        msg = f"Invalid duration data for operation {gate} on qubit(s) {qubits}."
+        raise ValueError(msg)
+    return float(duration)
+
+
+def _require_coherence_times(device: Target, qubit: int) -> tuple[float, float]:
+    """Return (T1, T2) for a qubit or raise if unavailable."""
+    if device.qubit_properties is None or device.qubit_properties[qubit] is None:
+        msg = f"Missing qubit properties for qubit {qubit}."
+        raise ValueError(msg)
+
+    properties = device.qubit_properties[qubit]
+    t1 = getattr(properties, "t1", None)
+    t2 = getattr(properties, "t2", None)
+    if t1 is None or t2 is None:
+        msg = f"Missing coherence data for qubit {qubit}."
+        raise ValueError(msg)
+    if t1 <= 0 or t2 <= 0:
+        msg = f"Invalid coherence data for qubit {qubit}."
+        raise ValueError(msg)
+    return float(t1), float(t2)
+
+
+def _build_instruction_durations_from_target(qc: QuantumCircuit, device: Target) -> InstructionDurations:
+    """Build durations for the instructions present in ``qc``."""
+    op_times = []
     for instr in qc.data:
-        instruction = instr.operation
-        qargs = instr.qubits
-        gate_type = instruction.name
+        op = instr.operation
+        name = op.name
 
-        if gate_type == "barrier" or gate_type == "id":
+        if name in {"barrier", "id"}:
             continue
-        assert len(qargs) in (1, 2)
-        first_qubit_idx = qc.find_bit(qargs[0]).index
-        active_qubits.add(first_qubit_idx)
 
-        if len(qargs) == 1:  # single-qubit gate
-            duration = device[gate_type][first_qubit_idx,].duration
-            op_times.append((
-                gate_type,
-                [
-                    first_qubit_idx,
-                ],
-                duration,
-                "s",
-            ))
-            exec_time_per_qubit[first_qubit_idx] += duration
-        else:  # multi-qubit gate
-            second_qubit_idx = qc.find_bit(qargs[1]).index
-            active_qubits.add(second_qubit_idx)
-            duration = device[gate_type][first_qubit_idx, second_qubit_idx].duration
-            op_times.append((gate_type, [first_qubit_idx, second_qubit_idx], duration, "s"))
-            exec_time_per_qubit[first_qubit_idx] += duration
-            exec_time_per_qubit[second_qubit_idx] += duration
+        qubit_indices = [qc.find_bit(q).index for q in instr.qubits]
+        duration = _require_gate_duration(device, name, tuple(qubit_indices))
+        op_times.append((name, qubit_indices, duration, "s"))
 
-    if qiskit_version < "2.0.0":
-        from qiskit.transpiler import InstructionDurations, Layout, PassManager, passes  # noqa: PLC0415
-        from qiskit.transpiler.passes import ApplyLayout, SetLayout  # noqa: PLC0415
+    return InstructionDurations(op_times, dt=device.dt)
 
-        if qc.qregs[0].name != "q":
-            # create a layout that maps the (tket) 'node' registers to the (qiskit) 'q' registers
-            layouts = [
-                SetLayout(Layout({node_qubit: i for i, node_qubit in enumerate(node_reg)})) for node_reg in qc.qregs
-            ]
-            # create a pass manager with the SetLayout and ApplyLayout passes
-            pm = PassManager(list(layouts))
-            pm.append(ApplyLayout())
 
-            # replace the 'node' register with the 'q' register in the circuit
-            qc = pm.run(qc)
-            assert qc.qregs[0].name == "q"
+def _compute_asap_timing(
+    qc: QuantumCircuit, device: Target
+) -> tuple[float, dict[int, float], dict[int, float], dict[int, str]]:
+    """Return ASAP timing data for total duration and per-qubit activity."""
+    durations = _build_instruction_durations_from_target(qc, device)
+    pm = PassManager([ASAPScheduleAnalysis(durations=durations)])
+    pm.run(qc)
 
-        sched_pass = passes.ASAPScheduleAnalysis(InstructionDurations(op_times))
-        delay_pass = passes.PadDelay()
-        pm = PassManager([sched_pass, delay_pass])
-        scheduled_circ = pm.run(qc)
+    time_unit = pm.property_set["time_unit"]
+    exec_time_per_qubit = dict.fromkeys(range(device.num_qubits), 0.0)
+    last_end_per_qubit = dict.fromkeys(range(device.num_qubits), 0.0)
+    last_op_per_qubit = dict.fromkeys(range(device.num_qubits), "")
+    circuit_duration = 0.0
 
-    else:
-        scheduled_circ = transpile(
-            qc,
-            target=device,
-            scheduling_method="asap",
-            optimization_level=0,
-            initial_layout=None,
-            routing_method=None,
-            layout_method=None,
-        )
-        overall_estimated_duration = scheduled_circ.estimate_duration(target=device)
+    for node, start_time in pm.property_set["node_start_time"].items():
+        qubit_indices = [qc.find_bit(q).index for q in node.qargs]
+        duration = float(durations.get(node.name, qubit_indices, unit=time_unit))
+        end_time = float(start_time) + duration
+        circuit_duration = max(circuit_duration, end_time)
+        for qubit in qubit_indices:
+            exec_time_per_qubit[qubit] += duration
+            if end_time >= last_end_per_qubit[qubit]:
+                last_end_per_qubit[qubit] = end_time
+                last_op_per_qubit[qubit] = node.name
+
+    return circuit_duration, exec_time_per_qubit, last_end_per_qubit, last_op_per_qubit
+
+
+def estimated_success_probability(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:
+    """Estimate the success probability of ``qc`` on ``device``.
+
+    The estimate multiplies gate fidelities and an idle-time decay factor based on
+    min(T1, T2). Idle windows are derived from an ASAP schedule.
+    """
+    circuit_duration, exec_time_per_qubit, last_end_per_qubit, last_op_per_qubit = _compute_asap_timing(qc, device)
+
+    active_qubits = set()
+    for instr in qc.data:
+        if instr.operation.name in {"barrier", "id"}:
+            continue
+        active_qubits.update(qc.find_bit(q).index for q in instr.qubits)
 
     res = 1.0
-    for instr in scheduled_circ.data:
-        instruction = instr.operation
-        qargs = instr.qubits
-        gate_type = instruction.name
 
-        if gate_type == "barrier" or gate_type == "id":
+    for instr in qc.data:
+        op = instr.operation
+        qargs = instr.qubits
+        gate_type = op.name
+
+        if gate_type in {"barrier", "id"}:
             continue
 
-        assert len(qargs) in (1, 2)
-        first_qubit_idx = scheduled_circ.find_bit(qargs[0]).index
+        qubit_indices = [qc.find_bit(q).index for q in qargs]
+        if len(qubit_indices) not in {1, 2}:
+            msg = f"Unsupported instruction arity for {gate_type!r}: {len(qubit_indices)}"
+            raise ValueError(msg)
+        res *= 1.0 - _require_gate_error(device, gate_type, tuple(qubit_indices))
 
-        if len(qargs) == 1:
-            if gate_type == "measure":
-                res *= 1 - device[gate_type][first_qubit_idx,].error
-                continue
-            if gate_type == "delay":
-                if qiskit_version < "2.0.0":
-                    continue
-                # only consider active qubits
-                if first_qubit_idx not in active_qubits:
-                    continue
+    for qubit in active_qubits:
+        t1, t2 = _require_coherence_times(device, qubit)
+        live_end = last_end_per_qubit[qubit] if last_op_per_qubit[qubit] in {"measure", "reset"} else circuit_duration
+        idle_time_s = max(live_end - exec_time_per_qubit[qubit], 0.0)
+        res *= np.exp(-idle_time_s / min(t1, t2))
 
-                dt = device.dt  # instruction durations are stored in unit dt
-                res *= np.exp(
-                    -instruction.duration
-                    * dt
-                    / min(device.qubit_properties[first_qubit_idx].t1, device.qubit_properties[first_qubit_idx].t2)
-                )
-                continue
-            res *= 1 - device[gate_type][first_qubit_idx,].error
-        else:
-            second_qubit_idx = scheduled_circ.find_bit(qargs[1]).index
-            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
-
-    if qiskit_version >= "2.0.0":
-        for i in range(device.num_qubits):
-            qubit_execution_time = exec_time_per_qubit[i]
-            if qubit_execution_time == 0:
-                continue
-            idle_time = overall_estimated_duration - qubit_execution_time
-            res *= np.exp(-idle_time / min(device.qubit_properties[i].t1, device.qubit_properties[i].t2))
     return float(np.round(res, precision).item())
 
 
@@ -230,51 +247,29 @@ def esp_data_available(device: Target) -> bool:
 
     for qubit in range(device.num_qubits):
         try:
-            if device.qubit_properties is None or not device.qubit_properties[qubit].t1 >= 0:
-                msg = "No T1 qubit properties available"
-                raise ValueError(msg)  # noqa: TRY301
+            _require_coherence_times(device, qubit)
         except ValueError:
             logger.exception(message("T1", "idle", qubit))
             return False
         try:
-            if device.qubit_properties is None or not device.qubit_properties[qubit].t2 >= 0:
-                msg = "No T2 qubit properties available"
-                raise ValueError(msg)  # noqa: TRY301
-
-        except ValueError:
-            logger.exception(message("T2", "idle", qubit))
-            return False
-        try:
-            error = device["measure"][qubit,].error
-            if not (0 <= error <= 1):
-                msg = "Error rate must be between 0 and 1."
-                raise ValueError(msg)  # noqa: TRY301
+            _require_gate_error(device, "measure", (qubit,))
         except ValueError:
             logger.exception(message("Error", "readout", qubit))
             return False
         try:
-            duration = device["measure"][qubit,].duration
-            if not (duration >= 0):
-                msg = "Duration must be >=0."
-                raise ValueError(msg)  # noqa: TRY301
+            _require_gate_duration(device, "measure", (qubit,))
         except ValueError:
             logger.exception(message("Duration", "readout", qubit))
             return False
 
         for gate in single_qubit_gates:
             try:
-                error = device[gate][qubit,].error
-                if not (0 <= error <= 1):
-                    msg = "Error rate must be between 0 and 1."
-                    raise ValueError(msg)  # noqa: TRY301
+                _require_gate_error(device, gate, (qubit,))
             except ValueError:
                 logger.exception(message("Error", gate, qubit))
                 return False
             try:
-                duration = device[gate][qubit,].duration
-                if not (duration >= 0):
-                    msg = "Duration must be >=0."
-                    raise ValueError(msg)  # noqa: TRY301
+                _require_gate_duration(device, gate, (qubit,))
             except ValueError:
                 logger.exception(message("Duration", gate, qubit))
                 return False
@@ -282,18 +277,12 @@ def esp_data_available(device: Target) -> bool:
     for gate in two_qubit_gates:
         for edge in device.build_coupling_map():
             try:
-                error = device[gate][edge[0], edge[1]].error
-                if not (0 <= error <= 1):
-                    msg = "Error rate must be between 0 and 1."
-                    raise ValueError(msg)  # noqa: TRY301
+                _require_gate_error(device, gate, (edge[0], edge[1]))
             except ValueError:
                 logger.exception(message("Error", gate, edge))
                 return False
             try:
-                duration = device[gate][edge[0], edge[1]].duration
-                if not (duration >= 0):
-                    msg = "Duration must be >=0."
-                    raise ValueError(msg)  # noqa: TRY301
+                _require_gate_duration(device, gate, (edge[0], edge[1]))
             except ValueError:
                 logger.exception(message("Duration", gate, edge))
                 return False

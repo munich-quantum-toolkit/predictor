@@ -13,7 +13,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from qiskit import transpile
+from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
+from qiskit.transpiler import PassManager
+from qiskit.transpiler.passes import BasisTranslator
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -53,8 +55,9 @@ def get_basis_gates_from_target(device: Target) -> list[str]:
 
 
 def estimate_basis_gate_counts(qc: QuantumCircuit, *, basis_gates: list[str]) -> dict[str, int]:
-    """Transpile ``qc`` to ``basis_gates`` and count occurrences of each basis gate."""
-    qc_t = transpile(qc, basis_gates=basis_gates, optimization_level=0, seed_transpiler=42)
+    """Translate ``qc`` to ``basis_gates`` with a single Qiskit pass and count basis-gate occurrences."""
+    qc_t = PassManager([BasisTranslator(SessionEquivalenceLibrary, basis_gates)]).run(qc)
+
     counts = dict.fromkeys(basis_gates, 0)
     for ci in qc_t.data:
         name = ci.operation.name

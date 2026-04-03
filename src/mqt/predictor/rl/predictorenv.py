@@ -42,7 +42,7 @@ from joblib import load
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from pytket.placement import Placement
-from qiskit import QuantumCircuit, transpile
+from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.exceptions import QiskitError
 from qiskit.transpiler import CouplingMap, Layout, PassManager, TranspileLayout
@@ -103,6 +103,16 @@ def _layout_input_qubit_count(layout: TranspileLayout) -> int:
     input_qubit_count = layout._input_qubit_count  # noqa: SLF001
     assert input_qubit_count is not None
     return input_qubit_count
+
+
+def _clear_circuit_layout(circuit: QuantumCircuit) -> QuantumCircuit:
+    """Drop any circuit-attached layout metadata.
+
+    The env keeps ``self.layout`` as the canonical source of layout state and only
+    re-attaches it when exporting a circuit to external callers.
+    """
+    circuit._layout = None  # noqa: SLF001
+    return circuit
 
 
 class PredictorEnv(Env):
@@ -244,18 +254,17 @@ class PredictorEnv(Env):
         self.error_occurred = False
 
     def _apply_and_update(self, action: int) -> QuantumCircuit | None:
-        """Apply an action, normalize the circuit, and update internal state."""
+        """Apply an action and update the canonical circuit state."""
         altered_qc = self.apply_action(action)
         if altered_qc is None:
             return None
 
-        altered_qc = self._normalize_to_rl_basis(altered_qc)
+        altered_qc = _clear_circuit_layout(altered_qc)
 
         self.state: QuantumCircuit = altered_qc
         self.compilation_state_flags = None
 
         self.num_steps += 1
-        self.state._layout = self.layout  # noqa: SLF001
         self.valid_actions = self.determine_valid_actions_for_state()
         if not self.valid_actions:
             msg = "No valid actions left."
@@ -263,16 +272,17 @@ class PredictorEnv(Env):
 
         return altered_qc
 
-    def _normalize_to_rl_basis(self, qc: QuantumCircuit) -> QuantumCircuit:
-        """Translate a circuit into the RL feature-space basis without optimizing it."""
-        normalized_qc = transpile(
-            qc,
-            basis_gates=get_openqasm_gates_for_rl(),
-            optimization_level=0,
-            seed_transpiler=0,
-        )
-        normalized_qc._layout = self.layout  # noqa: SLF001
-        return normalized_qc
+    def _create_observation(self, qc: QuantumCircuit | None = None) -> dict[str, Any]:
+        """Create an observation directly from the actual circuit state."""
+        circuit = self.state if qc is None else qc
+        return create_feature_dict(circuit)
+
+    def export_circuit(self, qc: QuantumCircuit | None = None) -> QuantumCircuit:
+        """Return a copy of a circuit with the current env layout attached."""
+        circuit = self.state if qc is None else qc
+        exported = circuit.copy()
+        exported._layout = self.layout  # noqa: SLF001
+        return exported
 
     def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
         """Log the chosen action and resulting reward for the current episode step."""
@@ -332,15 +342,14 @@ class PredictorEnv(Env):
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
             self._log_step_reward(step_index, action_name, 0.0, done=True)
-            return create_feature_dict(self.state), 0.0, True, False, {}
+            return self._create_observation(), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self.state._layout = self.layout  # noqa: SLF001
             self._log_step_reward(step_index, action_name, reward_val, done)
-            return create_feature_dict(self.state), reward_val, done, False, {}
+            return self._create_observation(), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -370,7 +379,7 @@ class PredictorEnv(Env):
                 reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
-        obs = create_feature_dict(self.state)
+        obs = self._create_observation()
         self._log_step_reward(step_index, action_name, reward_val, done)
         return obs, reward_val, done, False, {}
 
@@ -497,6 +506,8 @@ class PredictorEnv(Env):
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
             self.current_circuit_name = Path(self.filename).stem
 
+        self.state = _clear_circuit_layout(self.state)
+
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
@@ -516,7 +527,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = len(self.state.parameters) > 0
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
-        return create_feature_dict(self.state), {}
+        return self._create_observation(), {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""
