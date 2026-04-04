@@ -57,6 +57,7 @@ class InputCircuitMetadata:
     name: str
     num_qubits: int
     depth: int
+    figure_of_merit: str
     circuit_qasm: str
 
 
@@ -69,6 +70,9 @@ class CompilationStep:
         action: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
         reward: The calculated reward value for applying this specific action.
         current_depth: The depth of the quantum circuit after the action was applied.
+        total_gates: The total number of gates included in the circuit.
+        fom_value: The figure of merit value for this compilation pass.
+        fom_kind: The kind of fom value: 'exact' or 'approx'.
         is_terminal: A flag indicating if the compilation process has concluded.
         circuit_qasm: The structural representation of the circuit in OpenQASM 2.0 format.
     """
@@ -77,6 +81,9 @@ class CompilationStep:
     action: str
     reward: float
     current_depth: int
+    total_gates: int
+    fom_value: float
+    fom_kind: str
     is_terminal: bool
     circuit_qasm: str
 
@@ -100,13 +107,24 @@ class CompilationTracer:
     steps: list[CompilationStep] = field(default_factory=list)
 
     @classmethod
-    def from_initial_state(cls, device: Target, input_circuit: QuantumCircuit, circuit_name: str) -> CompilationTracer:
+    def from_initial_state(
+        cls, device: Target, input_circuit: QuantumCircuit, circuit_name: str, figure_of_merit: str
+    ) -> CompilationTracer:
         """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
         device_meta = cls._extract_device_metadata(device)
-        input_meta = cls._extract_circuit_metadata(input_circuit, circuit_name)
+        input_meta = cls._extract_circuit_metadata(input_circuit, circuit_name, figure_of_merit)
         return cls(device=device_meta, input_circuit=input_meta)
 
-    def record_step(self, step_index: int, action: str, reward: float, current_qc: QuantumCircuit, done: bool) -> None:
+    def record_step(
+        self,
+        step_index: int,
+        action: str,
+        reward: float,
+        current_qc: QuantumCircuit,
+        fom_value: float,
+        fom_kind: str,
+        done: bool,
+    ) -> None:
         """Records a single compilation action and the resulting circuit state.
 
         Args:
@@ -114,13 +132,21 @@ class CompilationTracer:
             action: The name of the compilation pass that was just applied.
             reward: The calculated reward for the applied pass.
             current_qc: The current Qiskit QuantumCircuit object after the pass.
+            fom_value: The figure of merit value for the compilation pass.
+            fom_kind: The kind of fom value: 'exact' or 'approx'.
             done: Boolean indicating if this is the final step of the compilation.
         """
+        present_ops_dict = current_qc.count_ops()
+        total_gates = sum(present_ops_dict.values()) if present_ops_dict else 0
+
         new_step = CompilationStep(
             step_index=step_index,
             action=action,
             reward=round(reward, 6),
             current_depth=current_qc.depth(),
+            total_gates=total_gates,
+            fom_value=round(fom_value, 6),
+            fom_kind=fom_kind,
             is_terminal=done,
             circuit_qasm=qasm2.dumps(current_qc),
         )
@@ -136,12 +162,15 @@ class CompilationTracer:
             json.dump(asdict(self), f, indent=4)
 
     @staticmethod
-    def _extract_circuit_metadata(input_circuit: QuantumCircuit, circuit_name: str) -> InputCircuitMetadata:
+    def _extract_circuit_metadata(
+        input_circuit: QuantumCircuit, circuit_name: str, figure_of_merit: str
+    ) -> InputCircuitMetadata:
         """Internal helper to parse the initial quantum circuit."""
         return InputCircuitMetadata(
             name=circuit_name,
             num_qubits=input_circuit.num_qubits,
             depth=input_circuit.depth(),
+            figure_of_merit=figure_of_merit,
             circuit_qasm=qasm2.dumps(input_circuit),
         )
 

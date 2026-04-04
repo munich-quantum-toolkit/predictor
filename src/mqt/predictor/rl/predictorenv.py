@@ -248,7 +248,9 @@ class PredictorEnv(Env):
 
         return altered_qc
 
-    def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
+    def _log_step_reward(
+        self, step_index: int, action_name: str, reward_val: float, fom_value: float, fom_kind: str, done: bool
+    ) -> None:
         """Log the chosen action and resulting reward for the current episode step."""
         logger.info(
             "Episode %d step %d: action=%s reward=%.6f",
@@ -271,6 +273,8 @@ class PredictorEnv(Env):
                 action=action_name,
                 reward=reward_val,
                 current_qc=self.state,
+                fom_value=fom_value,
+                fom_kind=fom_kind,
                 done=done,
             )
 
@@ -305,7 +309,14 @@ class PredictorEnv(Env):
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
-            self._log_step_reward(step_index, action_name, 0.0, done=True)
+            self._log_step_reward(
+                step_index=step_index,
+                action_name=action_name,
+                reward_val=0.0,
+                fom_value=0.0,
+                fom_kind="exact",
+                done=True,
+            )
             return create_feature_dict(self.state), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
@@ -313,7 +324,14 @@ class PredictorEnv(Env):
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
-            self._log_step_reward(step_index, action_name, reward_val, done)
+            self._log_step_reward(
+                step_index=step_index,
+                action_name=action_name,
+                reward_val=reward_val,
+                fom_value=reward_val,
+                fom_kind="exact",
+                done=done,
+            )
             return create_feature_dict(self.state), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
@@ -342,7 +360,15 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         obs = create_feature_dict(self.state)
-        self._log_step_reward(step_index, action_name, reward_val, done)
+        self._log_step_reward(
+            step_index=step_index,
+            action_name=action_name,
+            reward_val=reward_val,
+            fom_value=self.prev_reward,
+            fom_kind=self.prev_reward_kind,
+            done=done,
+        )
+
         return obs, reward_val, done, False, {}
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
@@ -495,7 +521,9 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
         if self.tracer_output_path is not None:
-            self.tracer = CompilationTracer.from_initial_state(self.device, self.state, self.current_circuit_name)
+            self.tracer = CompilationTracer.from_initial_state(
+                self.device, self.state, self.current_circuit_name, self.reward_function
+            )
 
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
