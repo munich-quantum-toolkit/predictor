@@ -88,8 +88,6 @@ from mqt.predictor.rl.parsing import (
 )
 from mqt.predictor.rl.tracer import (
     CompilationTracer,
-    DeviceMetadata,
-    InputCircuitMetadata,
 )
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
@@ -497,9 +495,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
         if self.tracer_output_path is not None:
-            device_meta = DeviceMetadata(self.device.description, self.device.num_qubits)
-            input_meta = InputCircuitMetadata(self.current_circuit_name, self.num_qubits_uncompiled_circuit)
-            self.tracer = CompilationTracer(device=device_meta, input_circuit=input_meta)
+            self.tracer = CompilationTracer.from_initial_state(self.device, self.state, self.current_circuit_name)
 
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
