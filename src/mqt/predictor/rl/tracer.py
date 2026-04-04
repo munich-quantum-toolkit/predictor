@@ -19,7 +19,24 @@ import qiskit.qasm2 as qasm2
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
-    from qiskit.transpiler import Target
+    from qiskit.transpiler import InstructionProperties, Target
+
+
+@dataclass
+class TopologyEdge:
+    """Represents a topology edge between two qubits."""
+
+    control: int
+    target: int
+
+
+@dataclass
+class GateCalibration:
+    """Calibration data for a specific gate on a specific set of qubits."""
+
+    qubits: list[int]
+    duration: float | None
+    error: float | None
 
 
 @dataclass
@@ -28,6 +45,9 @@ class DeviceMetadata:
 
     description: str
     device_qubits: int
+    native_gates: list[str]
+    topology: list[TopologyEdge]
+    calibration_data: dict[str, list[GateCalibration]]
 
 
 @dataclass
@@ -82,17 +102,8 @@ class CompilationTracer:
     @classmethod
     def from_initial_state(cls, device: Target, input_circuit: QuantumCircuit, circuit_name: str) -> CompilationTracer:
         """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
-        device_meta = DeviceMetadata(
-            description=device.description,
-            device_qubits=device.num_qubits,
-        )
-        input_meta = InputCircuitMetadata(
-            name=circuit_name,
-            num_qubits=input_circuit.num_qubits,
-            depth=input_circuit.depth(),
-            circuit_qasm=qasm2.dumps(input_circuit),
-        )
-
+        device_meta = cls._extract_device_metadata(device)
+        input_meta = cls._extract_circuit_metadata(input_circuit, circuit_name)
         return cls(device=device_meta, input_circuit=input_meta)
 
     def record_step(self, step_index: int, action: str, reward: float, current_qc: QuantumCircuit, done: bool) -> None:
@@ -123,3 +134,44 @@ class CompilationTracer:
         """
         with Path(filepath).open("w", encoding="utf-8") as f:
             json.dump(asdict(self), f, indent=4)
+
+    @staticmethod
+    def _extract_circuit_metadata(input_circuit: QuantumCircuit, circuit_name: str) -> InputCircuitMetadata:
+        """Internal helper to parse the initial quantum circuit."""
+        return InputCircuitMetadata(
+            name=circuit_name,
+            num_qubits=input_circuit.num_qubits,
+            depth=input_circuit.depth(),
+            circuit_qasm=qasm2.dumps(input_circuit),
+        )
+
+    @staticmethod
+    def _extract_device_metadata(device: Target) -> DeviceMetadata:
+        """Internal helper to extract topology and calibration data from the device."""
+        native_gates = list(device.operation_names)
+        cmap = device.build_coupling_map()
+        topology = [TopologyEdge(control=c, target=t) for c, t in cmap] if cmap is not None else []
+        calibration_data: dict[str, list[GateCalibration]] = {}
+
+        for gate_name in native_gates:
+            gate_calibrations = []
+            props: InstructionProperties
+            qubit_tuples: tuple[int, ...]
+
+            for qubit_tuples, props in device[gate_name].items():
+                if qubit_tuples is None or props is None:
+                    continue
+
+                gate_calibrations.append(
+                    GateCalibration(qubits=list(qubit_tuples), duration=props.duration, error=props.error)
+                )
+
+            calibration_data[gate_name] = gate_calibrations
+
+        return DeviceMetadata(
+            description=device.description,
+            device_qubits=device.num_qubits,
+            native_gates=native_gates,
+            topology=topology,
+            calibration_data=calibration_data,
+        )
