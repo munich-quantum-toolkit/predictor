@@ -86,6 +86,11 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
+from mqt.predictor.rl.tracer import (
+    CompilationTracer,
+    DeviceMetadata,
+    InputCircuitMetadata,
+)
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
@@ -102,6 +107,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         reward_scale: float = 1.0,
         no_effect_penalty: float = -0.001,
+        tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -112,6 +118,7 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
             no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
+            tracer_output_path: Whether to enable compilation tracing. If provided, this will export a JSON file at the end of the compilation process. Defaults to None.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
@@ -130,6 +137,8 @@ class PredictorEnv(Env):
         self.actions_structure_preserving_indices = []  # Actions that preserves the mapping and native gates
         self.used_actions: list[str] = []
         self.device = device
+        self.tracer_output_path = tracer_output_path
+        self.tracer = None
 
         logger.info("MDP: " + mdp)
         self.mdp = mdp
@@ -257,6 +266,24 @@ class PredictorEnv(Env):
                 self.current_circuit_name,
                 reward_val,
             )
+
+        if self.tracer is not None and self.tracer_output_path is not None:
+            self.tracer.record_step(
+                step_index=step_index,
+                action=action_name,
+                reward=reward_val,
+                current_qc=self.state,
+                done=done,
+            )
+
+            if done:
+                out_path = Path(self.tracer_output_path)
+
+                if out_path.is_dir() or not out_path.suffix:
+                    out_path = out_path / f"visualization_{self.current_circuit_name}.json"
+
+                self.tracer.save_to_json(out_path)
+                logger.info("✅TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
@@ -464,9 +491,16 @@ class PredictorEnv(Env):
 
         self.prev_reward = None
         self.prev_reward_kind = None
+        self.tracer = None
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
+
+        if self.tracer_output_path is not None:
+            device_meta = DeviceMetadata(self.device.description, self.device.num_qubits)
+            input_meta = InputCircuitMetadata(self.current_circuit_name, self.num_qubits_uncompiled_circuit)
+            self.tracer = CompilationTracer(device=device_meta, input_circuit=input_meta)
+
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
         return create_feature_dict(self.state), {}

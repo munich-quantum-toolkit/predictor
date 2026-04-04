@@ -59,7 +59,7 @@ class CompilationStep:
 
 
 @dataclass
-class CompilationVisualizer:
+class CompilationTracer:
     """Aggregates compilation steps and metadata for export to a JSON file.
 
     This class acts as an in-memory buffer during the reinforcement learning compilation
