@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 import qiskit.qasm2 as qasm2
 
 if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
     from qiskit import QuantumCircuit
     from qiskit.transpiler import InstructionProperties, Target
 
@@ -81,11 +83,17 @@ class CompilationStep:
     action: str
     reward: float
     current_depth: int
+    num_qubits: int
     total_gates: int
     fom_value: float
     fom_kind: str
     is_terminal: bool
     circuit_qasm: str
+    program_communication: float
+    critical_depth: float
+    entanglement_ratio: float
+    parallelism: float
+    liveness: float
 
 
 @dataclass
@@ -123,6 +131,7 @@ class CompilationTracer:
         current_qc: QuantumCircuit,
         fom_value: float,
         fom_kind: str,
+        features: dict[str, int | NDArray[np.float32]],
         done: bool,
     ) -> None:
         """Records a single compilation action and the resulting circuit state.
@@ -134,21 +143,28 @@ class CompilationTracer:
             current_qc: The current Qiskit QuantumCircuit object after the pass.
             fom_value: The figure of merit value for the compilation pass.
             fom_kind: The kind of fom value: 'exact' or 'approx'.
+            features: The quantum circuit's feature vector used by the RL agent.
             done: Boolean indicating if this is the final step of the compilation.
         """
         present_ops_dict = current_qc.count_ops()
-        total_gates = sum(present_ops_dict.values()) if present_ops_dict else 0
+        total_gates = sum(count for gate, count in present_ops_dict.items() if gate != "barrier")
 
         new_step = CompilationStep(
             step_index=step_index,
             action=action,
             reward=round(reward, 6),
             current_depth=current_qc.depth(),
+            num_qubits=current_qc.num_qubits,
             total_gates=total_gates,
             fom_value=round(fom_value, 6),
             fom_kind=fom_kind,
             is_terminal=done,
             circuit_qasm=qasm2.dumps(current_qc),
+            program_communication=self._extract_float(features["program_communication"]),
+            critical_depth=self._extract_float(features["critical_depth"]),
+            entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
+            parallelism=self._extract_float(features["parallelism"]),
+            liveness=self._extract_float(features["liveness"]),
         )
         self.steps.append(new_step)
 
@@ -204,3 +220,11 @@ class CompilationTracer:
             topology=topology,
             calibration_data=calibration_data,
         )
+
+    @staticmethod
+    def _extract_float(val: int | NDArray[np.float32]) -> float:
+        """Safely extracts a float from a scalar or a 1D NumPy array to satisfy linter requirements."""
+        if isinstance(val, (int, float)):
+            return float(val)
+        # If it is not an int or float, the linter now safely assumes it is an array
+        return float(val[0])

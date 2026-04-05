@@ -14,10 +14,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from bqskit import Circuit
+    from numpy.typing import NDArray
     from pytket._tket.passes import BasePass as TketBasePass
     from pytket.circuit import Node
     from qiskit.passmanager.base_tasks import Task
@@ -34,7 +37,6 @@ import warnings
 from math import isclose
 from typing import cast
 
-import numpy as np
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
@@ -249,7 +251,14 @@ class PredictorEnv(Env):
         return altered_qc
 
     def _log_step_reward(
-        self, step_index: int, action_name: str, reward_val: float, fom_value: float, fom_kind: str, done: bool
+        self,
+        step_index: int,
+        action_name: str,
+        reward_val: float,
+        fom_value: float,
+        fom_kind: str,
+        feature_vector: dict[str, int | NDArray[np.float32]],
+        done: bool,
     ) -> None:
         """Log the chosen action and resulting reward for the current episode step."""
         logger.info(
@@ -275,6 +284,7 @@ class PredictorEnv(Env):
                 current_qc=self.state,
                 fom_value=fom_value,
                 fom_kind=fom_kind,
+                features=feature_vector,
                 done=done,
             )
 
@@ -309,30 +319,34 @@ class PredictorEnv(Env):
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
+            obs = create_feature_dict(self.state)
             self._log_step_reward(
                 step_index=step_index,
                 action_name=action_name,
                 reward_val=0.0,
                 fom_value=0.0,
                 fom_kind="exact",
+                feature_vector=obs,
                 done=True,
             )
-            return create_feature_dict(self.state), 0.0, True, False, {}
+            return obs, 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
+            obs = create_feature_dict(self.state)
             self._log_step_reward(
                 step_index=step_index,
                 action_name=action_name,
                 reward_val=reward_val,
                 fom_value=reward_val,
                 fom_kind="exact",
+                feature_vector=obs,
                 done=done,
             )
-            return create_feature_dict(self.state), reward_val, done, False, {}
+            return obs, reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -366,6 +380,7 @@ class PredictorEnv(Env):
             reward_val=reward_val,
             fom_value=self.prev_reward,
             fom_kind=self.prev_reward_kind,
+            feature_vector=obs,
             done=done,
         )
 
