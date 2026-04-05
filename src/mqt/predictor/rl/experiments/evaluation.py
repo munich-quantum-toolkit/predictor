@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 from qiskit import QuantumCircuit
+from qiskit.transpiler.exceptions import TranspilerError
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from sklearn.metrics import mutual_info_score
@@ -524,7 +525,7 @@ def safe_metric(metric_fn: Callable[[], float]) -> float | None:
     """Safely evaluate a final metric."""
     try:
         return float(metric_fn())
-    except (KeyError, TypeError, ValueError, RuntimeError):
+    except (KeyError, TypeError, ValueError, RuntimeError, TranspilerError):
         return None
 
 
