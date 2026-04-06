@@ -14,7 +14,7 @@ import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -299,9 +299,14 @@ def rollout_circuit(
     seed: int = 0,
 ) -> CircuitEvaluationResult:
     """Run the trained policy on a circuit and collect final metrics."""
+    if predictor.graph:
+        msg = "Evaluation with MaskablePPO requires flat observations. Construct the predictor with graph=False."
+        raise TypeError(msg)
+
     logger.info("Evaluating circuit=%s", qc.name or "<unnamed>")
     predictor.env.episode_count = 0
-    obs, _ = predictor.env.reset(qc, seed=seed)
+    initial_obs, _ = predictor.env.reset(qc, seed=seed)
+    obs = require_flat_observation(initial_obs)
 
     used_compilation_passes: list[str] = []
     effective_compilation_passes: list[str] = []
@@ -321,7 +326,8 @@ def rollout_circuit(
         used_compilation_passes.append(action_item.name)
         previous_state_flags = predictor.env.get_compilation_state_flags()
 
-        obs, reward_value, terminated, truncated, _ = predictor.env.step(action_index)
+        next_obs, reward_value, terminated, truncated, _ = predictor.env.step(action_index)
+        obs = require_flat_observation(next_obs)
         current_state_flags = predictor.env.get_compilation_state_flags()
         if is_effective_action(action_item, reward_value, previous_state_flags, current_state_flags):
             effective_compilation_passes.append(action_item.name)
@@ -360,6 +366,14 @@ def rollout_circuit(
 def clone_observation(obs: Observation) -> PolicyObservation:
     """Return a detached copy of an observation dictionary for policy inference."""
     return {key: clone_feature_value(value) for key, value in obs.items()}
+
+
+def require_flat_observation(obs: object) -> Observation:
+    """Return a flat feature dictionary observation for MaskablePPO inference."""
+    if not isinstance(obs, dict):
+        msg = "Evaluation with MaskablePPO requires flat observations. Construct the predictor with graph=False."
+        raise TypeError(msg)
+    return cast("Observation", obs)
 
 
 def clone_feature_value(value: FeatureValue) -> NDArray[np.float32]:

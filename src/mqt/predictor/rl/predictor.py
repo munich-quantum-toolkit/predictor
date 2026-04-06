@@ -49,6 +49,7 @@ class Predictor:
         Arguments:
             figure_of_merit: The figure of merit to optimize during compilation.
             device: The target quantum device.
+            mdp: The MDP formulation to use ("paper" or "alternative"). Defaults to "paper".
             path_training_circuits: Path to training circuits. Defaults to None.
             logger_level: Logging level. Defaults to INFO.
             graph: If True, uses a GNN-based policy with PyG graph observations

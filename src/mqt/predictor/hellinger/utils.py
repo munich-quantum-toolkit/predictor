@@ -75,6 +75,7 @@ def calc_device_specific_features(
             "break",
             "continue",
         ]
+    ignored_ops = set(ignore_gates)
 
     # Targets may advertise control-flow ops like ``if_else``; keep only actual gate features.
     native_gate_dict = {gate: 0.0 for gate in device.operation_names if _is_native_gate(device, gate, ignored_ops)}

@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import TYPE_CHECKING
+
 from mqt.predictor.rl.gnn import SAGEActorCritic
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
 from mqt.predictor.rl.predictor import Predictor, rl_compile
 from mqt.predictor.rl.predictorenv import PredictorEnv
-from importlib import import_module
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from mqt.predictor.rl.experiments.data_generation import (
@@ -45,21 +46,20 @@ __all__ = [
     "GeneratedBenchmarkCircuit",
     "Predictor",
     "PredictorEnv",
-    "SAGEActorCritic",
-    "create_gnn_policy",
-    "rl_compile",
-    "train_ppo_with_gnn",
     "PredictorEvaluationResult",
     "RLTrainingResult",
+    "SAGEActorCritic",
     "TrainTestGenerationResult",
     "TrainTestSplit",
     "collect_working_benchmark_circuits",
     "compute_feature_importance",
+    "create_gnn_policy",
     "evaluate_main",
     "evaluate_trained_predictor",
     "generate_rl_train_test_data",
     "rl_compile",
     "run_rl_training",
+    "train_ppo_with_gnn",
 ]
 
 _NAME_TO_MODULE = {

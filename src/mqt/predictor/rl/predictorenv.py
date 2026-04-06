@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from pytket.circuit import Node
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
-    from torch_geometric.data import Data
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
@@ -40,6 +39,7 @@ from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
+from numpy.typing import NDArray
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from pytket.placement import Placement
@@ -56,6 +56,7 @@ from qiskit.transpiler.passes import (
     SetLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
+from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
@@ -90,6 +91,11 @@ from mqt.predictor.rl.parsing import (
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
+
+
+FeatureValue = int | NDArray[np.float32]
+FlatObservation = dict[str, FeatureValue]
+EnvironmentObservation = FlatObservation | Data
 
 
 def _layout_output_qubits(layout: TranspileLayout) -> list[Any]:
@@ -276,11 +282,11 @@ class PredictorEnv(Env):
 
         return altered_qc
 
-    def _create_observation(self, qc: QuantumCircuit | None = None) -> dict[str, Any]:
+    def _create_observation(self, qc: QuantumCircuit | None = None) -> EnvironmentObservation:
         """Create an observation directly from the actual circuit state."""
         circuit = self.state if qc is None else qc
         graph = self.graph if qc is None else False
-        return create_feature_dict(circuit, graph)
+        return create_feature_dict(circuit, graph=graph)
 
     def export_circuit(self, qc: QuantumCircuit | None = None) -> QuantumCircuit:
         """Return a copy of a circuit with the current env layout attached."""
@@ -323,7 +329,7 @@ class PredictorEnv(Env):
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
         return self._get_compilation_state_flags()
 
-    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+    def step(self, action: int) -> tuple[EnvironmentObservation, float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
         This method:
@@ -486,7 +492,7 @@ class PredictorEnv(Env):
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[dict[str, Any] | Data, dict[str, Any]]:
+    ) -> tuple[EnvironmentObservation, dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
