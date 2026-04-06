@@ -29,7 +29,7 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 
 dependencies = [
-    "mqt.bench>=2.0.0",
+    "mqt.bench @ git+https://github.com/munich-quantum-toolkit/bench.git@qce-experiments",
     "qiskit>=1.4.2",
     "pytket>=1.29.0",
     "pytket_qiskit>=0.65.0",
@@ -107,6 +107,9 @@ packages = ["src/mqt"]
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.hatch.metadata]
+allow-direct-references = true # to allow mqt.bench feature branch
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/mqt/predictor/_version.py"

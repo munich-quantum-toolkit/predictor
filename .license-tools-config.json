@@ -25,6 +25,7 @@
     ".*\\.ipynb",
     ".*\\.json",
     ".*\\.html",
+    ".*\\.qasm",
     "uv\\.lock",
     ".*\\.rst",
     "py\\.typed",

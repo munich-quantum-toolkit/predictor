@@ -195,9 +195,13 @@ def get_openqasm_gates() -> list[str]:
 
 
 def get_openqasm_gates_for_rl() -> list[str]:
-    """Returns a list of all quantum gates within the openQASM 2.0 standard header that are used as RL features."""
-    # u,u0,u1,u2,u3 gates are excluded as they are not meaningful as RL features
-    # Drop multi-qubit gates with more than two qubits, since Qiskit's `basis_gates` argument does not support them.
+    """Return OpenQASM 2.0 header gates used as RL features.
+
+    The generic ``u``/``u0``/``u1``/``u2``/``u3`` family is intentionally excluded
+    because those gates are not meaningful RL features in this setup. Gates acting
+    on more than two qubits are also excluded because Qiskit's ``basis_gates``
+    translation only supports one- and two-qubit basis gates.
+    """
     return [
         "cx",
         "id",
@@ -222,11 +226,9 @@ def get_openqasm_gates_for_rl() -> list[str]:
         "crx",
         "cry",
         "crz",
-        "cu1",
         "cp",
         "cu3",
         "csx",
-        "cu",
         "rxx",
         "rzz",
     ]

@@ -11,8 +11,11 @@
 from __future__ import annotations
 
 import logging
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-from mqt.predictor.qcompile import qcompile
+if TYPE_CHECKING:
+    from mqt.predictor.qcompile import qcompile
 
 __all__ = [
     "qcompile",
@@ -26,3 +29,14 @@ logger_formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 console_handler.setFormatter(logger_formatter)
 logger.addHandler(console_handler)
 logger.setLevel(logging.DEBUG)
+logger.propagate = False
+
+
+def __getattr__(name: str) -> object:
+    """Lazily import public package exports."""
+    if name != "qcompile":
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+
+    module = import_module("mqt.predictor.qcompile")
+    return getattr(module, name)

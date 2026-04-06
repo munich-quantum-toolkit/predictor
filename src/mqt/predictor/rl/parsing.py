@@ -18,7 +18,7 @@ from bqskit.ir import gates
 from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
-from qiskit import QuantumCircuit, QuantumRegister
+from qiskit import QuantumRegister
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from bqskit.ir import Gate
     from pytket import Circuit
     from qiskit import QuantumCircuit
+    from qiskit.circuit import Qubit as QiskitQubit
     from qiskit.transpiler import Target
 
 
@@ -149,24 +150,26 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     }
 
     native_gates = []
+    # Some devices declare support for non-gate operations, which some compiler passes can not handle.
+    ignored_non_gate_ops = {
+        "barrier",
+        "measure",
+        "delay",
+        "for_loop",
+        "while_loop",
+        "if_test",
+        "if_else",
+        "switch_case",
+        "break",
+        "continue",
+        "box",
+        "control",
+    }
 
     for instr in device.operation_names:
         name = instr
 
-        if name in [
-            "barrier",
-            "measure",
-            "delay",
-            "for_loop",
-            "control",
-            "while_loop",
-            "if_test",
-            "if_else",
-            "switch_case",
-            "box",
-            "break",
-            "continue",
-        ]:
+        if name in ignored_non_gate_ops:
             continue
 
         if name not in gate_map:
@@ -178,21 +181,34 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     return native_gates
 
 
-def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
-    """Converts a final layout from pytket to qiskit."""
+def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, output_qubits: list[QiskitQubit]) -> Layout:
+    """Convert a pytket routing permutation into a Qiskit final layout.
+
+    The routed pytket circuit may be compacted to only the active qubits. We therefore
+    re-express the permutation on the pre-routing output wires tracked by the existing
+    ``TranspileLayout`` instead of on the compact routed circuit's fresh qubits.
+    """
     pytket_layout = pytket_circuit.qubit_readout
-    size_circuit = pytket_circuit.n_qubits
+    size_circuit = len(output_qubits)
     qiskit_layout = {}
-    qiskit_qreg = qiskit_circuit.qregs[0]
+    used_output_positions = set()
 
     pytket_layout = dict(sorted(pytket_layout.items(), key=operator.itemgetter(1)))
 
-    for node, qubit_index in pytket_layout.items():
-        qiskit_layout[node.index[0]] = qiskit_qreg[qubit_index]
+    for qubit, readout_index in pytket_layout.items():
+        # pytket records final backend readout slots, not indices into the active logical-qubit list.
+        qiskit_layout[readout_index] = output_qubits[qubit.index[0]]
+        used_output_positions.add(qubit.index[0])
 
-    for i in range(size_circuit):
-        if i not in set(pytket_layout.values()):
-            qiskit_layout[i] = qiskit_qreg[i]
+    remaining_physical_positions = [i for i in range(size_circuit) if i not in qiskit_layout]
+    remaining_output_positions = [i for i in range(size_circuit) if i not in used_output_positions]
+
+    # Layout is bijective: once TKET moves an output wire, the untouched physical positions
+    # must be filled from the remaining unused output wires, not by identity on the index.
+    for physical_position, output_position in zip(
+        remaining_physical_positions, remaining_output_positions, strict=True
+    ):
+        qiskit_layout[physical_position] = output_qubits[output_position]
 
     return Layout(input_dict=qiskit_layout)
 
@@ -219,17 +235,25 @@ def final_layout_bqskit_to_qiskit(
             qiskit_initial_layout[i] = ancilla[counter_ancilla_qubit]
             counter_ancilla_qubit += 1
 
-    initial_qubit_mapping = {bit: index for index, bit in enumerate(compiled_qc.qubits)}
+    initial_qubit_mapping = {bit: index for index, bit in enumerate(initial_qc.qubits)}
+    initial_qubit_mapping.update({bit: initial_qc.num_qubits + index for index, bit in enumerate(ancilla)})
 
     if bqskit_initial_layout == bqskit_final_layout:
         qiskit_final_layout = None
     else:
         qiskit_final_layout = {}
-        for i in range(compiled_qc.num_qubits):
-            if i in bqskit_final_layout:
-                qiskit_final_layout[i] = compiled_qc.qubits[bqskit_initial_layout[bqskit_final_layout.index(i)]]
-            else:
-                qiskit_final_layout[i] = compiled_qc.qubits[i]
+        used_output_wires = set()
+        for initial_position, final_position in zip(bqskit_initial_layout, bqskit_final_layout, strict=False):
+            qiskit_final_layout[final_position] = compiled_qc.qubits[initial_position]
+            used_output_wires.add(initial_position)
+
+        remaining_physical_positions = [i for i in range(compiled_qc.num_qubits) if i not in qiskit_final_layout]
+        remaining_output_wires = [
+            compiled_qc.qubits[i] for i in range(compiled_qc.num_qubits) if i not in used_output_wires
+        ]
+
+        for physical_position, output_wire in zip(remaining_physical_positions, remaining_output_wires, strict=False):
+            qiskit_final_layout[physical_position] = output_wire
 
     return TranspileLayout(
         initial_layout=Layout(input_dict=qiskit_initial_layout),

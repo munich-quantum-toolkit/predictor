@@ -40,6 +40,7 @@ class Predictor:
         self,
         figure_of_merit: figure_of_merit,
         device: Target,
+        mdp: str = "paper",
         path_training_circuits: Path | None = None,
         graph: bool = False,
     ) -> None:
@@ -60,6 +61,7 @@ class Predictor:
             device=device,
             path_training_circuits=path_training_circuits,
             graph=graph,
+            mdp=mdp,
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
@@ -138,7 +140,7 @@ class Predictor:
             f.write("\n")
 
         if not self.env.error_occurred:
-            return self.env.state, used_compilation_passes
+            return self.env.export_circuit(), used_compilation_passes
 
         msg = "Error occurred during compilation."
         raise RuntimeError(msg)
