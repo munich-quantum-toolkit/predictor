@@ -91,6 +91,30 @@ from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_
 logger = logging.getLogger("mqt-predictor")
 
 
+def _layout_output_qubits(layout: TranspileLayout) -> list[Any]:
+    """Return the materialized output wires tracked by a TranspileLayout."""
+    output_qubits = layout._output_qubit_list  # noqa: SLF001
+    assert output_qubits is not None
+    return list(output_qubits)
+
+
+def _layout_input_qubit_count(layout: TranspileLayout) -> int:
+    """Return the number of logical input qubits tracked by a TranspileLayout."""
+    input_qubit_count = layout._input_qubit_count  # noqa: SLF001
+    assert input_qubit_count is not None
+    return input_qubit_count
+
+
+def _clear_circuit_layout(circuit: QuantumCircuit) -> QuantumCircuit:
+    """Drop any circuit-attached layout metadata.
+
+    The env keeps ``self.layout`` as the canonical source of layout state and only
+    re-attaches it when exporting a circuit to external callers.
+    """
+    circuit._layout = None  # noqa: SLF001
+    return circuit
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -107,7 +131,11 @@ class PredictorEnv(Env):
 
         Arguments:
             device: The target device to be used for compilation.
-            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline (synthesis -> (layout->routing) / mapping), while "flexible" allows for a cyclical approach where actions can be interleaved or reversed.
+            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline
+                (synthesis -> (layout->routing) / mapping), "flexible" allows for a cyclical approach
+                where actions can be interleaved or reversed, "thesis" uses the custom action-validity
+                rules defined in ``determine_valid_actions_for_state``, and "hybrid" is flexible before
+                layout but keeps layout/routing locked once they have been established.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
@@ -221,25 +249,40 @@ class PredictorEnv(Env):
         self.tbar: float | None = None
         self.dev_avgs_cached = False
         self.state: QuantumCircuit = QuantumCircuit()
+        self.compilation_state_flags: tuple[bool, bool, bool] | None = None
 
         self.error_occurred = False
 
     def _apply_and_update(self, action: int) -> QuantumCircuit | None:
-        """Apply an action, normalize the circuit, and update internal state."""
+        """Apply an action and update the canonical circuit state."""
         altered_qc = self.apply_action(action)
         if altered_qc is None:
             return None
 
+        altered_qc = _clear_circuit_layout(altered_qc)
+
         self.state: QuantumCircuit = altered_qc
+        self.compilation_state_flags = None
 
         self.num_steps += 1
-        self.state._layout = self.layout  # noqa: SLF001
         self.valid_actions = self.determine_valid_actions_for_state()
         if not self.valid_actions:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
         return altered_qc
+
+    def _create_observation(self, qc: QuantumCircuit | None = None) -> dict[str, Any]:
+        """Create an observation directly from the actual circuit state."""
+        circuit = self.state if qc is None else qc
+        return create_feature_dict(circuit)
+
+    def export_circuit(self, qc: QuantumCircuit | None = None) -> QuantumCircuit:
+        """Return a copy of a circuit with the current env layout attached."""
+        circuit = self.state if qc is None else qc
+        exported = circuit.copy()
+        exported._layout = self.layout  # noqa: SLF001
+        return exported
 
     def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
         """Log the chosen action and resulting reward for the current episode step."""
@@ -257,6 +300,23 @@ class PredictorEnv(Env):
                 self.current_circuit_name,
                 reward_val,
             )
+
+    def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        if self.compilation_state_flags is not None:
+            return self.compilation_state_flags
+
+        synthesized = self.is_circuit_synthesized(self.state)
+        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        )
+        self.compilation_state_flags = (synthesized, laid_out, routed)
+        return self.compilation_state_flags
+
+    def get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        return self._get_compilation_state_flags()
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
@@ -277,19 +337,19 @@ class PredictorEnv(Env):
         step_index = self.num_steps + 1
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
+        previous_state_flags = self._get_compilation_state_flags()
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
             self._log_step_reward(step_index, action_name, 0.0, done=True)
-            return create_feature_dict(self.state), 0.0, True, False, {}
+            return self._create_observation(), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self.state._layout = self.layout  # noqa: SLF001
             self._log_step_reward(step_index, action_name, reward_val, done)
-            return create_feature_dict(self.state), reward_val, done, False, {}
+            return self._create_observation(), reward_val, done, False, {}
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -300,23 +360,26 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
+            state_changed = any(
+                not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
+            )
 
-            if reward_kind_changed:
+            if reward_kind_changed or state_changed:
                 delta_reward = 0.0
 
-            reward_val = (
-                self.reward_scale * delta_reward
-                if not isclose(delta_reward, 0.0, abs_tol=1e-12)
-                else 0.0
-                if reward_kind_changed
-                else self.no_effect_penalty
-            )
+            if not isclose(delta_reward, 0.0, abs_tol=1e-12):
+                reward_val = self.reward_scale * delta_reward
+            elif reward_kind_changed or state_changed:
+                reward_val = 0.0
+            else:
+                reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
-        obs = create_feature_dict(self.state)
+        obs = self._create_observation()
         self._log_step_reward(step_index, action_name, reward_val, done)
         return obs, reward_val, done, False, {}
 
@@ -443,22 +506,17 @@ class PredictorEnv(Env):
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
             self.current_circuit_name = Path(self.filename).stem
 
+        self.state = _clear_circuit_layout(self.state)
+
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
         self.episode_count += 1
 
         self.layout = None
+        self.compilation_state_flags = None
 
-        if self.mdp == "flexible":
-            self.valid_actions = (
-                self.actions_synthesis_indices
-                + self.actions_mapping_indices
-                + self.actions_layout_indices
-                + self.actions_opt_indices
-            )
-        else:
-            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.determine_valid_actions_for_state()
 
         self.error_occurred = False
 
@@ -469,7 +527,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = len(self.state.parameters) > 0
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
-        return create_feature_dict(self.state), {}
+        return self._create_observation(), {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""
@@ -770,7 +828,10 @@ class PredictorEnv(Env):
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
-            self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+            self.layout.final_layout = final_layout_pytket_to_qiskit(
+                tket_qc,
+                _layout_output_qubits(self.layout),
+            )
 
         return altered_qc
 
@@ -812,8 +873,15 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
-            layout = layout.final_layout or layout.initial_layout
+            final_positions = layout.final_index_layout()
+            output_qubits = _layout_output_qubits(layout)
+            if len(final_positions) != _layout_input_qubit_count(layout):
+                return False
+            if list(circuit.qubits) == output_qubits:
+                return all(0 <= index < len(output_qubits) for index in final_positions)
+            if layout.final_layout is not None:
+                return all(0 <= index < len(circuit.qubits) for index in final_positions)
+            return False
 
         v2p = layout.get_virtual_bits()
         return all(q in v2p for q in circuit.qubits)
@@ -864,17 +932,17 @@ class PredictorEnv(Env):
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-        )
+        synthesized, laid_out, routed = self._get_compilation_state_flags()
 
         actions = []
         # Initial state
         if not synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
@@ -888,6 +956,10 @@ class PredictorEnv(Env):
 
         if synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
@@ -906,6 +978,10 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
@@ -919,6 +995,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_routing_indices)
             if self.mdp == "thesis":
@@ -929,6 +1008,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -941,6 +1023,10 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend([self.action_terminate_index])
+                actions.extend(self.actions_structure_preserving_indices)
+                actions.extend(self.actions_final_optimization_indices)
             if self.mdp == "paper":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)

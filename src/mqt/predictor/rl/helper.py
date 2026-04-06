@@ -128,3 +128,53 @@ def get_path_trained_model() -> Path:
 def get_path_training_circuits() -> Path:
     """Returns the path to the training circuits folder used for RL training."""
     return get_path_training_data() / "training_circuits"
+
+
+def get_path_training_circuits_train() -> Path:
+    """Returns the path to the RL training split directory."""
+    return get_path_training_circuits() / "train"
+
+
+def get_path_training_circuits_test() -> Path:
+    """Returns the path to the RL test split directory."""
+    return get_path_training_circuits() / "test"
+
+
+def ensure_training_circuit_directories() -> tuple[Path, Path]:
+    """Create the RL train/test split directories if they do not exist."""
+    train_path = get_path_training_circuits_train()
+    test_path = get_path_training_circuits_test()
+    train_path.mkdir(parents=True, exist_ok=True)
+    test_path.mkdir(parents=True, exist_ok=True)
+    return train_path, test_path
+
+
+def get_training_circuit_files(path_training_circuits: Path) -> list[Path]:
+    """Return training-circuit files for both split and legacy layouts."""
+    candidate_directories = [path_training_circuits]
+    if path_training_circuits.name == "train":
+        candidate_directories.append(path_training_circuits.parent)
+    else:
+        train_directory = path_training_circuits / "train"
+        if train_directory.exists():
+            candidate_directories.insert(0, train_directory)
+
+    file_list: list[Path] = []
+    for candidate_directory in candidate_directories:
+        ensure_legacy_training_data_extracted(candidate_directory)
+        file_list.extend(sorted(candidate_directory.glob("*.qasm")))
+
+    deduplicated_files: dict[Path, None] = {}
+    for file_path in file_list:
+        deduplicated_files[file_path] = None
+    return list(deduplicated_files)
+
+
+def ensure_legacy_training_data_extracted(path_training_circuits: Path) -> None:
+    """Extract legacy packaged RL circuits when only the zip archive is present."""
+    path_zip = path_training_circuits / "training_data_compilation.zip"
+    if any(path_training_circuits.glob("*.qasm")) or not path_zip.exists():
+        return
+
+    with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
+        zip_ref.extractall(path_training_circuits)

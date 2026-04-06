@@ -13,7 +13,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from qiskit import transpile
+from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
+from qiskit.transpiler import PassManager
+from qiskit.transpiler.passes import BasisTranslator
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -22,9 +24,27 @@ if TYPE_CHECKING:
 ALWAYS_EXCLUDED_OPS: set[str] = {"barrier", "delay", "id"}
 
 
+def _get_operation_arity(device: Target, name: str) -> int | None:
+    """Return the arity of a target entry if it behaves like a gate."""
+    try:
+        op = device.operation_from_name(name)
+    except KeyError:
+        return None
+
+    try:
+        return int(op.num_qubits)
+    except (AttributeError, TypeError, ValueError):
+        # e.g.: if_else, box, ...
+        return None
+
+
 def get_basis_gates_from_target(device: Target) -> list[str]:
     """Return the basis gate names from a Qiskit Target."""
-    basis_gates = [g for g in device.operation_names if g not in ALWAYS_EXCLUDED_OPS]
+    basis_gates = [
+        g
+        for g in device.operation_names
+        if g not in ALWAYS_EXCLUDED_OPS and _get_operation_arity(device, g) is not None
+    ]
 
     # Reset fidelity is SPAM-related and not consistently exposed on all targets.
     # Only include it when the target actually provides calibration entries.
@@ -35,8 +55,9 @@ def get_basis_gates_from_target(device: Target) -> list[str]:
 
 
 def estimate_basis_gate_counts(qc: QuantumCircuit, *, basis_gates: list[str]) -> dict[str, int]:
-    """Transpile ``qc`` to ``basis_gates`` and count occurrences of each basis gate."""
-    qc_t = transpile(qc, basis_gates=basis_gates, optimization_level=1, seed_transpiler=42)
+    """Translate ``qc`` to ``basis_gates`` with a single Qiskit pass and count basis-gate occurrences."""
+    qc_t = PassManager([BasisTranslator(SessionEquivalenceLibrary, basis_gates)]).run(qc)
+
     counts = dict.fromkeys(basis_gates, 0)
     for ci in qc_t.data:
         name = ci.operation.name
@@ -154,18 +175,13 @@ def compute_device_averages_from_target(
         """Return calibration properties for (name, qargs) or None if unavailable."""
         return device[name].get(qargs, None)
 
-    def _infer_arity(name: str) -> int | None:
-        """Infer operation arity from Target (best effort)."""
-        op = device.operation_from_name(name)
-        return int(op.num_qubits)
-
     # ---- Accumulate raw samples --------------------------------------------------
     err_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
     dur_samples: dict[str, list[float]] = {name: [] for name in basis_ops}
 
     arity_by_name: dict[str, int] = {}
     for name in basis_ops:
-        arity = _infer_arity(name)
+        arity = _get_operation_arity(device, name)
         if arity is not None:
             arity_by_name[name] = arity
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
+from qiskit.circuit import Gate
 from qiskit.converters import circuit_to_dag
 
 from mqt.predictor.utils import calc_supermarq_features
@@ -32,6 +33,13 @@ def hellinger_distance(p: NDArray[np.float64], q: NDArray[np.float64]) -> float:
     assert np.isclose(np.sum(q), 1, 0.05), "q is not a probability distribution"
 
     return float((1 / np.sqrt(2)) * np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q)) ** 2)))
+
+
+def _is_native_gate(device: Target, gate_name: str, ignore_gates: set[str]) -> bool:
+    """Return whether a target entry is a quantum gate feature and not an ignored op."""
+    if gate_name in ignore_gates:
+        return False
+    return isinstance(device.operation_from_name(gate_name), Gate)
 
 
 def calc_device_specific_features(
@@ -56,9 +64,10 @@ def calc_device_specific_features(
     """
     if ignore_gates is None:
         ignore_gates = ["barrier", "id", "measure"]
+    ignored_ops = set(ignore_gates)
 
-    # Create a dictionary with all native gates
-    native_gate_dict = {gate: 0.0 for gate in device.operation_names if gate not in ignore_gates}
+    # Targets may advertise control-flow ops like ``if_else``; keep only actual gate features.
+    native_gate_dict = {gate: 0.0 for gate in device.operation_names if _is_native_gate(device, gate, ignored_ops)}
     # Add the number of operations for each native gate
     for key, val in qc.count_ops().items():
         if key in native_gate_dict:
@@ -69,7 +78,7 @@ def calc_device_specific_features(
     active_qubits_dict = dict.fromkeys(qc.qubits, 0)
     # Iterate over the operations in the quantum circuit
     for op in qc.data:
-        if op.operation.name in ignore_gates:
+        if op.operation.name in ignored_ops:
             continue
         # Mark the qubits that are used in the operation as active
         for qubit in op.qubits:
