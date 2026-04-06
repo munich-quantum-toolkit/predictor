@@ -831,7 +831,6 @@ class PredictorEnv(Env):
             self.layout.final_layout = final_layout_pytket_to_qiskit(
                 tket_qc,
                 _layout_output_qubits(self.layout),
-                self.layout.final_index_layout(),
             )
 
         return altered_qc

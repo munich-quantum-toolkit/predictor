@@ -181,11 +181,7 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     return native_gates
 
 
-def final_layout_pytket_to_qiskit(
-    pytket_circuit: Circuit,
-    output_qubits: list[QiskitQubit],
-    initial_positions: list[int],
-) -> Layout:
+def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, output_qubits: list[QiskitQubit]) -> Layout:
     """Convert a pytket routing permutation into a Qiskit final layout.
 
     The routed pytket circuit may be compacted to only the active qubits. We therefore
@@ -199,10 +195,10 @@ def final_layout_pytket_to_qiskit(
 
     pytket_layout = dict(sorted(pytket_layout.items(), key=operator.itemgetter(1)))
 
-    for node, qubit_index in pytket_layout.items():
-        output_position = initial_positions[qubit_index]
-        qiskit_layout[node.index[0]] = output_qubits[output_position]
-        used_output_positions.add(output_position)
+    for qubit, readout_index in pytket_layout.items():
+        # pytket records final backend readout slots, not indices into the active logical-qubit list.
+        qiskit_layout[readout_index] = output_qubits[qubit.index[0]]
+        used_output_positions.add(qubit.index[0])
 
     remaining_physical_positions = [i for i in range(size_circuit) if i not in qiskit_layout]
     remaining_output_positions = [i for i in range(size_circuit) if i not in used_output_positions]
