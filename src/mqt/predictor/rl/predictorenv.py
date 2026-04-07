@@ -277,6 +277,7 @@ class PredictorEnv(Env):
             )
 
         if self.tracer is not None and self.tracer_output_path is not None:
+            synthesized, laid_out, routed = self._get_mdp_state()
             self.tracer.record_step(
                 step_index=step_index,
                 action=action_name,
@@ -285,6 +286,9 @@ class PredictorEnv(Env):
                 fom_value=fom_value,
                 fom_kind=fom_kind,
                 features=feature_vector,
+                synthesized=synthesized,
+                laid_out=laid_out,
+                routed=routed,
                 done=done,
             )
 
@@ -533,14 +537,20 @@ class PredictorEnv(Env):
         self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         if self.tracer_output_path is not None:
+            synthesized, laid_out, routed = self._get_mdp_state()
+
             self.tracer = CompilationTracer.from_initial_state(
                 device=self.device,
                 input_circuit=self.state,
                 circuit_name=self.current_circuit_name,
                 figure_of_merit=self.reward_function,
+                mdp_policy=self.mdp,
                 features=obs,
                 initial_fom=self.prev_reward,
                 fom_kind=self.prev_reward_kind,
+                synthesized=synthesized,
+                laid_out=laid_out,
+                routed=routed,
             )
 
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
@@ -938,15 +948,23 @@ class PredictorEnv(Env):
                     return False
         return True
 
-    def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
+    def _get_mdp_state(self) -> tuple[bool, bool, bool]:
+        """Determine the current MDP state of the circuit.
+
+        Returns:
+            A tuple with boolean values describing the state of the circuit (synthesized, laid_out, routed)
+        """
         synthesized = self.is_circuit_synthesized(self.state)
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
         # Routing is only allowed after layout
         routed = (
             self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
         )
+        return synthesized, laid_out, routed
 
+    def determine_valid_actions_for_state(self) -> list[int]:
+        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
+        synthesized, laid_out, routed = self._get_mdp_state()
         actions = []
         # Initial state
         if not synthesized and not laid_out and not routed:

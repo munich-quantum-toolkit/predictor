@@ -64,6 +64,9 @@ class CompilationStep:
         total_gates: The total number of gates included in the circuit.
         fom_value: The figure of merit value for this compilation pass.
         fom_kind: The kind of fom value: 'exact' or 'approx'.
+        synthesized: Whether the circuit has already been synthesized.
+        laid_out: Whether the circuit has already been laid out.
+        routed: Whether the circuit has already been routed.
         is_terminal: A flag indicating if the compilation process has concluded.
         circuit_qasm: The structural representation of the circuit in OpenQASM 2.0 format.
     """
@@ -76,6 +79,9 @@ class CompilationStep:
     total_gates: int
     fom_value: float
     fom_kind: str
+    synthesized: bool
+    laid_out: bool
+    routed: bool
     is_terminal: bool
     circuit_qasm: str
     program_communication: float
@@ -96,12 +102,14 @@ class CompilationTracer:
     Attributes:
         circuit_name: The name of the circuit being compiled.
         figure_of_merit: The chosen figure of merit for this compilation.
+        mdp_policy: The MDP transition policy.
         device: The target device metadata.
         steps: An ordered list of CompilationStep snapshots.
     """
 
     circuit_name: str
     figure_of_merit: str
+    mdp_policy: str
     device: DeviceMetadata
     steps: list[CompilationStep] = field(default_factory=list)
 
@@ -112,13 +120,19 @@ class CompilationTracer:
         input_circuit: QuantumCircuit,
         circuit_name: str,
         figure_of_merit: str,
+        mdp_policy: str,
         features: dict[str, int | NDArray[np.float32]],
         initial_fom: float,
         fom_kind: str,
+        synthesized: bool,
+        laid_out: bool,
+        routed: bool,
     ) -> CompilationTracer:
         """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
         device_meta = cls._extract_device_metadata(device)
-        tracer = cls(circuit_name=circuit_name, figure_of_merit=figure_of_merit, device=device_meta)
+        tracer = cls(
+            circuit_name=circuit_name, figure_of_merit=figure_of_merit, mdp_policy=mdp_policy, device=device_meta
+        )
 
         tracer.record_step(
             step_index=0,
@@ -128,6 +142,9 @@ class CompilationTracer:
             fom_value=initial_fom,
             fom_kind=fom_kind,
             features=features,
+            synthesized=synthesized,
+            laid_out=laid_out,
+            routed=routed,
             done=False,
         )
 
@@ -142,6 +159,9 @@ class CompilationTracer:
         fom_value: float,
         fom_kind: str,
         features: dict[str, int | NDArray[np.float32]],
+        synthesized: bool,
+        laid_out: bool,
+        routed: bool,
         done: bool,
     ) -> None:
         """Records a single compilation action and the resulting circuit state.
@@ -154,6 +174,9 @@ class CompilationTracer:
             fom_value: The figure of merit value for the compilation pass.
             fom_kind: The kind of fom value: 'exact' or 'approx'.
             features: The quantum circuit's feature vector used by the RL agent.
+            synthesized: Whether the circuit has already been synthesized.
+            laid_out: Whether the circuit has already been laid out.
+            routed: Whether the circuit has already been routed.
             done: Boolean indicating if this is the final step of the compilation.
         """
         present_ops_dict = current_qc.count_ops()
@@ -175,6 +198,9 @@ class CompilationTracer:
             entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
             parallelism=self._extract_float(features["parallelism"]),
             liveness=self._extract_float(features["liveness"]),
+            synthesized=synthesized,
+            laid_out=laid_out,
+            routed=routed,
         )
         self.steps.append(new_step)
 
