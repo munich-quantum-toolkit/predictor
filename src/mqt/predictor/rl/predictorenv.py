@@ -221,8 +221,8 @@ class PredictorEnv(Env):
         self.readout_err: dict[Node, float] | None = None
         self.reward_scale = reward_scale
         self.no_effect_penalty = no_effect_penalty
-        self.prev_reward: float | None = None
-        self.prev_reward_kind: str | None = None
+        self.prev_reward: float = 0.0
+        self.prev_reward_kind: str = "unknown"
         self.episode_count = 0
         self.current_circuit_name = "<unknown>"
         self.err_by_gate: dict[str, float] = {}
@@ -347,10 +347,6 @@ class PredictorEnv(Env):
                 done=done,
             )
             return obs, reward_val, done, False, {}
-
-        # Lazy init: compute prev_reward only once per episode (or if missing)
-        if self.prev_reward is None:
-            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         if done:
             assert action in self.valid_actions, "Terminate action is not valid but was chosen."
@@ -527,22 +523,29 @@ class PredictorEnv(Env):
             self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
         self.error_occurred = False
-
-        self.prev_reward = None
-        self.prev_reward_kind = None
         self.tracer = None
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
+        # create baseline values
+        obs = create_feature_dict(self.state)
+        self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
+
         if self.tracer_output_path is not None:
             self.tracer = CompilationTracer.from_initial_state(
-                self.device, self.state, self.current_circuit_name, self.reward_function
+                device=self.device,
+                input_circuit=self.state,
+                circuit_name=self.current_circuit_name,
+                figure_of_merit=self.reward_function,
+                features=obs,
+                initial_fom=self.prev_reward,
+                fom_kind=self.prev_reward_kind,
             )
 
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
-        return create_feature_dict(self.state), {}
+        return obs, {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""

@@ -53,17 +53,6 @@ class DeviceMetadata:
 
 
 @dataclass
-class InputCircuitMetadata:
-    """Metadata containing information about the initial, uncompiled quantum circuit."""
-
-    name: str
-    num_qubits: int
-    depth: int
-    figure_of_merit: str
-    circuit_qasm: str
-
-
-@dataclass
 class CompilationStep:
     """A snapshot of the circuit state and environment metrics at a single timestep.
 
@@ -105,23 +94,44 @@ class CompilationTracer:
     entire episode as a structured JSON file upon termination.
 
     Attributes:
+        circuit_name: The name of the circuit being compiled.
+        figure_of_merit: The chosen figure of merit for this compilation.
         device: The target device metadata.
-        input_circuit: The uncompiled circuit metadata.
         steps: An ordered list of CompilationStep snapshots.
     """
 
+    circuit_name: str
+    figure_of_merit: str
     device: DeviceMetadata
-    input_circuit: InputCircuitMetadata
     steps: list[CompilationStep] = field(default_factory=list)
 
     @classmethod
     def from_initial_state(
-        cls, device: Target, input_circuit: QuantumCircuit, circuit_name: str, figure_of_merit: str
+        cls,
+        device: Target,
+        input_circuit: QuantumCircuit,
+        circuit_name: str,
+        figure_of_merit: str,
+        features: dict[str, int | NDArray[np.float32]],
+        initial_fom: float,
+        fom_kind: str,
     ) -> CompilationTracer:
         """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
         device_meta = cls._extract_device_metadata(device)
-        input_meta = cls._extract_circuit_metadata(input_circuit, circuit_name, figure_of_merit)
-        return cls(device=device_meta, input_circuit=input_meta)
+        tracer = cls(circuit_name=circuit_name, figure_of_merit=figure_of_merit, device=device_meta)
+
+        tracer.record_step(
+            step_index=0,
+            action="Baseline",
+            reward=0.0,
+            current_qc=input_circuit,
+            fom_value=initial_fom,
+            fom_kind=fom_kind,
+            features=features,
+            done=False,
+        )
+
+        return tracer
 
     def record_step(
         self,
@@ -178,19 +188,6 @@ class CompilationTracer:
             json.dump(asdict(self), f, indent=4)
 
     @staticmethod
-    def _extract_circuit_metadata(
-        input_circuit: QuantumCircuit, circuit_name: str, figure_of_merit: str
-    ) -> InputCircuitMetadata:
-        """Internal helper to parse the initial quantum circuit."""
-        return InputCircuitMetadata(
-            name=circuit_name,
-            num_qubits=input_circuit.num_qubits,
-            depth=input_circuit.depth(),
-            figure_of_merit=figure_of_merit,
-            circuit_qasm=qasm2.dumps(input_circuit),
-        )
-
-    @staticmethod
     def _extract_device_metadata(device: Target) -> DeviceMetadata:
         """Internal helper to extract topology and calibration data from the device."""
         native_gates = list(device.operation_names)
@@ -224,7 +221,6 @@ class CompilationTracer:
     @staticmethod
     def _extract_float(val: int | NDArray[np.float32]) -> float:
         """Safely extracts a float from a scalar or a 1D NumPy array to satisfy linter requirements."""
-        if isinstance(val, (int, float)):
+        if isinstance(val, int):
             return float(val)
-        # If it is not an int or float, the linter now safely assumes it is an array
         return float(val[0])
