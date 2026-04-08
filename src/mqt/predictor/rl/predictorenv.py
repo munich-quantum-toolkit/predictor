@@ -429,6 +429,12 @@ class PredictorEnv(Env):
                 self.reward_function,
             )
             return 0.0, "exact"
+ 
+        reward_layout = cast("TranspileLayout | Layout | None", getattr(qc, "_layout", None))
+        if reward_layout is None:
+            # use the env layout if the circuit has no attached layout 
+            # (e.g., if it's an intermediate state or a newly exported copy)
+            reward_layout = self.layout
 
         # Dual-path evaluation (exact vs. approximate) for EF / ESP.
         if mode == "exact":
@@ -437,15 +443,19 @@ class PredictorEnv(Env):
             kind = "approx"
         else:  # "auto"
             only_native = self.is_circuit_synthesized(qc)
-            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map()))
+            laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
+            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
 
-            kind = "exact" if (only_native and mapped) else "approx"
+            kind = "exact" if (only_native and laid_out and mapped) else "approx"
 
         if kind == "exact":
+            exact_qc = (
+                qc if reward_layout is None or getattr(qc, "_layout", None) is not None else self.export_circuit(qc)
+            )
             if self.reward_function == "expected_fidelity":
-                return expected_fidelity(qc, self.device), "exact"
+                return expected_fidelity(exact_qc, self.device), "exact"
 
-            return estimated_success_probability(qc, self.device), "exact"
+            return estimated_success_probability(exact_qc, self.device), "exact"
 
         # Approximate metrics use per-basis-gate averages cached from device calibration
         self._ensure_device_averages_cached()
