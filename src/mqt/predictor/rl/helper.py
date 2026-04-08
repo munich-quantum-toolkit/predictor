@@ -29,6 +29,24 @@ from importlib import resources
 logger = logging.getLogger("mqt-predictor")
 
 
+def predicted_action_to_index(action: object) -> int:
+    """Normalize an SB3 action prediction to a scalar action index.
+
+    SB3 may return either a scalar value or a single-element array depending on
+    the environment/policy path. RL compilation uses a non-vectorized single
+    environment, so anything other than one predicted action is invalid here.
+    """
+    action_array = np.asarray(action)
+    if action_array.ndim == 0:
+        return int(action_array.item())
+
+    flattened_action = action_array.reshape(-1)
+    if flattened_action.size != 1:
+        msg = f"Expected a scalar action prediction, received shape {action_array.shape}."
+        raise ValueError(msg)
+    return int(flattened_action[0])
+
+
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
@@ -49,7 +67,9 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
         raise RuntimeError(msg)
 
     suitable_files = [
-        file_path for file_path in file_list if not max_qubits or get_num_qubits_for_training_circuit(file_path) <= max_qubits
+        file_path
+        for file_path in file_list
+        if not max_qubits or get_num_qubits_for_training_circuit(file_path) <= max_qubits
     ]
     if not suitable_files:
         msg = f"No training circuits with at most {max_qubits} qubits found in '{path_training_circuits}'."
@@ -59,7 +79,7 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     selected_path = suitable_files[random_index]
 
     try:
-        qc = QuantumCircuit.from_qasm_file(selected_path)
+        qc = QuantumCircuit.from_qasm_file(str(selected_path))
     except Exception as e:
         msg = f"Could not read QuantumCircuit from: {selected_path}"
         raise RuntimeError(msg) from e
@@ -80,7 +100,7 @@ def get_num_qubits_for_training_circuit(path: Path) -> int:
         return qubit_count_from_name
 
     try:
-        return int(QuantumCircuit.from_qasm_file(path).num_qubits)
+        return int(QuantumCircuit.from_qasm_file(str(path)).num_qubits)
     except Exception as e:
         msg = f"Could not determine the number of qubits for training circuit '{path}'."
         raise RuntimeError(msg) from e

@@ -19,7 +19,7 @@ from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPo
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.utils import set_random_seed
 
-from mqt.predictor.rl.helper import get_path_trained_model, logger
+from mqt.predictor.rl.helper import get_path_trained_model, logger, predicted_action_to_index
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ class Predictor:
         while not (terminated or truncated):
             action_masks = get_action_masks(self.env)
             action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
-            action = int(action)
+            action = predicted_action_to_index(action)
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
             obs, _reward_val, terminated, truncated, _info = self.env.step(action)

@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mqt.bench.targets import get_device
-from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 
 from mqt.predictor.rl.helper import get_path_trained_model, get_path_training_circuits_train
 from mqt.predictor.rl.predictor import Predictor
 
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
+    from stable_baselines3.common.callbacks import BaseCallback
 
     from mqt.predictor.reward import figure_of_merit
 
@@ -102,7 +103,12 @@ def main() -> None:
     parser.add_argument(
         "--figure-of-merit",
         default="expected_fidelity",
-        choices=["expected_fidelity", "critical_depth", "estimated_success_probability"],
+        choices=[
+            "expected_fidelity",
+            "critical_depth",
+            "estimated_success_probability",
+            "estimated_hellinger_distance",
+        ],
         help="Figure of merit used for RL training.",
     )
     parser.add_argument(

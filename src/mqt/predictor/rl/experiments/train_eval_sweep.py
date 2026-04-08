@@ -6,41 +6,38 @@
 #
 # Licensed under the MIT License
 
-"""Orchestrate full RL training/evaluation sweeps using the existing experiment helpers.
+"""Run a resumable ESP-focused RL sweep over the selected devices and MDP variants.
 
-This script intentionally builds on top of the existing experiment modules:
+The script is intentionally narrow:
 
-- ``training.py`` via :func:`run_rl_training`
-- ``evaluation.py`` via :func:`evaluate_trained_predictor`
-- ``pipeline_evaluation.py`` via :func:`run_selected_pipelines`
+- figure of merit is fixed to ``estimated_success_probability``
+- devices default to ``ibm_boston_156`` and ``iqm_garnet_20``
+- all RL MDP variants are trained
+- both stochastic and deterministic evaluations are run
+- optional locked baseline pipelines are evaluated
 
-It adds the missing cluster-oriented concerns around those helpers:
+The goal is a clean SLURM-friendly entry point that:
 
-- sweep planning over all supported RL configurations
-- resumable execution
-- per-configuration output directories
-- atomic JSON result writes
-- progress and status tracking
-- unique model artifact copies so different MDP runs do not overwrite each other
+- starts a fresh sweep when the output directory is empty
+- resumes from saved checkpoints when a previous batch did not finish
+- logs progress to one human-readable log file
+- saves per-run JSON results that can be inspected later
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import logging
 import math
 import os
-import platform
 import shutil
-import socket
-import sys
+import signal
 import tempfile
 import traceback
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -48,175 +45,122 @@ from mqt.bench.targets import get_device
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import BaseCallback
 
-from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import esp_data_available
-from mqt.predictor.rl.experiments.evaluation import (
-    PredictorEvaluationResult,
-    evaluate_trained_predictor,
-)
-from mqt.predictor.rl.experiments.pipeline_evaluation import (
-    PipelineEvaluationResult,
-    run_selected_pipelines,
-)
+from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor
+from mqt.predictor.rl.experiments.pipeline_evaluation import run_selected_pipelines
 from mqt.predictor.rl.experiments.training import run_rl_training
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from qiskit.transpiler import Target
 
+    from mqt.predictor.reward import figure_of_merit
+    from mqt.predictor.rl.experiments.evaluation import PredictorEvaluationResult
+    from mqt.predictor.rl.experiments.pipeline_evaluation import PipelineEvaluationResult
 
-ALL_MDP_VARIANTS = ("paper", "flexible", "thesis", "hybrid")
-SUPPORTED_RL_FIGURES_OF_MERIT = (
-    "expected_fidelity",
-    "critical_depth",
-    "estimated_success_probability",
-    "estimated_hellinger_distance",
-)
-PIPELINE_COMPATIBLE_FIGURES_OF_MERIT = frozenset(
-    {"expected_fidelity", "critical_depth", "estimated_success_probability"}
-)
-SUPPORTED_PIPELINES = ("qiskit_o3", "tket_o2")
-EVALUATION_MODES = {
-    "stochastic": False,
-    "deterministic": True,
-}
+
+FIGURE_OF_MERIT: figure_of_merit = "estimated_success_probability"
+DEFAULT_DEVICES = ("ibm_boston_156", "iqm_garnet_20")
+DEFAULT_MDPS = ("paper", "flexible", "thesis", "hybrid")
+DEFAULT_PIPELINES = ("qiskit_o3", "tket_o2")
+EVALUATION_MODES = (("stochastic", False), ("deterministic", True))
 
 
 @dataclass(frozen=True, slots=True)
-class SweepRunSpec:
-    """One RL training/evaluation configuration."""
+class RLRunSpec:
+    """One RL training and evaluation configuration."""
 
-    figure_of_merit: str
+    device_name: str
     mdp: str
 
     @property
-    def slug(self) -> str:
-        """Return a filesystem-friendly identifier."""
-        return f"{self.figure_of_merit}__{self.mdp}"
+    def label(self) -> str:
+        """Return a short human-readable run label."""
+        return f"{self.device_name}/{self.mdp}"
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description=(
-            "Run a full RL training/evaluation sweep over the existing experiment helpers and "
-            "store resumable, per-configuration artifacts."
-        ),
+        description="Run a resumable RL sweep for estimated_success_probability.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--device", required=True, help="Target device name, e.g. ibm_falcon_127.")
     parser.add_argument(
-        "--figures-of-merit",
+        "--devices",
         nargs="+",
-        default=["auto"],
-        choices=["auto", *SUPPORTED_RL_FIGURES_OF_MERIT],
-        help=(
-            "Figures of merit to train/evaluate. Use 'auto' to include every figure supported by the selected device."
-        ),
+        default=list(DEFAULT_DEVICES),
+        help="Target devices to process.",
     )
     parser.add_argument(
         "--mdps",
         nargs="+",
-        default=list(ALL_MDP_VARIANTS),
-        choices=list(ALL_MDP_VARIANTS),
-        help="MDP transition policies to sweep.",
+        default=list(DEFAULT_MDPS),
+        choices=list(DEFAULT_MDPS),
+        help="MDP variants to train and evaluate.",
     )
-    parser.add_argument(
-        "--evaluation-modes",
-        nargs="+",
-        default=list(EVALUATION_MODES),
-        choices=list(EVALUATION_MODES),
-        help="Evaluation rollout modes to execute after training.",
-    )
-    parser.add_argument(
-        "--pipelines",
-        nargs="+",
-        default=[],
-        choices=list(SUPPORTED_PIPELINES),
-        help="Optional locked pipeline baselines to evaluate once per figure of merit.",
-    )
-    parser.add_argument("--timesteps", type=int, default=100000, help="Training timesteps per RL configuration.")
+    parser.add_argument("--timesteps", type=int, default=100000, help="Training timesteps per RL model.")
     parser.add_argument(
         "--checkpoint-frequency",
         type=int,
         default=2048,
-        help="How often to save PPO checkpoints during training.",
+        help="PPO checkpoint cadence in timesteps.",
     )
-    parser.add_argument("--train-verbose", type=int, default=1, help="Verbosity passed to PPO training.")
-    parser.add_argument("--max-steps", type=int, default=200, help="Maximum rollout steps per evaluation circuit.")
+    parser.add_argument("--train-verbose", type=int, default=1, help="Verbosity passed to PPO.")
+    parser.add_argument("--max-steps", type=int, default=200, help="Maximum evaluation rollout steps.")
     parser.add_argument("--seed", type=int, default=0, help="Evaluation seed.")
-    parser.add_argument(
-        "--train-dir",
-        type=Path,
-        default=None,
-        help="Optional training-circuit directory passed into the existing training/evaluation helpers.",
-    )
-    parser.add_argument(
-        "--test-dir",
-        type=Path,
-        default=None,
-        help="Optional held-out test-circuit directory passed into the existing evaluation helpers.",
-    )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=None,
-        help="Output directory for status, logs, copied models, and JSON reports. Defaults to a timestamped folder.",
+        default=Path.cwd() / "rl_experiment_runs" / "estimated_success_probability_sweep",
+        help="Stable output directory used for logs, checkpoints, and results.",
     )
+    parser.add_argument("--train-dir", type=Path, default=None, help="Optional training-circuit directory.")
+    parser.add_argument("--test-dir", type=Path, default=None, help="Optional test-circuit directory.")
     parser.add_argument(
-        "--name",
-        default=None,
-        help="Optional run-name suffix used when auto-generating the output directory.",
+        "--skip-pipelines",
+        action="store_true",
+        help="Skip the locked baseline pipeline evaluations.",
     )
     parser.add_argument(
         "--test-training",
         action="store_true",
-        help="Use the lightweight training mode from the existing training helper for smoke runs.",
+        help="Use the lightweight training mode from the existing training helper.",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Ignore completed status files and rerun configurations.",
+        help="Ignore completed markers and rerun every phase.",
     )
     parser.add_argument(
         "--fail-fast",
         action="store_true",
-        help="Stop immediately on the first failed training or evaluation phase.",
+        help="Stop at the first failed training, evaluation, or pipeline run.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the planned sweep and exit without training or evaluation.",
+        help="Print the planned sweep and exit.",
     )
-    args = parser.parse_args()
-
-    if "auto" in args.figures_of_merit and len(args.figures_of_merit) > 1:
-        parser.error("'auto' cannot be combined with explicit figures of merit.")
-
-    return args
+    return parser.parse_args()
 
 
 def now_utc_iso() -> str:
-    """Return the current UTC timestamp in ISO 8601 format."""
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
-
-
-def default_output_directory(device_name: str, run_name: str | None) -> Path:
-    """Return the default output directory for a new sweep."""
-    timestamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-    suffix = f"_{run_name}" if run_name else ""
-    return Path.cwd() / "rl_experiment_runs" / f"{timestamp}_{device_name}{suffix}"
+    """Return the current UTC timestamp in ISO format."""
+    return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat()
 
 
 def configure_logging(output_dir: Path) -> logging.Logger:
-    """Configure a sweep-local logger."""
+    """Configure file and console logging for the sweep."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("mqt-predictor.train-eval-sweep")
+    logger = logging.getLogger("mqt-predictor.esp-sweep")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     logger.propagate = False
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    file_handler = logging.FileHandler(output_dir / "orchestrator.log", encoding="utf-8")
+
+    file_handler = logging.FileHandler(output_dir / "sweep.log", encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
@@ -226,84 +170,9 @@ def configure_logging(output_dir: Path) -> logging.Logger:
     return logger
 
 
-def resolve_supported_figures_of_merit(device: Target) -> list[str]:
-    """Return every RL figure of merit supported for the selected device."""
-    supported = ["expected_fidelity", "critical_depth"]
-
-    if esp_data_available(device):
-        supported.append("estimated_success_probability")
-
-    if get_hellinger_model_path(device).is_file():
-        supported.append("estimated_hellinger_distance")
-
-    return supported
-
-
-def resolve_figures_of_merit(device: Target, requested: list[str]) -> list[str]:
-    """Resolve and validate the figure-of-merit sweep."""
-    supported = resolve_supported_figures_of_merit(device)
-
-    if requested == ["auto"]:
-        return supported
-
-    missing_support: list[str] = []
-    for figure_of_merit in requested:
-        if figure_of_merit not in supported:
-            missing_support.append(figure_of_merit)
-
-    if missing_support:
-        supported_values = ", ".join(supported)
-        requested_values = ", ".join(missing_support)
-        msg = (
-            f"Requested unsupported figures of merit for {device.description}: {requested_values}. "
-            f"Supported values are: {supported_values}."
-        )
-        raise ValueError(msg)
-
-    return requested
-
-
-def build_run_specs(figures_of_merit: list[str], mdps: list[str]) -> list[SweepRunSpec]:
-    """Return the full RL sweep plan."""
-    return [SweepRunSpec(figure_of_merit=figure_of_merit, mdp=mdp) for figure_of_merit in figures_of_merit for mdp in mdps]
-
-
-def build_run_directory(output_dir: Path, spec: SweepRunSpec) -> Path:
-    """Return the directory for one RL run."""
-    return output_dir / "runs" / spec.slug
-
-
-def build_pipeline_directory(output_dir: Path, figure_of_merit: str, pipeline_name: str) -> Path:
-    """Return the directory for one pipeline-baseline run."""
-    return output_dir / "pipeline_runs" / f"{figure_of_merit}__{pipeline_name}"
-
-
-def empty_run_status(spec: SweepRunSpec, evaluation_modes: list[str]) -> dict[str, Any]:
-    """Return the initial status document for one RL run."""
-    return {
-        "configuration": asdict(spec),
-        "created_at": now_utc_iso(),
-        "updated_at": now_utc_iso(),
-        "status": "pending",
-        "training": {"status": "pending"},
-        "evaluations": {mode: {"status": "pending"} for mode in evaluation_modes},
-    }
-
-
-def empty_pipeline_status(figure_of_merit: str, pipeline_name: str) -> dict[str, Any]:
-    """Return the initial status document for one baseline pipeline run."""
-    return {
-        "configuration": {"figure_of_merit": figure_of_merit, "pipeline": pipeline_name},
-        "created_at": now_utc_iso(),
-        "updated_at": now_utc_iso(),
-        "status": "pending",
-        "result": {"status": "pending"},
-    }
-
-
 def sanitize_json_value(value: object) -> object:
     """Convert objects into JSON-compatible values."""
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return sanitize_json_value(asdict(value))
 
     if isinstance(value, Path):
@@ -318,9 +187,11 @@ def sanitize_json_value(value: object) -> object:
     if isinstance(value, set | frozenset):
         return [sanitize_json_value(item) for item in sorted(value)]
 
-    if hasattr(value, "item") and callable(getattr(value, "item")):
+    if hasattr(value, "item"):
         try:
-            return sanitize_json_value(value.item())
+            item_method = value.item
+            if callable(item_method):
+                return sanitize_json_value(item_method())  # type: ignore[misc]
         except (TypeError, ValueError):
             pass
 
@@ -331,7 +202,7 @@ def sanitize_json_value(value: object) -> object:
 
 
 def atomic_write_json(path: Path, payload: object) -> None:
-    """Atomically write JSON to disk."""
+    """Atomically write one JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         "w",
@@ -350,14 +221,11 @@ def atomic_write_json(path: Path, payload: object) -> None:
     temp_path.replace(path)
 
 
-def append_jsonl(path: Path, payload: object) -> None:
-    """Append one JSONL event to disk and flush it eagerly."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(sanitize_json_value(payload), sort_keys=True))
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
+def load_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
+    """Load a JSON file or return the provided fallback value."""
+    if not path.is_file():
+        return json.loads(json.dumps(fallback))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def copy_file_atomically(source: Path, destination: Path) -> Path:
@@ -381,98 +249,111 @@ def copy_file_atomically(source: Path, destination: Path) -> Path:
     return destination
 
 
-def load_status(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
-    """Load a status file when present, otherwise return a copy of the fallback."""
-    if not path.is_file():
-        return json.loads(json.dumps(fallback))
+def install_signal_handlers() -> None:
+    """Convert TERM/INT signals into KeyboardInterrupt for graceful shutdown."""
 
-    return json.loads(path.read_text(encoding="utf-8"))
+    def handle_interrupt(signum: int, _frame: object) -> None:
+        msg = f"Received signal {signum}."
+        raise KeyboardInterrupt(msg)
+
+    signal.signal(signal.SIGTERM, handle_interrupt)
+    signal.signal(signal.SIGINT, handle_interrupt)
 
 
-def update_run_status(path: Path, status: dict[str, Any], evaluation_modes: list[str]) -> None:
-    """Update the run-level status field and persist the document."""
-    training_status = status["training"]["status"]
-    evaluation_statuses = [status["evaluations"][mode]["status"] for mode in evaluation_modes]
+def rl_run_directory(output_dir: Path, spec: RLRunSpec) -> Path:
+    """Return the output directory for one RL run."""
+    return output_dir / spec.device_name / "rl" / spec.mdp
 
-    if training_status == "failed" or any(phase_status == "failed" for phase_status in evaluation_statuses):
-        overall = "failed"
-    elif training_status == "completed" and all(phase_status == "completed" for phase_status in evaluation_statuses):
-        overall = "completed"
-    elif training_status == "running" or any(phase_status == "running" for phase_status in evaluation_statuses):
-        overall = "running"
-    elif training_status == "completed" and any(
-        phase_status in {"pending", "running"} for phase_status in evaluation_statuses
-    ):
-        overall = "partial"
-    else:
-        overall = "pending"
 
-    status["status"] = overall
+def pipeline_directory(output_dir: Path, device_name: str, pipeline_name: str) -> Path:
+    """Return the output directory for one pipeline run."""
+    return output_dir / device_name / "pipelines" / pipeline_name
+
+
+def empty_rl_status(spec: RLRunSpec) -> dict[str, Any]:
+    """Return the initial status document for one RL run."""
+    return {
+        "device": spec.device_name,
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "mdp": spec.mdp,
+        "created_at": now_utc_iso(),
+        "updated_at": now_utc_iso(),
+        "training": {"status": "pending", "completed_timesteps": 0},
+        "evaluations": {mode_name: {"status": "pending"} for mode_name, _ in EVALUATION_MODES},
+    }
+
+
+def empty_pipeline_status(device_name: str, pipeline_name: str) -> dict[str, Any]:
+    """Return the initial status document for one pipeline run."""
+    return {
+        "device": device_name,
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "pipeline": pipeline_name,
+        "created_at": now_utc_iso(),
+        "updated_at": now_utc_iso(),
+        "result": {"status": "pending"},
+    }
+
+
+def save_rl_status(path: Path, status: dict[str, Any]) -> None:
+    """Persist one RL run status document."""
     status["updated_at"] = now_utc_iso()
     atomic_write_json(path, status)
 
 
-def update_pipeline_status(path: Path, status: dict[str, Any]) -> None:
-    """Update and persist one pipeline-baseline status document."""
-    status["status"] = status["result"]["status"]
+def save_pipeline_status(path: Path, status: dict[str, Any]) -> None:
+    """Persist one pipeline status document."""
     status["updated_at"] = now_utc_iso()
     atomic_write_json(path, status)
 
 
 def checkpoint_sort_key(path: Path) -> int:
-    """Return the timestep encoded in a checkpoint filename."""
+    """Return the timestep suffix encoded in a checkpoint filename."""
     for part in reversed(path.stem.split("_")):
         if part.isdigit():
             return int(part)
     return -1
 
 
-def find_latest_checkpoint(checkpoint_directory: Path) -> Path | None:
-    """Return the most recent PPO checkpoint in a directory."""
-    if not checkpoint_directory.is_dir():
+def find_latest_checkpoint(checkpoint_dir: Path) -> Path | None:
+    """Return the newest PPO checkpoint in a directory."""
+    if not checkpoint_dir.is_dir():
         return None
 
-    checkpoint_files = sorted(
-        checkpoint_directory.glob("model_checkpoint_*_steps.zip"),
-        key=checkpoint_sort_key,
-    )
+    checkpoint_files = sorted(checkpoint_dir.glob("model_checkpoint_*_steps.zip"), key=checkpoint_sort_key)
     if not checkpoint_files:
         return None
     return checkpoint_files[-1]
 
 
 def get_model_num_timesteps(model_path: Path) -> int:
-    """Load a PPO checkpoint and return the completed timesteps."""
-    model = MaskablePPO.load(model_path)
-    return int(model.num_timesteps)
+    """Load a PPO checkpoint and return its completed timestep count."""
+    return int(MaskablePPO.load(model_path).num_timesteps)
 
 
 class TrainingHeartbeatCallback(BaseCallback):
-    """Persist training heartbeat information during long PPO runs."""
+    """Update the on-disk training status during long PPO runs."""
 
     def __init__(
         self,
         *,
-        spec: SweepRunSpec,
+        spec: RLRunSpec,
         target_timesteps: int,
+        initial_timesteps: int,
         status: dict[str, Any],
         status_path: Path,
-        evaluation_modes: list[str],
-        event_log_path: Path,
         logger: logging.Logger,
         log_frequency: int,
     ) -> None:
-        """Initialize the callback."""
+        """Initialize the heartbeat callback."""
         super().__init__()
         self.spec = spec
         self.target_timesteps = target_timesteps
         self.status = status
         self.status_path = status_path
-        self.evaluation_modes = evaluation_modes
-        self.event_log_path = event_log_path
-        self.logger = logger
+        self.progress_logger = logger
         self.log_frequency = max(1, log_frequency)
-        self.last_logged_timesteps = 0
+        self.last_logged_timesteps = initial_timesteps
 
     def _on_step(self) -> bool:
         current_timesteps = int(self.model.num_timesteps)
@@ -482,50 +363,26 @@ class TrainingHeartbeatCallback(BaseCallback):
         self.last_logged_timesteps = current_timesteps
         self.status["training"]["completed_timesteps"] = current_timesteps
         self.status["training"]["last_progress_at"] = now_utc_iso()
-        update_run_status(self.status_path, self.status, self.evaluation_modes)
-
-        progress_ratio = current_timesteps / self.target_timesteps if self.target_timesteps > 0 else 1.0
-        self.logger.info(
-            "Training progress for %s: %d/%d timesteps (%.1f%%).",
-            self.spec.slug,
+        save_rl_status(self.status_path, self.status)
+        self.progress_logger.info(
+            "Training %s: %d/%d timesteps (%.1f%%).",
+            self.spec.label,
             current_timesteps,
             self.target_timesteps,
-            progress_ratio * 100.0,
-        )
-        append_jsonl(
-            self.event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "training_progress",
-                "configuration": asdict(self.spec),
-                "completed_timesteps": current_timesteps,
-                "target_timesteps": self.target_timesteps,
-            },
+            (current_timesteps / self.target_timesteps) * 100.0 if self.target_timesteps > 0 else 100.0,
         )
         return True
 
 
 def summarize_predictor_evaluation(result: PredictorEvaluationResult) -> dict[str, Any]:
-    """Return a compact summary for quick inspection and CSV reporting."""
+    """Return a compact summary for one RL evaluation result."""
     figure_values = [circuit.figure_of_merit_value for circuit in result.circuits]
-    figure_kinds = sorted({circuit.figure_of_merit_kind for circuit in result.circuits})
-
-    average_figure_value = None
-    if figure_values:
-        average_figure_value = sum(figure_values) / len(figure_values)
-
+    average_figure_value = sum(figure_values) / len(figure_values) if figure_values else None
     return {
         "evaluated_circuits": len(result.circuits),
-        "test_directory": str(result.test_directory),
         "average_figure_of_merit_value": average_figure_value,
-        "figure_of_merit_kinds": figure_kinds,
-        "step_limit_hits": sum(1 for circuit in result.circuits if circuit.hit_step_limit),
         "average_metrics": sanitize_json_value(result.average_metrics),
-        "feature_importance": {
-            "baseline_mean_reward": result.feature_importance.baseline_mean_reward,
-            "average_original_feature_importance": result.feature_importance.average_original_feature_importance,
-            "average_gate_count_feature_importance": result.feature_importance.average_gate_count_feature_importance,
-        },
+        "step_limit_hits": sum(1 for circuit in result.circuits if circuit.hit_step_limit),
         "action_effectiveness": {
             "total_uses": result.action_effectiveness.total_uses,
             "total_effective_uses": result.action_effectiveness.total_effective_uses,
@@ -535,19 +392,10 @@ def summarize_predictor_evaluation(result: PredictorEvaluationResult) -> dict[st
 
 
 def summarize_pipeline_evaluation(result: PipelineEvaluationResult) -> dict[str, Any]:
-    """Return a compact summary for one pipeline baseline run."""
+    """Return a compact summary for one pipeline result."""
     figure_values = [circuit.figure_of_merit_value for circuit in result.circuits]
-    average_figure_value = None
-    if figure_values:
-        average_figure_value = sum(figure_values) / len(figure_values)
-
+    average_figure_value = sum(figure_values) / len(figure_values) if figure_values else None
     return {
-        "pipeline_name": result.pipeline_name,
-        "sdk_name": result.sdk_name,
-        "sdk_version": result.sdk_version,
-        "device_name": result.device_name,
-        "figure_of_merit": result.figure_of_merit,
-        "test_directory": str(result.test_directory),
         "evaluated_circuits": len(result.circuits),
         "average_figure_of_merit_value": average_figure_value,
         "average_metrics": sanitize_json_value(result.average_metrics),
@@ -560,7 +408,7 @@ def summarize_pipeline_evaluation(result: PipelineEvaluationResult) -> dict[str,
 
 
 @contextmanager
-def working_directory(path: Path) -> Any:
+def working_directory(path: Path) -> Generator[None, None, None]:
     """Temporarily change the working directory."""
     previous = Path.cwd()
     os.chdir(path)
@@ -570,21 +418,86 @@ def working_directory(path: Path) -> Any:
         os.chdir(previous)
 
 
-def run_training_phase(
+def resolve_device(device_name: str) -> Target:
+    """Load one target device and ensure ESP is supported."""
+    device = get_device(device_name)
+    if not esp_data_available(device):
+        msg = f"Device '{device_name}' does not provide the calibration data required for ESP."
+        raise ValueError(msg)
+    return device
+
+
+def get_single_pipeline_result(
+    results: list[PipelineEvaluationResult],
+    pipeline_name: str,
+) -> PipelineEvaluationResult:
+    """Return the single expected pipeline result."""
+    if len(results) != 1:
+        msg = f"Expected one pipeline result for '{pipeline_name}', received {len(results)}."
+        raise RuntimeError(msg)
+    return results[0]
+
+
+def finalize_training_from_checkpoint(
     *,
-    spec: SweepRunSpec,
+    spec: RLRunSpec,
     status_path: Path,
     status: dict[str, Any],
+    checkpoint_path: Path,
+    checkpoint_dir: Path,
+    model_copy_path: Path,
+    training_result_path: Path,
+    args: argparse.Namespace,
+    logger: logging.Logger,
+) -> Path:
+    """Convert an already-complete checkpoint into the final saved model artifact."""
+    completed_timesteps = get_model_num_timesteps(checkpoint_path)
+    copied_model_path = copy_file_atomically(checkpoint_path, model_copy_path)
+    training_payload = {
+        "completed_at": now_utc_iso(),
+        "device": spec.device_name,
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "mdp": spec.mdp,
+        "timesteps": args.timesteps,
+        "completed_timesteps": completed_timesteps,
+        "saved_model_path": str(copied_model_path),
+        "source_model_path": str(checkpoint_path),
+        "checkpoint_directory": str(checkpoint_dir),
+    }
+    atomic_write_json(training_result_path, training_payload)
+
+    status["training"] = {
+        "status": "completed",
+        "finished_at": now_utc_iso(),
+        "timesteps": args.timesteps,
+        "completed_timesteps": completed_timesteps,
+        "verbose": args.train_verbose,
+        "checkpoint_directory": str(checkpoint_dir),
+        "checkpoint_frequency": args.checkpoint_frequency,
+        "resumed_from_checkpoint": str(checkpoint_path),
+        "saved_model_path": str(copied_model_path),
+        "result_path": str(training_result_path),
+    }
+    save_rl_status(status_path, status)
+    logger.info("Finalized completed checkpoint for %s.", spec.label)
+    return copied_model_path
+
+
+def run_training_phase(
+    *,
+    spec: RLRunSpec,
+    device: Target,
     run_dir: Path,
     args: argparse.Namespace,
-    device: Target,
     logger: logging.Logger,
-    event_log_path: Path,
 ) -> Path:
-    """Execute or resume one training phase and return the copied model path."""
-    model_copy_path = run_dir / "artifacts" / f"model_{spec.slug}_{device.description}.zip"
-    training_result_path = run_dir / "training_result.json"
-    checkpoint_directory = run_dir / "checkpoints"
+    """Train one RL configuration or resume it from the latest checkpoint."""
+    status_path = run_dir / "status.json"
+    status = load_json(status_path, empty_rl_status(spec))
+
+    model_copy_path = run_dir / "artifacts" / f"model_{spec.device_name}_{spec.mdp}.zip"
+    training_result_path = run_dir / "training.json"
+    checkpoint_dir = run_dir / "checkpoints"
 
     if (
         not args.force
@@ -592,79 +505,36 @@ def run_training_phase(
         and model_copy_path.is_file()
         and training_result_path.is_file()
     ):
-        logger.info("Skipping completed training for %s.", spec.slug)
+        logger.info("Skipping completed training for %s.", spec.label)
         return model_copy_path
 
-    checkpoint_path: Path | None = None
-    completed_timesteps = 0
-    if not args.force:
-        checkpoint_path = find_latest_checkpoint(checkpoint_directory)
-        if checkpoint_path is not None:
-            completed_timesteps = get_model_num_timesteps(checkpoint_path)
+    checkpoint_path = None if args.force else find_latest_checkpoint(checkpoint_dir)
+    completed_timesteps = 0 if checkpoint_path is None else get_model_num_timesteps(checkpoint_path)
 
-    if completed_timesteps >= args.timesteps:
-        logger.info(
-            "Training checkpoints for %s already reached %d/%d timesteps. Finalizing from checkpoint.",
-            spec.slug,
-            completed_timesteps,
-            args.timesteps,
+    if checkpoint_path is not None and completed_timesteps >= args.timesteps:
+        return finalize_training_from_checkpoint(
+            spec=spec,
+            status_path=status_path,
+            status=status,
+            checkpoint_path=checkpoint_path,
+            checkpoint_dir=checkpoint_dir,
+            model_copy_path=model_copy_path,
+            training_result_path=training_result_path,
+            args=args,
+            logger=logger,
         )
-        copied_model_path = copy_file_atomically(checkpoint_path, model_copy_path)
-        training_payload = {
-            "completed_at": now_utc_iso(),
-            "configuration": asdict(spec),
-            "device": device.description,
-            "training_directory": status["training"].get("training_directory", str(args.train_dir or "")),
-            "source_model_path": str(checkpoint_path),
-            "saved_model_path": str(copied_model_path),
-            "timesteps": args.timesteps,
-            "completed_timesteps": completed_timesteps,
-            "verbose": args.train_verbose,
-            "test_training": args.test_training,
-            "checkpoint_directory": str(checkpoint_directory),
-            "resumed_from_checkpoint": str(checkpoint_path),
-        }
-        atomic_write_json(training_result_path, training_payload)
-        status["training"] = {
-            "status": "completed",
-            "started_at": status["training"].get("started_at", now_utc_iso()),
-            "finished_at": now_utc_iso(),
-            "timesteps": args.timesteps,
-            "completed_timesteps": completed_timesteps,
-            "verbose": args.train_verbose,
-            "test_training": args.test_training,
-            "training_directory": status["training"].get("training_directory", str(args.train_dir or "")),
-            "source_model_path": str(checkpoint_path),
-            "saved_model_path": str(copied_model_path),
-            "checkpoint_directory": str(checkpoint_directory),
-            "resumed_from_checkpoint": str(checkpoint_path),
-            "result_path": str(training_result_path),
-        }
-        update_run_status(status_path, status, args.evaluation_modes)
-        return copied_model_path
 
     remaining_timesteps = args.timesteps - completed_timesteps
     if checkpoint_path is None:
-        logger.info("Training %s for %s timesteps.", spec.slug, args.timesteps)
+        logger.info("Training %s for %d timesteps.", spec.label, args.timesteps)
     else:
         logger.info(
-            "Resuming training for %s from checkpoint %s at %d/%d timesteps.",
-            spec.slug,
+            "Resuming %s from %s at %d/%d timesteps.",
+            spec.label,
             checkpoint_path.name,
             completed_timesteps,
             args.timesteps,
         )
-    append_jsonl(
-        event_log_path,
-        {
-            "timestamp": now_utc_iso(),
-            "event": "training_started",
-            "configuration": asdict(spec),
-            "timesteps": args.timesteps,
-            "remaining_timesteps": remaining_timesteps,
-            "resumed_from_checkpoint": str(checkpoint_path) if checkpoint_path is not None else None,
-        },
-    )
 
     status["training"] = {
         "status": "running",
@@ -672,54 +542,52 @@ def run_training_phase(
         "timesteps": args.timesteps,
         "completed_timesteps": completed_timesteps,
         "verbose": args.train_verbose,
-        "test_training": args.test_training,
-        "checkpoint_directory": str(checkpoint_directory),
+        "checkpoint_directory": str(checkpoint_dir),
         "checkpoint_frequency": args.checkpoint_frequency,
         "resumed_from_checkpoint": str(checkpoint_path) if checkpoint_path is not None else None,
     }
-    update_run_status(status_path, status, args.evaluation_modes)
+    save_rl_status(status_path, status)
 
     try:
-        heartbeat_callback = TrainingHeartbeatCallback(
+        heartbeat = TrainingHeartbeatCallback(
             spec=spec,
             target_timesteps=args.timesteps,
+            initial_timesteps=completed_timesteps,
             status=status,
             status_path=status_path,
-            evaluation_modes=args.evaluation_modes,
-            event_log_path=event_log_path,
             logger=logger,
             log_frequency=args.checkpoint_frequency,
         )
         with working_directory(run_dir):
             training_result = run_rl_training(
                 device=device,
-                figure_of_merit=spec.figure_of_merit,
+                figure_of_merit=FIGURE_OF_MERIT,
                 mdp=spec.mdp,
                 timesteps=remaining_timesteps,
                 verbose=args.train_verbose,
                 test=args.test_training,
                 path_training_circuits=args.train_dir,
-                checkpoint_directory=checkpoint_directory,
+                checkpoint_directory=checkpoint_dir,
                 checkpoint_frequency=args.checkpoint_frequency,
                 resume_from_checkpoint=checkpoint_path,
-                callback=heartbeat_callback,
+                callback=heartbeat,
             )
 
         copied_model_path = copy_file_atomically(training_result.model_path, model_copy_path)
         training_payload = {
             "completed_at": now_utc_iso(),
-            "configuration": asdict(spec),
-            "device": device.description,
-            "training_directory": str(training_result.training_directory),
-            "source_model_path": str(training_result.model_path),
-            "saved_model_path": str(copied_model_path),
+            "device": spec.device_name,
+            "figure_of_merit": FIGURE_OF_MERIT,
+            "mdp": spec.mdp,
             "timesteps": args.timesteps,
             "completed_timesteps": training_result.total_timesteps,
-            "verbose": args.train_verbose,
-            "test_training": args.test_training,
-            "checkpoint_directory": str(checkpoint_directory),
+            "saved_model_path": str(copied_model_path),
+            "source_model_path": str(training_result.model_path),
+            "checkpoint_directory": str(checkpoint_dir),
             "resumed_from_checkpoint": (
-                str(training_result.resumed_from_checkpoint) if training_result.resumed_from_checkpoint is not None else None
+                str(training_result.resumed_from_checkpoint)
+                if training_result.resumed_from_checkpoint is not None
+                else None
             ),
         }
         atomic_write_json(training_result_path, training_payload)
@@ -731,105 +599,93 @@ def run_training_phase(
             "timesteps": args.timesteps,
             "completed_timesteps": training_result.total_timesteps,
             "verbose": args.train_verbose,
-            "test_training": args.test_training,
-            "training_directory": str(training_result.training_directory),
-            "source_model_path": str(training_result.model_path),
-            "saved_model_path": str(copied_model_path),
-            "checkpoint_directory": str(checkpoint_directory),
+            "checkpoint_directory": str(checkpoint_dir),
             "checkpoint_frequency": args.checkpoint_frequency,
             "resumed_from_checkpoint": (
-                str(training_result.resumed_from_checkpoint) if training_result.resumed_from_checkpoint is not None else None
+                str(training_result.resumed_from_checkpoint)
+                if training_result.resumed_from_checkpoint is not None
+                else None
             ),
+            "saved_model_path": str(copied_model_path),
             "result_path": str(training_result_path),
         }
-        update_run_status(status_path, status, args.evaluation_modes)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "training_completed",
-                "configuration": asdict(spec),
-                "saved_model_path": str(copied_model_path),
-                "completed_timesteps": training_result.total_timesteps,
-            },
+        save_rl_status(status_path, status)
+    except KeyboardInterrupt:
+        latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+        latest_timesteps = (
+            completed_timesteps if latest_checkpoint is None else get_model_num_timesteps(latest_checkpoint)
         )
-        return copied_model_path
-    except Exception as exc:  # noqa: BLE001
+        status["training"] = {
+            "status": "interrupted",
+            "started_at": status["training"]["started_at"],
+            "finished_at": now_utc_iso(),
+            "timesteps": args.timesteps,
+            "completed_timesteps": latest_timesteps,
+            "checkpoint_directory": str(checkpoint_dir),
+            "checkpoint_frequency": args.checkpoint_frequency,
+            "resumed_from_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
+        }
+        save_rl_status(status_path, status)
+        raise
+    except Exception as exc:
+        latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
+        latest_timesteps = (
+            completed_timesteps if latest_checkpoint is None else get_model_num_timesteps(latest_checkpoint)
+        )
         status["training"] = {
             "status": "failed",
             "started_at": status["training"]["started_at"],
             "finished_at": now_utc_iso(),
             "timesteps": args.timesteps,
-            "completed_timesteps": status["training"].get("completed_timesteps", completed_timesteps),
-            "checkpoint_directory": str(checkpoint_directory),
+            "completed_timesteps": latest_timesteps,
+            "checkpoint_directory": str(checkpoint_dir),
             "checkpoint_frequency": args.checkpoint_frequency,
-            "resumed_from_checkpoint": str(checkpoint_path) if checkpoint_path is not None else None,
+            "resumed_from_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
-        update_run_status(status_path, status, args.evaluation_modes)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "training_failed",
-                "configuration": asdict(spec),
-                "error": str(exc),
-            },
-        )
+        save_rl_status(status_path, status)
         raise
+    else:
+        logger.info("Completed training for %s.", spec.label)
+        return copied_model_path
 
 
 def run_evaluation_phase(
     *,
-    spec: SweepRunSpec,
+    spec: RLRunSpec,
+    device: Target,
+    run_dir: Path,
+    model_path: Path,
     mode_name: str,
     deterministic: bool,
-    status_path: Path,
-    status: dict[str, Any],
-    run_dir: Path,
     args: argparse.Namespace,
-    device: Target,
-    model_path: Path,
     logger: logging.Logger,
-    event_log_path: Path,
 ) -> None:
-    """Execute or resume one evaluation phase."""
-    evaluation_result_path = run_dir / "evaluations" / f"{mode_name}.json"
+    """Evaluate one trained RL model in one rollout mode."""
+    status_path = run_dir / "status.json"
+    status = load_json(status_path, empty_rl_status(spec))
+    result_path = run_dir / f"evaluation_{mode_name}.json"
 
-    if (
-        not args.force
-        and status["evaluations"][mode_name]["status"] == "completed"
-        and evaluation_result_path.is_file()
-    ):
-        logger.info("Skipping completed %s evaluation for %s.", mode_name, spec.slug)
+    if not args.force and status["evaluations"][mode_name]["status"] == "completed" and result_path.is_file():
+        logger.info("Skipping completed %s evaluation for %s.", mode_name, spec.label)
         return
 
-    logger.info("Evaluating %s with %s rollout.", spec.slug, mode_name)
-    append_jsonl(
-        event_log_path,
-        {
-            "timestamp": now_utc_iso(),
-            "event": "evaluation_started",
-            "configuration": asdict(spec),
-            "evaluation_mode": mode_name,
-        },
-    )
-
+    logger.info("Evaluating %s with %s rollout.", spec.label, mode_name)
     status["evaluations"][mode_name] = {
         "status": "running",
         "started_at": now_utc_iso(),
-        "deterministic": deterministic,
         "seed": args.seed,
         "max_steps": args.max_steps,
+        "deterministic": deterministic,
     }
-    update_run_status(status_path, status, args.evaluation_modes)
+    save_rl_status(status_path, status)
 
     try:
-        evaluation_result = evaluate_trained_predictor(
+        result = evaluate_trained_predictor(
             model_path=model_path,
             device=device,
-            figure_of_merit=spec.figure_of_merit,
+            figure_of_merit=FIGURE_OF_MERIT,
             mdp=spec.mdp,
             path_training_circuits=args.train_dir,
             path_test_circuits=args.test_dir,
@@ -837,159 +693,114 @@ def run_evaluation_phase(
             deterministic=deterministic,
             seed=args.seed,
         )
-        evaluation_payload = {
-            "completed_at": now_utc_iso(),
-            "configuration": asdict(spec),
-            "device": device.description,
-            "evaluation_mode": mode_name,
-            "deterministic": deterministic,
-            "seed": args.seed,
-            "max_steps": args.max_steps,
-            "model_path": str(model_path),
-            "result": evaluation_result,
-        }
-        atomic_write_json(evaluation_result_path, evaluation_payload)
-
+        atomic_write_json(
+            result_path,
+            {
+                "completed_at": now_utc_iso(),
+                "device": spec.device_name,
+                "figure_of_merit": FIGURE_OF_MERIT,
+                "mdp": spec.mdp,
+                "evaluation_mode": mode_name,
+                "deterministic": deterministic,
+                "result": result,
+            },
+        )
         status["evaluations"][mode_name] = {
             "status": "completed",
             "started_at": status["evaluations"][mode_name]["started_at"],
             "finished_at": now_utc_iso(),
-            "deterministic": deterministic,
             "seed": args.seed,
             "max_steps": args.max_steps,
-            "result_path": str(evaluation_result_path),
-            "summary": summarize_predictor_evaluation(evaluation_result),
+            "deterministic": deterministic,
+            "result_path": str(result_path),
+            "summary": summarize_predictor_evaluation(result),
         }
-        update_run_status(status_path, status, args.evaluation_modes)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "evaluation_completed",
-                "configuration": asdict(spec),
-                "evaluation_mode": mode_name,
-                "result_path": str(evaluation_result_path),
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
+        save_rl_status(status_path, status)
+        logger.info("Completed %s evaluation for %s.", mode_name, spec.label)
+    except KeyboardInterrupt:
+        status["evaluations"][mode_name] = {
+            "status": "interrupted",
+            "started_at": status["evaluations"][mode_name]["started_at"],
+            "finished_at": now_utc_iso(),
+            "seed": args.seed,
+            "max_steps": args.max_steps,
+            "deterministic": deterministic,
+        }
+        save_rl_status(status_path, status)
+        raise
+    except Exception as exc:
         status["evaluations"][mode_name] = {
             "status": "failed",
             "started_at": status["evaluations"][mode_name]["started_at"],
             "finished_at": now_utc_iso(),
-            "deterministic": deterministic,
             "seed": args.seed,
             "max_steps": args.max_steps,
+            "deterministic": deterministic,
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
-        update_run_status(status_path, status, args.evaluation_modes)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "evaluation_failed",
-                "configuration": asdict(spec),
-                "evaluation_mode": mode_name,
-                "error": str(exc),
-            },
-        )
+        save_rl_status(status_path, status)
         raise
 
 
 def run_pipeline_phase(
     *,
-    figure_of_merit: str,
+    device_name: str,
     pipeline_name: str,
     output_dir: Path,
     args: argparse.Namespace,
     logger: logging.Logger,
-    event_log_path: Path,
 ) -> None:
-    """Execute or resume one baseline pipeline evaluation."""
-    pipeline_dir = build_pipeline_directory(output_dir, figure_of_merit, pipeline_name)
-    status_path = pipeline_dir / "status.json"
-    result_path = pipeline_dir / "result.json"
-    pipeline_dir.mkdir(parents=True, exist_ok=True)
-
-    status = load_status(status_path, empty_pipeline_status(figure_of_merit, pipeline_name))
-
-    if figure_of_merit not in PIPELINE_COMPATIBLE_FIGURES_OF_MERIT:
-        logger.info(
-            "Skipping pipeline baseline %s for %s because the figure of merit is not supported there.",
-            pipeline_name,
-            figure_of_merit,
-        )
-        status["result"] = {
-            "status": "skipped",
-            "finished_at": now_utc_iso(),
-            "reason": (
-                f"Pipeline baselines are only implemented for: "
-                f"{', '.join(sorted(PIPELINE_COMPATIBLE_FIGURES_OF_MERIT))}."
-            ),
-        }
-        update_pipeline_status(status_path, status)
-        return
+    """Evaluate one locked baseline pipeline for one device."""
+    status_path = pipeline_directory(output_dir, device_name, pipeline_name) / "status.json"
+    result_path = pipeline_directory(output_dir, device_name, pipeline_name) / "result.json"
+    status = load_json(status_path, empty_pipeline_status(device_name, pipeline_name))
 
     if not args.force and status["result"]["status"] == "completed" and result_path.is_file():
-        logger.info("Skipping completed pipeline baseline %s for %s.", pipeline_name, figure_of_merit)
+        logger.info("Skipping completed pipeline %s for %s.", pipeline_name, device_name)
         return
 
-    logger.info("Evaluating pipeline baseline %s for %s.", pipeline_name, figure_of_merit)
-    append_jsonl(
-        event_log_path,
-        {
-            "timestamp": now_utc_iso(),
-            "event": "pipeline_started",
-            "figure_of_merit": figure_of_merit,
-            "pipeline": pipeline_name,
-        },
-    )
-
-    status["result"] = {
-        "status": "running",
-        "started_at": now_utc_iso(),
-    }
-    update_pipeline_status(status_path, status)
+    logger.info("Evaluating pipeline %s for %s.", pipeline_name, device_name)
+    status["result"] = {"status": "running", "started_at": now_utc_iso()}
+    save_pipeline_status(status_path, status)
 
     try:
         results = run_selected_pipelines(
             pipeline_names=[pipeline_name],
-            device_name=args.device,
-            figure_of_merit_name=figure_of_merit,
+            device_name=device_name,
+            figure_of_merit_name=FIGURE_OF_MERIT,
             path_training_circuits=args.train_dir,
             path_test_circuits=args.test_dir,
         )
-        if len(results) != 1:
-            msg = f"Expected exactly one pipeline result for '{pipeline_name}', received {len(results)}."
-            raise RuntimeError(msg)
-
-        pipeline_result = results[0]
-        result_payload = {
-            "completed_at": now_utc_iso(),
-            "configuration": {"figure_of_merit": figure_of_merit, "pipeline": pipeline_name},
-            "result": pipeline_result,
-        }
-        atomic_write_json(result_path, result_payload)
-
+        result = get_single_pipeline_result(results, pipeline_name)
+        atomic_write_json(
+            result_path,
+            {
+                "completed_at": now_utc_iso(),
+                "device": device_name,
+                "figure_of_merit": FIGURE_OF_MERIT,
+                "pipeline": pipeline_name,
+                "result": result,
+            },
+        )
         status["result"] = {
             "status": "completed",
             "started_at": status["result"]["started_at"],
             "finished_at": now_utc_iso(),
             "result_path": str(result_path),
-            "summary": summarize_pipeline_evaluation(pipeline_result),
+            "summary": summarize_pipeline_evaluation(result),
         }
-        update_pipeline_status(status_path, status)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "pipeline_completed",
-                "figure_of_merit": figure_of_merit,
-                "pipeline": pipeline_name,
-                "result_path": str(result_path),
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
+        save_pipeline_status(status_path, status)
+        logger.info("Completed pipeline %s for %s.", pipeline_name, device_name)
+    except KeyboardInterrupt:
+        status["result"] = {
+            "status": "interrupted",
+            "started_at": status["result"]["started_at"],
+            "finished_at": now_utc_iso(),
+        }
+        save_pipeline_status(status_path, status)
+        raise
+    except Exception as exc:
         status["result"] = {
             "status": "failed",
             "started_at": status["result"]["started_at"],
@@ -997,499 +808,214 @@ def run_pipeline_phase(
             "error": str(exc),
             "traceback": traceback.format_exc(),
         }
-        update_pipeline_status(status_path, status)
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "pipeline_failed",
-                "figure_of_merit": figure_of_merit,
-                "pipeline": pipeline_name,
-                "error": str(exc),
-            },
-        )
+        save_pipeline_status(status_path, status)
         raise
 
 
-def write_global_progress(
-    *,
-    output_dir: Path,
-    specs: list[SweepRunSpec],
-    evaluation_modes: list[str],
-    pipeline_figures: list[str],
-    pipeline_names: list[str],
-) -> dict[str, Any]:
-    """Write a global progress snapshot."""
+def write_manifest(output_dir: Path, args: argparse.Namespace) -> None:
+    """Write the static sweep configuration."""
+    atomic_write_json(
+        output_dir / "manifest.json",
+        {
+            "created_at": now_utc_iso(),
+            "figure_of_merit": FIGURE_OF_MERIT,
+            "devices": args.devices,
+            "mdps": args.mdps,
+            "timesteps": args.timesteps,
+            "checkpoint_frequency": args.checkpoint_frequency,
+            "train_verbose": args.train_verbose,
+            "max_steps": args.max_steps,
+            "seed": args.seed,
+            "output_dir": str(args.output_dir),
+            "train_dir": args.train_dir,
+            "test_dir": args.test_dir,
+            "skip_pipelines": args.skip_pipelines,
+            "test_training": args.test_training,
+            "force": args.force,
+        },
+    )
+
+
+def write_progress(output_dir: Path, devices: list[str], mdps: list[str], include_pipelines: bool) -> dict[str, Any]:
+    """Compute and persist a simple progress summary."""
+    training_total = len(devices) * len(mdps)
+    evaluation_total = training_total * len(EVALUATION_MODES)
+    pipeline_total = len(devices) * len(DEFAULT_PIPELINES) if include_pipelines else 0
+
     training_completed = 0
     training_failed = 0
     evaluation_completed = 0
     evaluation_failed = 0
-    run_completed = 0
-    run_failed = 0
-
-    for spec in specs:
-        status_path = build_run_directory(output_dir, spec) / "status.json"
-        status = load_status(status_path, empty_run_status(spec, evaluation_modes))
-
-        if status["training"]["status"] == "completed":
-            training_completed += 1
-        elif status["training"]["status"] == "failed":
-            training_failed += 1
-
-        for mode_name in evaluation_modes:
-            phase_status = status["evaluations"][mode_name]["status"]
-            if phase_status == "completed":
-                evaluation_completed += 1
-            elif phase_status == "failed":
-                evaluation_failed += 1
-
-        if status["status"] == "completed":
-            run_completed += 1
-        elif status["status"] == "failed":
-            run_failed += 1
-
     pipeline_completed = 0
     pipeline_failed = 0
-    pipeline_skipped = 0
-    for figure_of_merit in pipeline_figures:
-        for pipeline_name in pipeline_names:
-            status_path = build_pipeline_directory(output_dir, figure_of_merit, pipeline_name) / "status.json"
-            status = load_status(status_path, empty_pipeline_status(figure_of_merit, pipeline_name))
-            phase_status = status["result"]["status"]
-            if phase_status == "completed":
-                pipeline_completed += 1
-            elif phase_status == "failed":
-                pipeline_failed += 1
-            elif phase_status == "skipped":
-                pipeline_skipped += 1
 
-    progress_payload = {
+    for device_name in devices:
+        for mdp in mdps:
+            status = load_json(
+                rl_run_directory(output_dir, RLRunSpec(device_name=device_name, mdp=mdp)) / "status.json",
+                empty_rl_status(RLRunSpec(device_name=device_name, mdp=mdp)),
+            )
+            if status["training"]["status"] == "completed":
+                training_completed += 1
+            elif status["training"]["status"] == "failed":
+                training_failed += 1
+
+            for mode_name, _ in EVALUATION_MODES:
+                phase_status = status["evaluations"][mode_name]["status"]
+                if phase_status == "completed":
+                    evaluation_completed += 1
+                elif phase_status == "failed":
+                    evaluation_failed += 1
+
+        if include_pipelines:
+            for pipeline_name in DEFAULT_PIPELINES:
+                status = load_json(
+                    pipeline_directory(output_dir, device_name, pipeline_name) / "status.json",
+                    empty_pipeline_status(device_name, pipeline_name),
+                )
+                phase_status = status["result"]["status"]
+                if phase_status == "completed":
+                    pipeline_completed += 1
+                elif phase_status == "failed":
+                    pipeline_failed += 1
+
+    progress = {
         "updated_at": now_utc_iso(),
-        "training_runs_total": len(specs),
-        "training_runs_completed": training_completed,
-        "training_runs_failed": training_failed,
-        "evaluation_runs_total": len(specs) * len(evaluation_modes),
-        "evaluation_runs_completed": evaluation_completed,
-        "evaluation_runs_failed": evaluation_failed,
-        "rl_runs_completed": run_completed,
-        "rl_runs_failed": run_failed,
-        "pipeline_runs_total": len(pipeline_figures) * len(pipeline_names),
-        "pipeline_runs_completed": pipeline_completed,
-        "pipeline_runs_failed": pipeline_failed,
-        "pipeline_runs_skipped": pipeline_skipped,
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "training": {
+            "completed": training_completed,
+            "failed": training_failed,
+            "total": training_total,
+        },
+        "evaluations": {
+            "completed": evaluation_completed,
+            "failed": evaluation_failed,
+            "total": evaluation_total,
+        },
+        "pipelines": {
+            "completed": pipeline_completed,
+            "failed": pipeline_failed,
+            "total": pipeline_total,
+        },
     }
-    atomic_write_json(output_dir / "progress.json", progress_payload)
-    return progress_payload
+    atomic_write_json(output_dir / "progress.json", progress)
+    return progress
 
 
-def log_progress_snapshot(logger: logging.Logger, progress_payload: dict[str, Any]) -> None:
-    """Emit a concise progress line to stdout/stderr."""
+def log_progress(logger: logging.Logger, progress: dict[str, Any]) -> None:
+    """Log a compact progress summary."""
     logger.info(
-        (
-            "Progress: training %s/%s completed, evaluations %s/%s completed, "
-            "pipeline baselines %s/%s completed, failed rl runs=%s, failed evaluations=%s, failed pipelines=%s."
-        ),
-        progress_payload["training_runs_completed"],
-        progress_payload["training_runs_total"],
-        progress_payload["evaluation_runs_completed"],
-        progress_payload["evaluation_runs_total"],
-        progress_payload["pipeline_runs_completed"],
-        progress_payload["pipeline_runs_total"],
-        progress_payload["rl_runs_failed"],
-        progress_payload["evaluation_runs_failed"],
-        progress_payload["pipeline_runs_failed"],
+        "Progress: training %d/%d, evaluations %d/%d, pipelines %d/%d.",
+        progress["training"]["completed"],
+        progress["training"]["total"],
+        progress["evaluations"]["completed"],
+        progress["evaluations"]["total"],
+        progress["pipelines"]["completed"],
+        progress["pipelines"]["total"],
     )
 
 
-def write_summary_csv(
-    *,
-    output_dir: Path,
-    specs: list[SweepRunSpec],
-    evaluation_modes: list[str],
-    pipeline_figures: list[str],
-    pipeline_names: list[str],
-) -> None:
-    """Write a flat CSV summary over completed and partial runs."""
-    rows: list[dict[str, Any]] = []
-
-    for spec in specs:
-        status_path = build_run_directory(output_dir, spec) / "status.json"
-        status = load_status(status_path, empty_run_status(spec, evaluation_modes))
-        training = status["training"]
-
-        for mode_name in evaluation_modes:
-            evaluation = status["evaluations"][mode_name]
-            summary = evaluation.get("summary", {})
-            average_metrics = summary.get("average_metrics", {})
-            action_effectiveness = summary.get("action_effectiveness", {})
-            feature_importance = summary.get("feature_importance", {})
-            rows.append(
-                {
-                    "run_type": "rl",
-                    "figure_of_merit": spec.figure_of_merit,
-                    "mdp": spec.mdp,
-                    "evaluation_mode": mode_name,
-                    "pipeline": "",
-                    "run_status": status["status"],
-                    "training_status": training["status"],
-                    "evaluation_status": evaluation["status"],
-                    "saved_model_path": training.get("saved_model_path", ""),
-                    "result_path": evaluation.get("result_path", ""),
-                    "evaluated_circuits": summary.get("evaluated_circuits", ""),
-                    "average_figure_of_merit_value": summary.get("average_figure_of_merit_value", ""),
-                    "average_expected_fidelity": average_metrics.get("expected_fidelity", ""),
-                    "average_estimated_success_probability": average_metrics.get(
-                        "estimated_success_probability", ""
-                    ),
-                    "average_depth": average_metrics.get("depth", ""),
-                    "average_size": average_metrics.get("size", ""),
-                    "overall_effectiveness_ratio": action_effectiveness.get("overall_effectiveness_ratio", ""),
-                    "average_original_feature_importance": feature_importance.get(
-                        "average_original_feature_importance", ""
-                    ),
-                    "average_gate_count_feature_importance": feature_importance.get(
-                        "average_gate_count_feature_importance", ""
-                    ),
-                }
-            )
-
-    for figure_of_merit in pipeline_figures:
-        for pipeline_name in pipeline_names:
-            status_path = build_pipeline_directory(output_dir, figure_of_merit, pipeline_name) / "status.json"
-            status = load_status(status_path, empty_pipeline_status(figure_of_merit, pipeline_name))
-            summary = status["result"].get("summary", {})
-            average_metrics = summary.get("average_metrics", {})
-            action_effectiveness = summary.get("action_effectiveness", {})
-            rows.append(
-                {
-                    "run_type": "pipeline",
-                    "figure_of_merit": figure_of_merit,
-                    "mdp": "",
-                    "evaluation_mode": "",
-                    "pipeline": pipeline_name,
-                    "run_status": status["status"],
-                    "training_status": "",
-                    "evaluation_status": status["result"]["status"],
-                    "saved_model_path": "",
-                    "result_path": status["result"].get("result_path", ""),
-                    "evaluated_circuits": summary.get("evaluated_circuits", ""),
-                    "average_figure_of_merit_value": summary.get("average_figure_of_merit_value", ""),
-                    "average_expected_fidelity": average_metrics.get("expected_fidelity", ""),
-                    "average_estimated_success_probability": average_metrics.get(
-                        "estimated_success_probability", ""
-                    ),
-                    "average_depth": average_metrics.get("depth", ""),
-                    "average_size": average_metrics.get("size", ""),
-                    "overall_effectiveness_ratio": action_effectiveness.get("overall_effectiveness_ratio", ""),
-                    "average_original_feature_importance": "",
-                    "average_gate_count_feature_importance": "",
-                }
-            )
-
-    summary_path = output_dir / "summary.csv"
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_type",
-        "figure_of_merit",
-        "mdp",
-        "evaluation_mode",
-        "pipeline",
-        "run_status",
-        "training_status",
-        "evaluation_status",
-        "saved_model_path",
-        "result_path",
-        "evaluated_circuits",
-        "average_figure_of_merit_value",
-        "average_expected_fidelity",
-        "average_estimated_success_probability",
-        "average_depth",
-        "average_size",
-        "overall_effectiveness_ratio",
-        "average_original_feature_importance",
-        "average_gate_count_feature_importance",
-    ]
-    with summary_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def write_manifest(
-    *,
-    output_dir: Path,
-    args: argparse.Namespace,
-    figures_of_merit: list[str],
-    specs: list[SweepRunSpec],
-) -> None:
-    """Write a static manifest for the planned sweep."""
-    manifest_payload = {
-        "created_at": now_utc_iso(),
-        "device": args.device,
-        "figures_of_merit": figures_of_merit,
-        "mdps": args.mdps,
-        "evaluation_modes": args.evaluation_modes,
-        "pipelines": args.pipelines,
-        "timesteps": args.timesteps,
-        "checkpoint_frequency": args.checkpoint_frequency,
-        "train_verbose": args.train_verbose,
-        "max_steps": args.max_steps,
-        "seed": args.seed,
-        "train_dir": args.train_dir,
-        "test_dir": args.test_dir,
-        "output_dir": output_dir,
-        "test_training": args.test_training,
-        "force": args.force,
-        "python_version": platform.python_version(),
-        "hostname": socket.gethostname(),
-        "platform": platform.platform(),
-        "argv": sys.argv,
-        "planned_rl_runs": [asdict(spec) for spec in specs],
-    }
-    atomic_write_json(output_dir / "manifest.json", manifest_payload)
-
-
-def print_plan(
-    *,
-    output_dir: Path,
-    figures_of_merit: list[str],
-    specs: list[SweepRunSpec],
-    args: argparse.Namespace,
-) -> None:
-    """Print the planned sweep to stdout."""
-    print(f"Output directory: {output_dir}")
-    print(f"Device: {args.device}")
-    print(f"Figures of merit: {', '.join(figures_of_merit)}")
+def print_plan(args: argparse.Namespace) -> None:
+    """Print the planned sweep and exit."""
+    specs = [RLRunSpec(device_name=device_name, mdp=mdp) for device_name in args.devices for mdp in args.mdps]
+    print(f"Figure of merit: {FIGURE_OF_MERIT}")
+    print(f"Devices: {', '.join(args.devices)}")
     print(f"MDPs: {', '.join(args.mdps)}")
-    print(f"Evaluation modes: {', '.join(args.evaluation_modes)}")
-    print(f"Pipelines: {', '.join(args.pipelines) if args.pipelines else 'none'}")
-    print(f"Training timesteps per RL configuration: {args.timesteps}")
+    print(f"Timesteps: {args.timesteps}")
     print(f"Checkpoint frequency: {args.checkpoint_frequency}")
+    print(f"Output directory: {args.output_dir}")
+    print(f"Pipelines: {'disabled' if args.skip_pipelines else ', '.join(DEFAULT_PIPELINES)}")
     print(f"Planned RL runs: {len(specs)}")
     for index, spec in enumerate(specs, start=1):
-        print(f"  [{index:02d}] {spec.slug}")
+        print(f"  [{index:02d}] {spec.label}")
 
 
 def main() -> None:
-    """Run the full sweep."""
+    """Run the full ESP sweep."""
     args = parse_args()
-    device = get_device(args.device)
-    figures_of_merit = resolve_figures_of_merit(device, args.figures_of_merit)
-    specs = build_run_specs(figures_of_merit, args.mdps)
-    output_dir = args.output_dir or default_output_directory(args.device, args.name)
+    args.output_dir = args.output_dir.resolve()
 
     if args.dry_run:
-        print_plan(output_dir=output_dir, figures_of_merit=figures_of_merit, specs=specs, args=args)
+        print_plan(args)
         return
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger = configure_logging(output_dir)
-    event_log_path = output_dir / "events.jsonl"
+    install_signal_handlers()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    logger = configure_logging(args.output_dir)
+    write_manifest(args.output_dir, args)
 
-    write_manifest(output_dir=output_dir, args=args, figures_of_merit=figures_of_merit, specs=specs)
-    append_jsonl(
-        event_log_path,
-        {
-            "timestamp": now_utc_iso(),
-            "event": "sweep_started",
-            "device": args.device,
-            "figures_of_merit": figures_of_merit,
-            "mdps": args.mdps,
-            "evaluation_modes": args.evaluation_modes,
-            "pipelines": args.pipelines,
-            "timesteps": args.timesteps,
-            "output_dir": str(output_dir),
-        },
-    )
-    logger.info(
-        "Starting RL sweep for device=%s with %d training configurations and %d evaluation phases.",
-        args.device,
-        len(specs),
-        len(specs) * len(args.evaluation_modes),
-    )
+    logger.info("Starting ESP RL sweep.")
+    logger.info("Devices: %s", ", ".join(args.devices))
+    logger.info("MDPs: %s", ", ".join(args.mdps))
+    logger.info("Output directory: %s", args.output_dir)
+
+    include_pipelines = not args.skip_pipelines
+
     try:
-        for index, spec in enumerate(specs, start=1):
-            run_dir = build_run_directory(output_dir, spec)
-            run_dir.mkdir(parents=True, exist_ok=True)
+        for device_name in args.devices:
+            device = resolve_device(device_name)
+            logger.info("Processing device %s.", device_name)
 
-            config_payload = {
-                "configuration": asdict(spec),
-                "device": args.device,
-                "timesteps": args.timesteps,
-                "checkpoint_frequency": args.checkpoint_frequency,
-                "train_verbose": args.train_verbose,
-                "max_steps": args.max_steps,
-                "seed": args.seed,
-                "train_dir": args.train_dir,
-                "test_dir": args.test_dir,
-                "evaluation_modes": args.evaluation_modes,
-                "output_directory": run_dir,
-            }
-            atomic_write_json(run_dir / "config.json", config_payload)
+            for mdp in args.mdps:
+                spec = RLRunSpec(device_name=device_name, mdp=mdp)
+                run_dir = rl_run_directory(args.output_dir, spec)
+                run_dir.mkdir(parents=True, exist_ok=True)
 
-            status_path = run_dir / "status.json"
-            status = load_status(status_path, empty_run_status(spec, args.evaluation_modes))
-            update_run_status(status_path, status, args.evaluation_modes)
-
-            logger.info("[%d/%d] Processing %s.", index, len(specs), spec.slug)
-            try:
-                model_path = run_training_phase(
-                    spec=spec,
-                    status_path=status_path,
-                    status=status,
-                    run_dir=run_dir,
-                    args=args,
-                    device=device,
-                    logger=logger,
-                    event_log_path=event_log_path,
-                )
-
-                for mode_name, deterministic in EVALUATION_MODES.items():
-                    if mode_name not in args.evaluation_modes:
-                        continue
-                    try:
-                        run_evaluation_phase(
-                            spec=spec,
-                            mode_name=mode_name,
-                            deterministic=deterministic,
-                            status_path=status_path,
-                            status=status,
-                            run_dir=run_dir,
-                            args=args,
-                            device=device,
-                            model_path=model_path,
-                            logger=logger,
-                            event_log_path=event_log_path,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.exception(
-                            "Evaluation mode %s for %s failed: %s",
-                            mode_name,
-                            spec.slug,
-                            exc,
-                        )
-                        if args.fail_fast:
-                            raise
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Run %s failed: %s", spec.slug, exc)
-                if args.fail_fast:
-                    raise
-            finally:
-                progress_payload = write_global_progress(
-                    output_dir=output_dir,
-                    specs=specs,
-                    evaluation_modes=args.evaluation_modes,
-                    pipeline_figures=figures_of_merit,
-                    pipeline_names=args.pipelines,
-                )
-                write_summary_csv(
-                    output_dir=output_dir,
-                    specs=specs,
-                    evaluation_modes=args.evaluation_modes,
-                    pipeline_figures=figures_of_merit,
-                    pipeline_names=args.pipelines,
-                )
-                log_progress_snapshot(logger, progress_payload)
-
-        for figure_of_merit in figures_of_merit:
-            for pipeline_name in args.pipelines:
                 try:
-                    run_pipeline_phase(
-                        figure_of_merit=figure_of_merit,
-                        pipeline_name=pipeline_name,
-                        output_dir=output_dir,
+                    model_path = run_training_phase(
+                        spec=spec,
+                        device=device,
+                        run_dir=run_dir,
                         args=args,
                         logger=logger,
-                        event_log_path=event_log_path,
                     )
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception(
-                        "Pipeline baseline %s for %s failed: %s",
-                        pipeline_name,
-                        figure_of_merit,
-                        exc,
-                    )
+                    for mode_name, deterministic in EVALUATION_MODES:
+                        run_evaluation_phase(
+                            spec=spec,
+                            device=device,
+                            run_dir=run_dir,
+                            model_path=model_path,
+                            mode_name=mode_name,
+                            deterministic=deterministic,
+                            args=args,
+                            logger=logger,
+                        )
+                except Exception:
+                    logger.exception("RL run failed for %s.", spec.label)
                     if args.fail_fast:
                         raise
                 finally:
-                    progress_payload = write_global_progress(
-                        output_dir=output_dir,
-                        specs=specs,
-                        evaluation_modes=args.evaluation_modes,
-                        pipeline_figures=figures_of_merit,
-                        pipeline_names=args.pipelines,
-                    )
-                    write_summary_csv(
-                        output_dir=output_dir,
-                        specs=specs,
-                        evaluation_modes=args.evaluation_modes,
-                        pipeline_figures=figures_of_merit,
-                        pipeline_names=args.pipelines,
-                    )
-                    log_progress_snapshot(logger, progress_payload)
+                    progress = write_progress(args.output_dir, args.devices, args.mdps, include_pipelines)
+                    log_progress(logger, progress)
+
+            if include_pipelines:
+                for pipeline_name in DEFAULT_PIPELINES:
+                    pipeline_run_dir = pipeline_directory(args.output_dir, device_name, pipeline_name)
+                    pipeline_run_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        run_pipeline_phase(
+                            device_name=device_name,
+                            pipeline_name=pipeline_name,
+                            output_dir=args.output_dir,
+                            args=args,
+                            logger=logger,
+                        )
+                    except Exception:
+                        logger.exception("Pipeline %s failed for %s.", pipeline_name, device_name)
+                        if args.fail_fast:
+                            raise
+                    finally:
+                        progress = write_progress(args.output_dir, args.devices, args.mdps, include_pipelines)
+                        log_progress(logger, progress)
     except KeyboardInterrupt:
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "sweep_interrupted",
-                "output_dir": str(output_dir),
-            },
-        )
-        progress_payload = write_global_progress(
-            output_dir=output_dir,
-            specs=specs,
-            evaluation_modes=args.evaluation_modes,
-            pipeline_figures=figures_of_merit,
-            pipeline_names=args.pipelines,
-        )
-        write_summary_csv(
-            output_dir=output_dir,
-            specs=specs,
-            evaluation_modes=args.evaluation_modes,
-            pipeline_figures=figures_of_merit,
-            pipeline_names=args.pipelines,
-        )
-        log_progress_snapshot(logger, progress_payload)
-        logger.error("Sweep interrupted. Partial results remain in %s", output_dir)
+        progress = write_progress(args.output_dir, args.devices, args.mdps, include_pipelines)
+        log_progress(logger, progress)
+        logger.exception("Sweep interrupted. Rerun the same command to continue from saved checkpoints and results.")
         raise
-    except Exception as exc:  # noqa: BLE001
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "sweep_failed",
-                "output_dir": str(output_dir),
-                "error": str(exc),
-            },
-        )
-        progress_payload = write_global_progress(
-            output_dir=output_dir,
-            specs=specs,
-            evaluation_modes=args.evaluation_modes,
-            pipeline_figures=figures_of_merit,
-            pipeline_names=args.pipelines,
-        )
-        write_summary_csv(
-            output_dir=output_dir,
-            specs=specs,
-            evaluation_modes=args.evaluation_modes,
-            pipeline_figures=figures_of_merit,
-            pipeline_names=args.pipelines,
-        )
-        log_progress_snapshot(logger, progress_payload)
-        logger.exception("Sweep failed. Partial results remain in %s", output_dir)
-        raise
-    else:
-        append_jsonl(
-            event_log_path,
-            {
-                "timestamp": now_utc_iso(),
-                "event": "sweep_completed",
-                "output_dir": str(output_dir),
-            },
-        )
-        logger.info("Sweep finished. Artifacts written to %s", output_dir)
+
+    progress = write_progress(args.output_dir, args.devices, args.mdps, include_pipelines)
+    log_progress(logger, progress)
+    logger.info("Sweep finished. Results are in %s", args.output_dir)
 
 
 if __name__ == "__main__":
