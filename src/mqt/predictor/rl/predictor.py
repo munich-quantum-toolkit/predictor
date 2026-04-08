@@ -25,6 +25,7 @@ from mqt.predictor.rl.predictorenv import PredictorEnv
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
+    from stable_baselines3.common.callbacks import BaseCallback
 
     from mqt.predictor.reward import figure_of_merit
 
@@ -93,13 +94,17 @@ class Predictor:
         timesteps: int = 1000,
         verbose: int = 2,
         test: bool = False,
-    ) -> None:
+        callback: BaseCallback | None = None,
+        resume_from: Path | None = None,
+    ) -> MaskablePPO:
         """Trains all models for the given reward functions and device.
 
         Arguments:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
+            callback: Optional SB3 callback used during training.
+            resume_from: Optional path to a previously saved PPO checkpoint.
         """
         if test:
             set_random_seed(0)  # for reproducibility
@@ -116,20 +121,35 @@ class Predictor:
             progress_bar = True
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
-        model = MaskablePPO(
-            MaskableMultiInputActorCriticPolicy,
-            self.env,
-            verbose=verbose,
-            tensorboard_log="./model_" + self.figure_of_merit + "_" + self.device_name,
-            gamma=0.98,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            n_epochs=n_epochs,
-        )
+        tensorboard_log = "./model_" + self.figure_of_merit + "_" + self.device_name
+        if resume_from is None:
+            model = MaskablePPO(
+                MaskableMultiInputActorCriticPolicy,
+                self.env,
+                verbose=verbose,
+                tensorboard_log=tensorboard_log,
+                gamma=0.98,
+                n_steps=n_steps,
+                batch_size=batch_size,
+                n_epochs=n_epochs,
+            )
+            reset_num_timesteps = True
+        else:
+            model = MaskablePPO.load(resume_from, env=self.env)
+            model.verbose = verbose
+            model.tensorboard_log = tensorboard_log
+            reset_num_timesteps = False
+
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
-        model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
+        model.learn(
+            total_timesteps=timesteps,
+            progress_bar=progress_bar,
+            callback=callback,
+            reset_num_timesteps=reset_num_timesteps,
+        )
         model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
+        return model
 
 
 def load_model(model_name: str) -> MaskablePPO:
