@@ -366,21 +366,21 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "BQSKitO2",
-        CompilationOrigin.BQSKIT,
-        PassType.OPT,
-        transpile_pass=lambda circuit: bqskit_compile(
-            circuit,
-            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=3,
-            seed=10,
-            num_workers=-1,
-        ),
-    )
-)
+#register_action(
+#    DeviceDependentAction(
+#        "BQSKitO2",
+#        CompilationOrigin.BQSKIT,
+#        PassType.OPT,
+#        transpile_pass=lambda circuit: bqskit_compile(
+#            circuit,
+#            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#            max_synthesis_size=3,
+#            seed=10,
+#            num_workers=-1,
+#        ),
+#    )
+#)
 
 register_action(
     DeviceDependentAction(
@@ -526,29 +526,29 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "BQSKitMapping",
-        CompilationOrigin.BQSKIT,
-        PassType.MAPPING,
-        transpile_pass=lambda device: (
-            lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(
-                    num_qudits=device.num_qubits,
-                    gate_set=get_bqskit_native_gates(device),
-                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-                ),
-                with_mapping=True,
-                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=3,
-                seed=10,
-                num_workers=-1,
-            )
-        ),
-    )
-)
+#register_action(
+#    DeviceDependentAction(
+#        "BQSKitMapping",
+#        CompilationOrigin.BQSKIT,
+#        PassType.MAPPING,
+#        transpile_pass=lambda device: (
+#            lambda bqskit_circuit: bqskit_compile(
+#                bqskit_circuit,
+#                model=MachineModel(
+#                    num_qudits=device.num_qubits,
+#                    gate_set=get_bqskit_native_gates(device),
+#                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
+#                ),
+#                with_mapping=True,
+#                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#                max_synthesis_size=3,
+#                seed=10,
+#                num_workers=-1,
+#            )
+#        ),
+#    )
+#)
 
 register_action(
     DeviceDependentAction(
@@ -561,24 +561,24 @@ register_action(
     )
 )
 
-register_action(
-    DeviceDependentAction(
-        "BQSKitSynthesis",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: (
-            lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=3,
-                seed=10,
-                num_workers=-1,
-            )
-        ),
-    )
-)
+#register_action(
+#    DeviceDependentAction(
+#        "BQSKitSynthesis",
+#        CompilationOrigin.BQSKIT,
+#        PassType.SYNTHESIS,
+#        transpile_pass=lambda device: (
+#            lambda bqskit_circuit: bqskit_compile(
+#                bqskit_circuit,
+#                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
+#                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
+#                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
+#                max_synthesis_size=3,
+#                seed=10,
+#                num_workers=-1,
+#            )
+#        ),
+#    )
+#)
 
 register_action(
     DeviceIndependentAction(
