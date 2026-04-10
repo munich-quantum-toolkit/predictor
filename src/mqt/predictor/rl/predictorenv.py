@@ -115,6 +115,11 @@ def _clear_circuit_layout(circuit: QuantumCircuit) -> QuantumCircuit:
     return circuit
 
 
+def _contains_operation_wider_than_two_qubits(circuit: QuantumCircuit) -> bool:
+    """Return whether the circuit contains any operation acting on more than two qubits."""
+    return any(len(item.qubits) > 2 for item in circuit.data)
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -549,6 +554,17 @@ class PredictorEnv(Env):
             action_mask = [
                 action_mask[i]
                 and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
+                for i in range(len(action_mask))
+            ]
+
+        if _contains_operation_wider_than_two_qubits(self.state):
+            # some TKET actions do not support gates wider than 2 qubits (only after synthesis)
+            action_mask = [
+                action_mask[i]
+                and not (
+                    self.action_set[i].origin == CompilationOrigin.TKET
+                    and (i in self.actions_layout_indices or i in self.actions_routing_indices)
+                )
                 for i in range(len(action_mask))
             ]
 
