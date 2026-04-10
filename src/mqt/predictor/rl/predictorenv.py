@@ -434,10 +434,10 @@ class PredictorEnv(Env):
                 self.reward_function,
             )
             return 0.0, "exact"
- 
+
         reward_layout = cast("TranspileLayout | Layout | None", getattr(qc, "_layout", None))
         if reward_layout is None:
-            # use the env layout if the circuit has no attached layout 
+            # use the env layout if the circuit has no attached layout
             # (e.g., if it's an intermediate state or a newly exported copy)
             reward_layout = self.layout
 
@@ -817,11 +817,9 @@ class PredictorEnv(Env):
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
             else:
                 qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
-
-                qiskit_mapping = {
-                    qc_tmp.qubits[i]: placement[list(placement.keys())[i]].index[0] for i in range(len(placement))
-                }
-                layout = Layout(qiskit_mapping)
+                layout = self._translate_tket_placement_to_qiskit_layout(qc_tmp, placement, action.name)
+                if layout is None:
+                    return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
                 pm = PassManager([
                     SetLayout(layout),
@@ -860,6 +858,57 @@ class PredictorEnv(Env):
             )
 
         return altered_qc
+
+    def _translate_tket_placement_to_qiskit_layout(
+        self,
+        qc_tmp: QuantumCircuit,
+        placement: dict[Any, Any],
+        action_name: str,
+    ) -> Layout | None:
+        """Translate a TKET placement map into a full Qiskit layout.
+
+        TKET placement passes may leave some logical qubits marked as ``unplaced``.
+        Assign those qubits to any remaining free hardware qubits so Qiskit's
+        layout application can proceed.
+        """
+        logical_to_physical: dict[int, int] = {}
+        unplaced_logical_indices: list[int] = []
+        used_physical_indices: set[int] = set()
+
+        for tket_qubit, target_node in sorted(placement.items(), key=lambda item: int(item[0].index[0])):
+            logical_index = int(tket_qubit.index[0])
+            reg_name = getattr(target_node, "reg_name", None)
+            node_index = getattr(target_node, "index", None)
+
+            if reg_name == "node" and node_index:
+                physical_index = int(node_index[0])
+                logical_to_physical[logical_index] = physical_index
+                used_physical_indices.add(physical_index)
+            else:
+                unplaced_logical_indices.append(logical_index)
+
+        remaining_physical_indices = [i for i in range(self.device.num_qubits) if i not in used_physical_indices]
+        if len(remaining_physical_indices) < len(unplaced_logical_indices):
+            logger.warning(
+                "Warning: Placement failed (%s): only %d free physical qubits for %d unplaced logical qubits. "
+                "Falling back to original circuit.",
+                action_name,
+                len(remaining_physical_indices),
+                len(unplaced_logical_indices),
+            )
+            return None
+
+        logical_to_physical.update(dict(zip(
+            sorted(unplaced_logical_indices),
+            remaining_physical_indices[: len(unplaced_logical_indices)],
+            strict=True,
+        )))
+
+        qiskit_mapping = {
+            qc_tmp.qubits[logical_index]: logical_to_physical[logical_index]
+            for logical_index in range(len(qc_tmp.qubits))
+        }
+        return Layout(qiskit_mapping)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         """Applies the given BQSKit action to the current state and returns the altered state.
