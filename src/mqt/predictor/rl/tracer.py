@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class TopologyEdge:
-    """Represents a topology edge between two qubits."""
+    """Represents a topology edge between two qubits.
+
+    Attributes:
+        control: The control qubit index.
+        target: The target qubit index.
+    """
 
     control: int
     target: int
@@ -35,7 +40,13 @@ class TopologyEdge:
 
 @dataclass
 class GateCalibration:
-    """Calibration data for a specific gate on a specific set of qubits."""
+    """Calibration data for a specific gate on a specific set of qubits.
+
+    Attributes:
+        qubits: The qubits that the calibration data applies to.
+        duration: The instructions execution duration (in seconds) on the specified set of qubits.
+        error: The average error rate for the instruction on the specified set of qubits.
+    """
 
     qubits: list[int]
     duration: float | None
@@ -44,7 +55,14 @@ class GateCalibration:
 
 @dataclass
 class DeviceMetadata:
-    """Metadata containing information about the target quantum device for compilation."""
+    """Metadata containing information about the target quantum device for compilation.
+
+    Attributes:
+        description: The name of the quantum device.
+        device_qubits: The number of qubits available on the device.
+        native_gates: A set of gates native to this device.
+        calibration_data: The calibration data for this device per native instruction.
+    """
 
     description: str
     device_qubits: int
@@ -74,6 +92,10 @@ class CompilationStep:
         routed: Whether the circuit has already been routed.
         is_terminal: A flag indicating if the compilation process has concluded.
         circuit_qasm: The structural representation of the circuit in OpenQASM 2.0 format.
+        program_communication: The program communication value for the current circuit.
+        entanglement_ratio: The entanglement ratio for the current circuit.
+        parallelism: The parallelism value for the current circuit.
+        liveness: The liveness value for the current circuit.
     """
 
     step_index: int
@@ -133,7 +155,14 @@ class CompilationTracer:
         figure_of_merit: str,
         mdp_policy: str,
     ) -> CompilationTracer:
-        """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
+        """Alternative constructor to build the tracer more conveniently from the environment's initial state.
+
+        Args:
+            device: The target device for which compilation is performed.
+            circuit_name: The name of the circuit being compiled.
+            figure_of_merit: The chosen figure of merit for this compilation.
+            mdp_policy: The MDP transition policy.
+        """
         device_meta = cls._extract_device_metadata(device)
         return cls(
             circuit_name=circuit_name, figure_of_merit=figure_of_merit, mdp_policy=mdp_policy, device=device_meta
