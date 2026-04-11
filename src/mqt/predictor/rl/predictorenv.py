@@ -867,47 +867,74 @@ class PredictorEnv(Env):
     ) -> Layout | None:
         """Translate a TKET placement map into a full Qiskit layout.
 
-        TKET placement passes may leave some logical qubits marked as ``unplaced``.
-        Assign those qubits to any remaining free hardware qubits so Qiskit's
-        layout application can proceed.
+        TKET identifies logical qubits by full register identity, not only by a
+        numeric index. Preserve that identity when translating the placement map
+        back to Qiskit so circuits with multiple quantum registers such as
+        ``eval[0]`` and ``q[0]`` are handled correctly. Logical qubits that are
+        left ``unplaced`` are assigned to remaining free hardware qubits.
         """
-        logical_to_physical: dict[int, int] = {}
-        unplaced_logical_indices: list[int] = []
+        qiskit_qubits_by_identity: dict[tuple[str, tuple[int, ...]], Any] = {}
+        for qiskit_qubit in qc_tmp.qubits:
+            bit_location = qc_tmp.find_bit(qiskit_qubit)
+            registers = bit_location.registers
+            if registers:
+                register, register_index = registers[0]
+                identity = (register.name, (register_index,))
+            else:
+                identity = ("q", (bit_location.index,))
+            qiskit_qubits_by_identity[identity] = qiskit_qubit
+
+        qiskit_mapping: dict[Any, int] = {}
+        unassigned_qiskit_qubits: list[Any] = []
         used_physical_indices: set[int] = set()
 
-        for tket_qubit, target_node in sorted(placement.items(), key=lambda item: int(item[0].index[0])):
-            logical_index = int(tket_qubit.index[0])
+        for tket_qubit, target_node in placement.items():
+            identity = (str(tket_qubit.reg_name), tuple(int(index) for index in tket_qubit.index))
+            qiskit_qubit = qiskit_qubits_by_identity.get(identity)
+            if qiskit_qubit is None:
+                logger.warning(
+                    "Warning: Placement failed (%s): unknown logical qubit %s. Falling back to original circuit.",
+                    action_name,
+                    tket_qubit,
+                )
+                return None
+
             reg_name = getattr(target_node, "reg_name", None)
             node_index = getattr(target_node, "index", None)
 
             if reg_name == "node" and node_index:
                 physical_index = int(node_index[0])
-                logical_to_physical[logical_index] = physical_index
+                qiskit_mapping[qiskit_qubit] = physical_index
                 used_physical_indices.add(physical_index)
             else:
-                unplaced_logical_indices.append(logical_index)
+                unassigned_qiskit_qubits.append(qiskit_qubit)
+
+        # Any Qiskit qubit that was not explicitly assigned by TKET still needs a
+        # physical location before ApplyLayout can succeed.
+        for qiskit_qubit in qc_tmp.qubits:
+            if qiskit_qubit not in qiskit_mapping and qiskit_qubit not in unassigned_qiskit_qubits:
+                unassigned_qiskit_qubits.append(qiskit_qubit)
 
         remaining_physical_indices = [i for i in range(self.device.num_qubits) if i not in used_physical_indices]
-        if len(remaining_physical_indices) < len(unplaced_logical_indices):
+        if len(remaining_physical_indices) < len(unassigned_qiskit_qubits):
             logger.warning(
-                "Warning: Placement failed (%s): only %d free physical qubits for %d unplaced logical qubits. "
+                "Warning: Placement failed (%s): only %d free physical qubits for %d unassigned logical qubits. "
                 "Falling back to original circuit.",
                 action_name,
                 len(remaining_physical_indices),
-                len(unplaced_logical_indices),
+                len(unassigned_qiskit_qubits),
             )
             return None
 
-        logical_to_physical.update(dict(zip(
-            sorted(unplaced_logical_indices),
-            remaining_physical_indices[: len(unplaced_logical_indices)],
-            strict=True,
-        )))
-
-        qiskit_mapping = {
-            qc_tmp.qubits[logical_index]: logical_to_physical[logical_index]
-            for logical_index in range(len(qc_tmp.qubits))
-        }
+        qiskit_mapping.update(
+            dict(
+                zip(
+                    unassigned_qiskit_qubits,
+                    remaining_physical_indices[: len(unassigned_qiskit_qubits)],
+                    strict=True,
+                )
+            )
+        )
         return Layout(qiskit_mapping)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
