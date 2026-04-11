@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -111,6 +112,8 @@ class CompilationTracer:
         figure_of_merit: The chosen figure of merit for this compilation.
         mdp_policy: The MDP transition policy.
         device: The target device metadata.
+        schema_version: The version of this schema. Upgrade in case of schema changes to maintain compatibility with tracer frontend.
+        timestamp: A timestamp indicating start of the compilation.
         steps: An ordered list of CompilationStep snapshots.
     """
 
@@ -118,6 +121,8 @@ class CompilationTracer:
     figure_of_merit: str
     mdp_policy: str
     device: DeviceMetadata
+    schema_version: str = "1.0.0"
+    timestamp: float = field(default_factory=time.time)
     steps: list[CompilationStep] = field(default_factory=list)
 
     @classmethod
