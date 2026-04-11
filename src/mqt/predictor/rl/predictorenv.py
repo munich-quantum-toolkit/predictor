@@ -278,11 +278,25 @@ class PredictorEnv(Env):
 
         if self.tracer is not None and self.tracer_output_path is not None:
             synthesized, laid_out, routed = self._get_mdp_state()
+
+            if self.reward_function == "expected_fidelity":
+                fidelity_val = fom_value
+                fidelity_kind = fom_kind
+            else:
+                fidelity_val = (
+                    expected_fidelity(qc=self.state, device=self.device)
+                    if (synthesized and routed)
+                    else approx_expected_fidelity(qc=self.state, device=self.device, error_rates=self.err_by_gate)
+                )
+                fidelity_kind = "exact" if (synthesized and routed) else "approx"
+
             self.tracer.record_step(
                 step_index=step_index,
                 action=action_name,
                 reward=reward_val,
                 current_qc=self.state,
+                expected_fidelity=fidelity_val,
+                fidelity_kind=fidelity_kind,
                 fom_value=fom_value,
                 fom_kind=fom_kind,
                 features=feature_vector,
@@ -536,24 +550,25 @@ class PredictorEnv(Env):
         obs = create_feature_dict(self.state)
         self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
-        if self.tracer_output_path is not None:
-            synthesized, laid_out, routed = self._get_mdp_state()
+        logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
+        if self.tracer_output_path is not None:
             self.tracer = CompilationTracer.from_initial_state(
                 device=self.device,
-                input_circuit=self.state,
                 circuit_name=self.current_circuit_name,
                 figure_of_merit=self.reward_function,
                 mdp_policy=self.mdp,
-                features=obs,
-                initial_fom=self.prev_reward,
-                fom_kind=self.prev_reward_kind,
-                synthesized=synthesized,
-                laid_out=laid_out,
-                routed=routed,
             )
 
-        logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
+            self._log_step_reward(
+                step_index=0,
+                action_name="Baseline",
+                reward_val=0.0,
+                fom_value=self.prev_reward,
+                fom_kind=self.prev_reward_kind,
+                feature_vector=obs,
+                done=False,
+            )
 
         return obs, {}
 

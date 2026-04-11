@@ -64,6 +64,8 @@ class CompilationStep:
         num_qubits: The number of qubits in the circuit.
         gates_per_operation: The number of gates per operation occurring in the circuit.
         total_gates: The total number of gates included in the circuit.
+        expected_fidelity: The expected fidelity of the circuit.
+        fidelity_kind: The kind of fidelity value: 'exact' or 'approx'.
         fom_value: The figure of merit value for this compilation pass.
         fom_kind: The kind of fom value: 'exact' or 'approx'.
         synthesized: Whether the circuit has already been synthesized.
@@ -80,6 +82,8 @@ class CompilationStep:
     num_qubits: int
     gates_per_operation: dict[str, int]
     total_gates: int
+    expected_fidelity: float
+    fidelity_kind: str
     fom_value: float
     fom_kind: str
     synthesized: bool
@@ -120,38 +124,15 @@ class CompilationTracer:
     def from_initial_state(
         cls,
         device: Target,
-        input_circuit: QuantumCircuit,
         circuit_name: str,
         figure_of_merit: str,
         mdp_policy: str,
-        features: dict[str, int | NDArray[np.float32]],
-        initial_fom: float,
-        fom_kind: str,
-        synthesized: bool,
-        laid_out: bool,
-        routed: bool,
     ) -> CompilationTracer:
         """Alternative constructor to build the tracer more conveniently from the environment's initial state."""
         device_meta = cls._extract_device_metadata(device)
-        tracer = cls(
+        return cls(
             circuit_name=circuit_name, figure_of_merit=figure_of_merit, mdp_policy=mdp_policy, device=device_meta
         )
-
-        tracer.record_step(
-            step_index=0,
-            action="Baseline",
-            reward=0.0,
-            current_qc=input_circuit,
-            fom_value=initial_fom,
-            fom_kind=fom_kind,
-            features=features,
-            synthesized=synthesized,
-            laid_out=laid_out,
-            routed=routed,
-            done=False,
-        )
-
-        return tracer
 
     def record_step(
         self,
@@ -159,6 +140,8 @@ class CompilationTracer:
         action: str,
         reward: float,
         current_qc: QuantumCircuit,
+        expected_fidelity: float,
+        fidelity_kind: str,
         fom_value: float,
         fom_kind: str,
         features: dict[str, int | NDArray[np.float32]],
@@ -174,6 +157,8 @@ class CompilationTracer:
             action: The name of the compilation pass that was just applied.
             reward: The calculated reward for the applied pass.
             current_qc: The current Qiskit QuantumCircuit object after the pass.
+            expected_fidelity: The expected fidelity of the circuit after applying the pass.
+            fidelity_kind: The kind of fidelity value: 'exact' or 'approx'.
             fom_value: The figure of merit value for the compilation pass.
             fom_kind: The kind of fom value: 'exact' or 'approx'.
             features: The quantum circuit's feature vector used by the RL agent.
@@ -197,6 +182,8 @@ class CompilationTracer:
             num_qubits=current_qc.num_qubits,
             gates_per_operation=present_ops_dict,
             total_gates=total_gates,
+            expected_fidelity=round(expected_fidelity, 6),
+            fidelity_kind=fidelity_kind,
             fom_value=round(fom_value, 6),
             fom_kind=fom_kind,
             is_terminal=done,
