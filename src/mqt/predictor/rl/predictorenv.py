@@ -96,6 +96,35 @@ from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_
 logger = logging.getLogger("mqt-predictor")
 
 
+def _layout_output_qubits(layout: TranspileLayout) -> list[Any]:
+    """Return the materialized output wires tracked by a TranspileLayout."""
+    output_qubits = layout._output_qubit_list  # noqa: SLF001
+    assert output_qubits is not None
+    return list(output_qubits)
+
+
+def _layout_input_qubit_count(layout: TranspileLayout) -> int:
+    """Return the number of logical input qubits tracked by a TranspileLayout."""
+    input_qubit_count = layout._input_qubit_count  # noqa: SLF001
+    assert input_qubit_count is not None
+    return input_qubit_count
+
+
+def _clear_circuit_layout(circuit: QuantumCircuit) -> QuantumCircuit:
+    """Drop any circuit-attached layout metadata.
+
+    The env keeps ``self.layout`` as the canonical source of layout state and only
+    re-attaches it when exporting a circuit to external callers.
+    """
+    circuit._layout = None  # noqa: SLF001
+    return circuit
+
+
+def _contains_operation_wider_than_two_qubits(circuit: QuantumCircuit) -> bool:
+    """Return whether the circuit contains any operation acting on more than two qubits."""
+    return any(len(item.qubits) > 2 for item in circuit.data)
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -113,7 +142,11 @@ class PredictorEnv(Env):
 
         Arguments:
             device: The target device to be used for compilation.
-            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline (synthesis -> (layout->routing) / mapping), while "flexible" allows for a cyclical approach where actions can be interleaved or reversed.
+            mdp: The MDP transition policy. "paper" (default) enforces a strict, linear pipeline
+                (synthesis -> (layout->routing) / mapping), "flexible" allows for a cyclical approach
+                where actions can be interleaved or reversed, "thesis" uses the custom action-validity
+                rules defined in ``determine_valid_actions_for_state``, and "hybrid" is flexible before
+                layout but keeps layout/routing locked once they have been established.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
@@ -230,25 +263,40 @@ class PredictorEnv(Env):
         self.tbar: float | None = None
         self.dev_avgs_cached = False
         self.state: QuantumCircuit = QuantumCircuit()
+        self.compilation_state_flags: tuple[bool, bool, bool] | None = None
 
         self.error_occurred = False
 
     def _apply_and_update(self, action: int) -> QuantumCircuit | None:
-        """Apply an action, normalize the circuit, and update internal state."""
+        """Apply an action and update the canonical circuit state."""
         altered_qc = self.apply_action(action)
         if altered_qc is None:
             return None
 
+        altered_qc = _clear_circuit_layout(altered_qc)
+
         self.state: QuantumCircuit = altered_qc
+        self.compilation_state_flags = None
 
         self.num_steps += 1
-        self.state._layout = self.layout  # noqa: SLF001
         self.valid_actions = self.determine_valid_actions_for_state()
         if not self.valid_actions:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
         return altered_qc
+
+    def _create_observation(self, qc: QuantumCircuit | None = None) -> dict[str, Any]:
+        """Create an observation directly from the actual circuit state."""
+        circuit = self.state if qc is None else qc
+        return create_feature_dict(circuit)
+
+    def export_circuit(self, qc: QuantumCircuit | None = None) -> QuantumCircuit:
+        """Return a copy of a circuit with the current env layout attached."""
+        circuit = self.state if qc is None else qc
+        exported = circuit.copy()
+        exported._layout = self.layout  # noqa: SLF001
+        return exported
 
     def _log_step_reward(
         self,
@@ -277,7 +325,7 @@ class PredictorEnv(Env):
             )
 
         if self.tracer is not None and self.tracer_output_path is not None:
-            synthesized, laid_out, routed = self._get_mdp_state()
+            synthesized, laid_out, routed = self._get_compilation_state_flags()
 
             if self.reward_function == "expected_fidelity":
                 fidelity_val = fom_value
@@ -315,6 +363,23 @@ class PredictorEnv(Env):
                 self.tracer.save_to_json(out_path)
                 logger.info("✅TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
 
+    def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        if self.compilation_state_flags is not None:
+            return self.compilation_state_flags
+
+        synthesized = self.is_circuit_synthesized(self.state)
+        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        )
+        self.compilation_state_flags = (synthesized, laid_out, routed)
+        return self.compilation_state_flags
+
+    def get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
+        """Return `(synthesized, laid_out, routed)` for the current circuit state."""
+        return self._get_compilation_state_flags()
+
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
@@ -334,10 +399,11 @@ class PredictorEnv(Env):
         step_index = self.num_steps + 1
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
+        previous_state_flags = self._get_compilation_state_flags()
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
-            obs = create_feature_dict(self.state)
+            obs = self._create_observation()
             self._log_step_reward(
                 step_index=step_index,
                 action_name=action_name,
@@ -354,7 +420,7 @@ class PredictorEnv(Env):
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
-            obs = create_feature_dict(self.state)
+            obs = self._create_observation()
             self._log_step_reward(
                 step_index=step_index,
                 action_name=action_name,
@@ -371,23 +437,26 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
+            state_changed = any(
+                not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
+            )
 
-            if reward_kind_changed:
+            if reward_kind_changed or state_changed:
                 delta_reward = 0.0
 
-            reward_val = (
-                self.reward_scale * delta_reward
-                if not isclose(delta_reward, 0.0, abs_tol=1e-12)
-                else 0.0
-                if reward_kind_changed
-                else self.no_effect_penalty
-            )
+            if not isclose(delta_reward, 0.0, abs_tol=1e-12):
+                reward_val = self.reward_scale * delta_reward
+            elif reward_kind_changed or state_changed:
+                reward_val = 0.0
+            else:
+                reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
-        obs = create_feature_dict(self.state)
+        obs = self._create_observation()
         self._log_step_reward(
             step_index=step_index,
             action_name=action_name,
@@ -447,6 +516,12 @@ class PredictorEnv(Env):
             )
             return 0.0, "exact"
 
+        reward_layout = cast("TranspileLayout | Layout | None", getattr(qc, "_layout", None))
+        if reward_layout is None:
+            # use the env layout if the circuit has no attached layout
+            # (e.g., if it's an intermediate state or a newly exported copy)
+            reward_layout = self.layout
+
         # Dual-path evaluation (exact vs. approximate) for EF / ESP.
         if mode == "exact":
             kind = "exact"
@@ -454,15 +529,19 @@ class PredictorEnv(Env):
             kind = "approx"
         else:  # "auto"
             only_native = self.is_circuit_synthesized(qc)
-            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map()))
+            laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
+            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
 
-            kind = "exact" if (only_native and mapped) else "approx"
+            kind = "exact" if (only_native and laid_out and mapped) else "approx"
 
         if kind == "exact":
+            exact_qc = (
+                qc if reward_layout is None or getattr(qc, "_layout", None) is not None else self.export_circuit(qc)
+            )
             if self.reward_function == "expected_fidelity":
-                return expected_fidelity(qc, self.device), "exact"
+                return expected_fidelity(exact_qc, self.device), "exact"
 
-            return estimated_success_probability(qc, self.device), "exact"
+            return estimated_success_probability(exact_qc, self.device), "exact"
 
         # Approximate metrics use per-basis-gate averages cached from device calibration
         self._ensure_device_averages_cached()
@@ -523,22 +602,17 @@ class PredictorEnv(Env):
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
             self.current_circuit_name = Path(self.filename).stem
 
+        self.state = _clear_circuit_layout(self.state)
+
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
         self.episode_count += 1
 
         self.layout = None
+        self.compilation_state_flags = None
 
-        if self.mdp == "flexible":
-            self.valid_actions = (
-                self.actions_synthesis_indices
-                + self.actions_mapping_indices
-                + self.actions_layout_indices
-                + self.actions_opt_indices
-            )
-        else:
-            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.determine_valid_actions_for_state()
 
         self.error_occurred = False
         self.tracer = None
@@ -547,7 +621,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
         # create baseline values
-        obs = create_feature_dict(self.state)
+        obs = self._create_observation()
         self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
@@ -582,6 +656,17 @@ class PredictorEnv(Env):
             action_mask = [
                 action_mask[i]
                 and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
+                for i in range(len(action_mask))
+            ]
+
+        if _contains_operation_wider_than_two_qubits(self.state):
+            # some TKET actions do not support gates wider than 2 qubits (only after synthesis)
+            action_mask = [
+                action_mask[i]
+                and not (
+                    self.action_set[i].origin == CompilationOrigin.TKET
+                    and (i in self.actions_layout_indices or i in self.actions_routing_indices)
+                )
                 for i in range(len(action_mask))
             ]
 
@@ -834,11 +919,9 @@ class PredictorEnv(Env):
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
             else:
                 qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
-
-                qiskit_mapping = {
-                    qc_tmp.qubits[i]: placement[list(placement.keys())[i]].index[0] for i in range(len(placement))
-                }
-                layout = Layout(qiskit_mapping)
+                layout = self._translate_tket_placement_to_qiskit_layout(qc_tmp, placement, action.name)
+                if layout is None:
+                    return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
                 pm = PassManager([
                     SetLayout(layout),
@@ -871,9 +954,90 @@ class PredictorEnv(Env):
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
-            self.layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+            self.layout.final_layout = final_layout_pytket_to_qiskit(
+                tket_qc,
+                _layout_output_qubits(self.layout),
+            )
 
         return altered_qc
+
+    def _translate_tket_placement_to_qiskit_layout(
+        self,
+        qc_tmp: QuantumCircuit,
+        placement: dict[Any, Any],
+        action_name: str,
+    ) -> Layout | None:
+        """Translate a TKET placement map into a full Qiskit layout.
+
+        TKET identifies logical qubits by full register identity, not only by a
+        numeric index. Preserve that identity when translating the placement map
+        back to Qiskit so circuits with multiple quantum registers such as
+        ``eval[0]`` and ``q[0]`` are handled correctly. Logical qubits that are
+        left ``unplaced`` are assigned to remaining free hardware qubits.
+        """
+        qiskit_qubits_by_identity: dict[tuple[str, tuple[int, ...]], Any] = {}
+        for qiskit_qubit in qc_tmp.qubits:
+            bit_location = qc_tmp.find_bit(qiskit_qubit)
+            registers = bit_location.registers
+            if registers:
+                register, register_index = registers[0]
+                identity = (register.name, (register_index,))
+            else:
+                identity = ("q", (bit_location.index,))
+            qiskit_qubits_by_identity[identity] = qiskit_qubit
+
+        qiskit_mapping: dict[Any, int] = {}
+        unassigned_qiskit_qubits: list[Any] = []
+        used_physical_indices: set[int] = set()
+
+        for tket_qubit, target_node in placement.items():
+            identity = (str(tket_qubit.reg_name), tuple(int(index) for index in tket_qubit.index))
+            qiskit_qubit = qiskit_qubits_by_identity.get(identity)
+            if qiskit_qubit is None:
+                logger.warning(
+                    "Warning: Placement failed (%s): unknown logical qubit %s. Falling back to original circuit.",
+                    action_name,
+                    tket_qubit,
+                )
+                return None
+
+            reg_name = getattr(target_node, "reg_name", None)
+            node_index = getattr(target_node, "index", None)
+
+            if reg_name == "node" and node_index:
+                physical_index = int(node_index[0])
+                qiskit_mapping[qiskit_qubit] = physical_index
+                used_physical_indices.add(physical_index)
+            else:
+                unassigned_qiskit_qubits.append(qiskit_qubit)
+
+        # Any Qiskit qubit that was not explicitly assigned by TKET still needs a
+        # physical location before ApplyLayout can succeed.
+        for qiskit_qubit in qc_tmp.qubits:
+            if qiskit_qubit not in qiskit_mapping and qiskit_qubit not in unassigned_qiskit_qubits:
+                unassigned_qiskit_qubits.append(qiskit_qubit)
+
+        remaining_physical_indices = [i for i in range(self.device.num_qubits) if i not in used_physical_indices]
+        if len(remaining_physical_indices) < len(unassigned_qiskit_qubits):
+            logger.warning(
+                "Warning: Placement failed (%s): only %d free physical qubits for %d unassigned logical qubits. "
+                "Falling back to original circuit.",
+                action_name,
+                len(remaining_physical_indices),
+                len(unassigned_qiskit_qubits),
+            )
+            return None
+
+        qiskit_mapping.update(
+            dict(
+                zip(
+                    unassigned_qiskit_qubits,
+                    remaining_physical_indices[: len(unassigned_qiskit_qubits)],
+                    strict=True,
+                )
+            )
+        )
+        return Layout(qiskit_mapping)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         """Applies the given BQSKit action to the current state and returns the altered state.
@@ -913,8 +1077,15 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
-            layout = layout.final_layout or layout.initial_layout
+            final_positions = layout.final_index_layout()
+            output_qubits = _layout_output_qubits(layout)
+            if len(final_positions) != _layout_input_qubit_count(layout):
+                return False
+            if list(circuit.qubits) == output_qubits:
+                return all(0 <= index < len(output_qubits) for index in final_positions)
+            if layout.final_layout is not None:
+                return all(0 <= index < len(circuit.qubits) for index in final_positions)
+            return False
 
         v2p = layout.get_virtual_bits()
         return all(q in v2p for q in circuit.qubits)
@@ -963,27 +1134,18 @@ class PredictorEnv(Env):
                     return False
         return True
 
-    def _get_mdp_state(self) -> tuple[bool, bool, bool]:
-        """Determine the current MDP state of the circuit.
-
-        Returns:
-            A tuple with boolean values describing the state of the circuit (synthesized, laid_out, routed)
-        """
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-        )
-        return synthesized, laid_out, routed
-
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
-        synthesized, laid_out, routed = self._get_mdp_state()
+        synthesized, laid_out, routed = self._get_compilation_state_flags()
         actions = []
         # Initial state
         if not synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
@@ -997,6 +1159,10 @@ class PredictorEnv(Env):
 
         if synthesized and not laid_out and not routed:
             if self.mdp == "flexible":
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
                 actions.extend(self.actions_mapping_indices)
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
@@ -1015,6 +1181,10 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
@@ -1028,6 +1198,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_routing_indices)
             if self.mdp == "thesis":
@@ -1038,6 +1211,9 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_structure_preserving_indices)
             if self.mdp == "paper":
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -1050,6 +1226,10 @@ class PredictorEnv(Env):
             if self.mdp == "flexible":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
+            if self.mdp == "hybrid":
+                actions.extend([self.action_terminate_index])
+                actions.extend(self.actions_structure_preserving_indices)
+                actions.extend(self.actions_final_optimization_indices)
             if self.mdp == "paper":
                 actions.extend([self.action_terminate_index])
                 actions.extend(self.actions_opt_indices)
