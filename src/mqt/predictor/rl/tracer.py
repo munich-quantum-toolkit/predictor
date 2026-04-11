@@ -61,6 +61,8 @@ class CompilationStep:
         action: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
         reward: The calculated reward value for applying this specific action.
         current_depth: The depth of the quantum circuit after the action was applied.
+        num_qubits: The number of qubits in the circuit.
+        gates_per_operation: The number of gates per operation occurring in the circuit.
         total_gates: The total number of gates included in the circuit.
         fom_value: The figure of merit value for this compilation pass.
         fom_kind: The kind of fom value: 'exact' or 'approx'.
@@ -76,6 +78,7 @@ class CompilationStep:
     reward: float
     current_depth: int
     num_qubits: int
+    gates_per_operation: dict[str, int]
     total_gates: int
     fom_value: float
     fom_kind: str
@@ -179,8 +182,12 @@ class CompilationTracer:
             routed: Whether the circuit has already been routed.
             done: Boolean indicating if this is the final step of the compilation.
         """
-        present_ops_dict = current_qc.count_ops()
-        total_gates = sum(count for gate, count in present_ops_dict.items() if gate != "barrier")
+        present_ops_dict: dict[str, int] = {
+            str(gate_name): int(count)
+            for gate_name, count in current_qc.count_ops().items()
+            if str(gate_name) != "barrier"
+        }
+        total_gates = sum(present_ops_dict.values())
 
         new_step = CompilationStep(
             step_index=step_index,
@@ -188,6 +195,7 @@ class CompilationTracer:
             reward=round(reward, 6),
             current_depth=current_qc.depth(),
             num_qubits=current_qc.num_qubits,
+            gates_per_operation=present_ops_dict,
             total_gates=total_gates,
             fom_value=round(fom_value, 6),
             fom_kind=fom_kind,
