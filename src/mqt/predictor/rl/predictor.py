@@ -11,15 +11,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
+import numpy as np
 import torch
+from numpy.typing import NDArray
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.utils import set_random_seed
 from torch.distributions import Categorical
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
 from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_trained_model, logger, predicted_action_to_index
@@ -32,6 +34,31 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.gnn import SAGEActorCritic
+
+
+MaskablePPOObservationValue: TypeAlias = NDArray[np.int64] | NDArray[np.float32]
+MaskablePPOObservation: TypeAlias = dict[str, MaskablePPOObservationValue]
+
+
+def _as_maskable_ppo_observation(obs: object) -> MaskablePPOObservation:
+    """Normalize flat env observations to the ndarray-only form expected by SB3."""
+    if isinstance(obs, Data):
+        msg = "MaskablePPO requires flat observations. Construct the predictor with graph=False."
+        raise TypeError(msg)
+    if not isinstance(obs, dict):
+        msg = f"Expected a flat observation dictionary, received {type(obs).__name__}."
+        raise TypeError(msg)
+
+    normalized_obs: MaskablePPOObservation = {}
+    for key, value in obs.items():
+        if not isinstance(key, str):
+            msg = f"Expected string observation keys, received {type(key).__name__}."
+            raise TypeError(msg)
+        if isinstance(value, int):
+            normalized_obs[key] = np.asarray(value, dtype=np.int64)
+        else:
+            normalized_obs[key] = np.asarray(value, dtype=np.float32)
+    return normalized_obs
 
 
 class Predictor:
@@ -110,7 +137,7 @@ class Predictor:
             gates_before = sum(v for k, v in self.env.state.count_ops().items() if k != "barrier")
 
             action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+            action, _ = trained_rl_model.predict(_as_maskable_ppo_observation(obs), action_masks=action_masks)
             action = predicted_action_to_index(action)
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
@@ -254,13 +281,15 @@ class Predictor:
         callback: BaseCallback | None = None,
         resume_from: Path | None = None,
         **kwargs: object,
-    ) -> MaskablePPO:
+    ) -> MaskablePPO | None:
         """Trains a model for the given reward function and device.
 
         Arguments:
             timesteps: Training timesteps for MaskablePPO (ignored in GNN mode). Defaults to 1000.
             verbose: Verbosity level (MaskablePPO only). Defaults to 2.
             test: Use reduced hyperparameters for fast testing. Defaults to False.
+            callback: Optional SB3 callback used during training (MaskablePPO only). Defaults to None.
+            resume_from: Optional path to a previously saved PPO checkpoint (MaskablePPO only). Defaults to None.
             **kwargs: Additional hyperparameters for GNN training:
                 - iterations (int): PPO iterations. Defaults to 1000.
                 - steps (int): Steps per iteration. Defaults to 2048.
@@ -276,9 +305,9 @@ class Predictor:
         """
         if self.graph:
             self._train_gnn(test=test, **kwargs)
-            return
+            return None
 
-        self._train_maskable_ppo(
+        return self._train_maskable_ppo(
             timesteps=timesteps,
             verbose=verbose,
             test=test,
@@ -293,7 +322,7 @@ class Predictor:
         test: bool,
         callback: BaseCallback | None = None,
         resume_from: Path | None = None,
-    ) -> None:
+    ) -> MaskablePPO:
         """Trains a MaskablePPO model.
 
         Arguments:
