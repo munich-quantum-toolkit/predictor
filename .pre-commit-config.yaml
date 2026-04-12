@@ -7,8 +7,7 @@
 #     uv tool install prek
 #     prek install
 #
-#exclude version from pre-commit
-exclude: ^src/mqt/predictor/_version\.py$
+
 ci:
   autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
   autoupdate_schedule: quarterly
