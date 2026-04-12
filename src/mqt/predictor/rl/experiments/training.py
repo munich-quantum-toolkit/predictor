@@ -85,6 +85,7 @@ def run_rl_training(
         callback=CallbackList(callbacks) if callbacks else None,
         resume_from=resolved_resume_from_checkpoint,
     )
+    assert trained_model is not None
 
     model_path = get_path_trained_model() / f"model_{figure_of_merit}_{device.description}.zip"
     return RLTrainingResult(

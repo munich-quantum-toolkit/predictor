@@ -47,6 +47,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from mqt.predictor.reward import esp_data_available
 from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor
+from mqt.predictor.rl.experiments.gnn_tuning import run_gnn_hyperparameter_tuning
 from mqt.predictor.rl.experiments.pipeline_evaluation import run_selected_pipelines
 from mqt.predictor.rl.experiments.training import run_rl_training
 
@@ -141,6 +142,23 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the planned sweep and exit.",
+    )
+    parser.add_argument(
+        "--gnn-tuning",
+        action="store_true",
+        help="Enable GNN hyperparameter tuning mode (replaces MDP sweep).",
+    )
+    parser.add_argument(
+        "--gnn-trials",
+        type=int,
+        default=10,
+        help="Number of Optuna trials for GNN tuning.",
+    )
+    parser.add_argument(
+        "--gnn-trial-steps",
+        type=int,
+        default=2000,
+        help="Training steps per GNN tuning trial.",
     )
     return parser.parse_args()
 
@@ -814,26 +832,27 @@ def run_pipeline_phase(
 
 def write_manifest(output_dir: Path, args: argparse.Namespace) -> None:
     """Write the static sweep configuration."""
-    atomic_write_json(
-        output_dir / "manifest.json",
-        {
-            "created_at": now_utc_iso(),
-            "figure_of_merit": FIGURE_OF_MERIT,
-            "devices": args.devices,
-            "mdps": args.mdps,
-            "timesteps": args.timesteps,
-            "checkpoint_frequency": args.checkpoint_frequency,
-            "train_verbose": args.train_verbose,
-            "max_steps": args.max_steps,
-            "seed": args.seed,
-            "output_dir": str(args.output_dir),
-            "train_dir": args.train_dir,
-            "test_dir": args.test_dir,
-            "skip_pipelines": args.skip_pipelines,
-            "test_training": args.test_training,
-            "force": args.force,
-        },
-    )
+    manifest_data = {
+        "created_at": now_utc_iso(),
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "devices": args.devices,
+        "mdps": args.mdps,
+        "timesteps": args.timesteps,
+        "checkpoint_frequency": args.checkpoint_frequency,
+        "train_verbose": args.train_verbose,
+        "max_steps": args.max_steps,
+        "seed": args.seed,
+        "output_dir": str(args.output_dir),
+        "train_dir": args.train_dir,
+        "test_dir": args.test_dir,
+        "skip_pipelines": args.skip_pipelines,
+        "test_training": args.test_training,
+        "force": args.force,
+        "gnn_tuning": args.gnn_tuning,
+        "gnn_trials": args.gnn_trials,
+        "gnn_trial_steps": args.gnn_trial_steps,
+    }
+    atomic_write_json(output_dir / "manifest.json", manifest_data)
 
 
 def write_progress(output_dir: Path, devices: list[str], mdps: list[str], include_pipelines: bool) -> dict[str, Any]:
@@ -915,19 +934,68 @@ def log_progress(logger: logging.Logger, progress: dict[str, Any]) -> None:
     )
 
 
+def run_gnn_tuning_phase(
+    *,
+    device_name: str,
+    output_dir: Path,
+    args: argparse.Namespace,
+    logger: logging.Logger,
+) -> None:
+    """Run GNN hyperparameter tuning for one device."""
+    device = resolve_device(device_name)
+    tuning_dir = output_dir / device_name / "gnn_tuning"
+    tuning_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Starting GNN hyperparameter tuning for %s.", device_name)
+    logger.info("Number of trials: %d", args.gnn_trials)
+    logger.info("Steps per trial: %d", args.gnn_trial_steps)
+
+    try:
+        results = run_gnn_hyperparameter_tuning(
+            device=device,
+            figure_of_merit=FIGURE_OF_MERIT,
+            output_dir=tuning_dir,
+            num_trials=args.gnn_trials,
+            trial_steps=args.gnn_trial_steps,
+            mdp="paper",  # Fixed MDP for tuning
+            logger=logger,
+        )
+        logger.info(
+            "GNN tuning completed for %s. Best score: %.4f (trial %d)",
+            device_name,
+            results["best_score"],
+            results["best_trial"],
+        )
+    except Exception:
+        logger.exception("GNN tuning failed for %s.", device_name)
+        raise
+
+
 def print_plan(args: argparse.Namespace) -> None:
     """Print the planned sweep and exit."""
-    specs = [RLRunSpec(device_name=device_name, mdp=mdp) for device_name in args.devices for mdp in args.mdps]
-    print(f"Figure of merit: {FIGURE_OF_MERIT}")
-    print(f"Devices: {', '.join(args.devices)}")
-    print(f"MDPs: {', '.join(args.mdps)}")
-    print(f"Timesteps: {args.timesteps}")
-    print(f"Checkpoint frequency: {args.checkpoint_frequency}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Pipelines: {'disabled' if args.skip_pipelines else ', '.join(DEFAULT_PIPELINES)}")
-    print(f"Planned RL runs: {len(specs)}")
-    for index, spec in enumerate(specs, start=1):
-        print(f"  [{index:02d}] {spec.label}")
+    if args.gnn_tuning:
+        print(f"Figure of merit: {FIGURE_OF_MERIT}")
+        print("Mode: GNN hyperparameter tuning")
+        print(f"Devices: {', '.join(args.devices)}")
+        print(f"Trials per device: {args.gnn_trials}")
+        print(f"Steps per trial: {args.gnn_trial_steps}")
+        print("MDP: paper (fixed)")
+        print(f"Output directory: {args.output_dir}")
+        print(f"Planned GNN tuning runs: {len(args.devices)}")
+        for index, device_name in enumerate(args.devices, start=1):
+            print(f"  [{index:02d}] {device_name}")
+    else:
+        specs = [RLRunSpec(device_name=device_name, mdp=mdp) for device_name in args.devices for mdp in args.mdps]
+        print(f"Figure of merit: {FIGURE_OF_MERIT}")
+        print(f"Devices: {', '.join(args.devices)}")
+        print(f"MDPs: {', '.join(args.mdps)}")
+        print(f"Timesteps: {args.timesteps}")
+        print(f"Checkpoint frequency: {args.checkpoint_frequency}")
+        print(f"Output directory: {args.output_dir}")
+        print(f"Pipelines: {'disabled' if args.skip_pipelines else ', '.join(DEFAULT_PIPELINES)}")
+        print(f"Planned RL runs: {len(specs)}")
+        for index, spec in enumerate(specs, start=1):
+            print(f"  [{index:02d}] {spec.label}")
 
 
 def main() -> None:
@@ -951,6 +1019,29 @@ def main() -> None:
 
     include_pipelines = not args.skip_pipelines
 
+    # Handle GNN tuning mode separately
+    if args.gnn_tuning:
+        logger.info("Running in GNN hyperparameter tuning mode.")
+        try:
+            for device_name in args.devices:
+                run_gnn_tuning_phase(
+                    device_name=device_name,
+                    output_dir=args.output_dir,
+                    args=args,
+                    logger=logger,
+                )
+        except KeyboardInterrupt:
+            logger.exception("GNN tuning interrupted.")
+            raise
+        except Exception:
+            logger.exception("GNN tuning phase failed.")
+            if args.fail_fast:
+                raise
+
+        logger.info("GNN hyperparameter tuning finished. Results are in %s", args.output_dir)
+        return
+
+    # Standard RL MDP sweep mode (existing behavior)
     try:
         for device_name in args.devices:
             device = resolve_device(device_name)

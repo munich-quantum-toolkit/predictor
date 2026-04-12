@@ -158,7 +158,9 @@ class SAGEActorCritic(nn.Module):
             num_actions: Number of discrete actions for the actor head output.
             dropout_p: Dropout probability to apply in the encoder and trunk.
             bidirectional: If True, apply each SAGEConv in both directions and average the results.
-            global_feature_dim: If > 0, the dimension of optional global features to concatenate to the graph embedding before the actor and critic heads.
+            global_feature_dim: If > 0, the dimension of the flat RL observation
+                vector concatenated to the graph embedding before the actor and
+                critic heads.
         """
         super().__init__()
 
@@ -200,8 +202,9 @@ class SAGEActorCritic(nn.Module):
 
         Args:
             data: A PyG Data or Batch object. When global_feature_dim > 0
-                  the object must contain a global_features attribute of shape [B, global_feature_dim]
-                  (one row per graph in the batch).
+                  the object must contain a global_features attribute of shape
+                  [B, global_feature_dim] holding the flat RL observation
+                  features (one row per graph in the batch).
         """
         output_encoder = self.encoder(data)  # [B, emb_dim]
 

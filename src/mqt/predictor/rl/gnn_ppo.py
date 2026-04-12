@@ -467,8 +467,8 @@ def create_gnn_policy(
         num_resnet_layers: Number of residual convolutional layers.
         dropout_p: Dropout probability.
         bidirectional: Whether to use bidirectional message passing.
-        global_feature_dim: Number of circuit-level global features concatenated to the
-        graph embedding before the actor/critic heads (0 to disable).
+        global_feature_dim: Number of flat RL observation features concatenated
+        to the graph embedding before the actor/critic heads (0 to disable).
 
     Returns:
         Initialized SAGEActorCritic.

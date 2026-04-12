@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import zipfile
 from importlib import resources
 from pathlib import Path
@@ -36,16 +35,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mqt-predictor")
 
 
-# Number of circuit-level global features appended to each PyG Data object when
-# graph=True.  Features (in order):
-#   0. log-normalized num_qubits
-#   1. log-normalized depth
-#   2. program_communication
-#   3. critical_depth
-#   4. entanglement_ratio
-#   5. parallelism
-#   6. liveness
-GLOBAL_FEATURE_DIM: int = 7
+NON_GATE_OBSERVATION_FEATURES = [
+    "num_qubits",
+    "depth",
+    "program_communication",
+    "critical_depth",
+    "entanglement_ratio",
+    "parallelism",
+    "liveness",
+    "measure",
+]
+FLAT_RL_FEATURE_NAMES = [*NON_GATE_OBSERVATION_FEATURES, *get_openqasm_gates_for_rl()]
+
+# Number of flat RL observation features appended to each PyG Data object when
+# graph=True. These match the regular MaskablePPO observation features in order.
+GLOBAL_FEATURE_DIM: int = len(FLAT_RL_FEATURE_NAMES)
 
 
 def predicted_action_to_index(action: object) -> int:
@@ -304,6 +308,40 @@ def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
     return res_dct
 
 
+def create_flat_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
+    """Create the regular flat RL observation dictionary in a stable feature order."""
+    ops = count_ops_by_name(qc)
+    total = sum(v for k, v in ops.items() if k != "barrier")
+    ops_list_dict = dict_to_featurevector(ops)
+    supermarq_features = calc_supermarq_features(qc)
+
+    feature_values: dict[str, int | NDArray[np.float32]] = {
+        "num_qubits": int(qc.num_qubits),
+        "depth": int(qc.depth()),
+        "program_communication": np.array([supermarq_features.program_communication], dtype=np.float32),
+        "critical_depth": np.array([supermarq_features.critical_depth], dtype=np.float32),
+        "entanglement_ratio": np.array([supermarq_features.entanglement_ratio], dtype=np.float32),
+        "parallelism": np.array([supermarq_features.parallelism], dtype=np.float32),
+        "liveness": np.array([supermarq_features.liveness], dtype=np.float32),
+        "measure": np.array([ops.get("measure", 0) / total if total > 0 else 0.0], dtype=np.float32),
+        **{key: np.array([ops_list_dict[key]], dtype=np.float32) for key in get_openqasm_gates_for_rl()},
+    }
+    return {key: feature_values[key] for key in FLAT_RL_FEATURE_NAMES}
+
+
+def create_flat_feature_tensor(qc: QuantumCircuit) -> torch.Tensor:
+    """Return the regular flat RL observation as a single-row float tensor."""
+    feature_dict = create_flat_feature_dict(qc)
+    flat_values: list[float] = []
+    for key in FLAT_RL_FEATURE_NAMES:
+        value = feature_dict[key]
+        if isinstance(value, int):
+            flat_values.append(float(value))
+        else:
+            flat_values.extend(np.asarray(value, dtype=np.float32).reshape(-1).tolist())
+    return torch.tensor([flat_values], dtype=torch.float32)
+
+
 def create_feature_dict(qc: QuantumCircuit, *, graph: bool = False) -> dict[str, int | NDArray[np.float32]] | Data:
     """Creates a feature representation for a given quantum circuit.
 
@@ -317,45 +355,12 @@ def create_feature_dict(qc: QuantumCircuit, *, graph: bool = False) -> dict[str,
     """
     if graph:
         node_vector, edge_index, number_nodes = create_dag(qc)
-        # Attach circuit-level global features (same information used by the
-        # non-GNN MaskablePPO policy) so the GNN can also reason about
-        # high-level circuit properties that are not captured in the DAG structure.
-        supermarq = calc_supermarq_features(qc)
-        global_feature_vector = torch.tensor(
-            [
-                [
-                    math.log1p(qc.num_qubits) / math.log1p(128),
-                    math.log1p(qc.depth()) / math.log1p(10_000),
-                    float(supermarq.program_communication),
-                    float(supermarq.critical_depth),
-                    float(supermarq.entanglement_ratio),
-                    float(supermarq.parallelism),
-                    float(supermarq.liveness),
-                ]
-            ],
-            dtype=torch.float32,
-        )  # shape [1, GLOBAL_FEATURE_DIM] — batched to [B, GLOBAL_FEATURE_DIM] by PyG
+        # Attach the complete regular RL observation vector so the GNN actor/critic
+        # sees graph structure plus the same flat features used by MaskablePPO.
+        global_feature_vector = create_flat_feature_tensor(qc)
         return Data(x=node_vector, edge_index=edge_index, num_nodes=number_nodes, global_features=global_feature_vector)
 
-    ops = count_ops_by_name(qc)
-    total = sum(v for k, v in ops.items() if k != "barrier")
-    ops_list_dict = dict_to_featurevector(ops)
-
-    feature_dict: dict[str, int | NDArray[np.float32]] = {
-        **{key: np.array([val], dtype=np.float32) for key, val in ops_list_dict.items()},
-        "measure": np.array([ops.get("measure", 0) / total if total > 0 else 0.0], dtype=np.float32),
-        "num_qubits": int(qc.num_qubits),
-        "depth": int(qc.depth()),
-    }
-
-    supermarq_features = calc_supermarq_features(qc)
-    feature_dict["program_communication"] = np.array([supermarq_features.program_communication], dtype=np.float32)
-    feature_dict["critical_depth"] = np.array([supermarq_features.critical_depth], dtype=np.float32)
-    feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)
-    feature_dict["parallelism"] = np.array([supermarq_features.parallelism], dtype=np.float32)
-    feature_dict["liveness"] = np.array([supermarq_features.liveness], dtype=np.float32)
-
-    return feature_dict
+    return create_flat_feature_dict(qc)
 
 
 def get_path_training_data() -> Path:
