@@ -26,9 +26,12 @@ from typing import TYPE_CHECKING, Any
 import optuna
 import torch
 from optuna.samplers import TPESampler
+from torch.distributions import Categorical
+from torch_geometric.data import Batch
 
+from mqt.predictor.rl.experiments.evaluation import load_test_circuits
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
-from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM
+from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_training_circuits_test
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -53,6 +56,8 @@ class GNNTrialConfig:
     gnn_lr: float = 1e-4
     num_epochs: int = 10
     minibatch_size: int = 64
+    max_eval_circuits: int = 32
+    max_eval_steps: int = 200
 
 
 def run_gnn_hyperparameter_tuning(
@@ -212,26 +217,94 @@ def _objective(
             gnn_lr=config.gnn_lr,
         )
 
-        # Evaluate: run final episode to measure return
-        obs, _ = env.reset()
-        episode_return = 0.0
-        terminated = False
-        truncated = False
-        step_count = 0
-
-        while not (terminated or truncated) and step_count < 200:  # max 200 steps per episode
-            # Get action from policy (no gradient)
-            with torch.no_grad():
-                action, _ = policy(obs)
-            obs, reward, terminated, truncated, _info = env.step(action.item())
-            episode_return += reward
-            step_count += 1
-
-        logger.debug("Trial %d completed: episode_return=%.4f", trial_id, episode_return)
+        # Evaluate on test circuits
+        avg_figure_of_merit = _evaluate_gnn_policy(
+            policy=policy,
+            env=env,
+            config=config,
+            trial_id=trial_id,
+            logger=logger,
+        )
+        logger.debug("Trial %d completed: avg_figure_of_merit=%.4f", trial_id, avg_figure_of_merit)
 
     except Exception:
         logger.exception("Trial %d failed", trial_id)
         # Return a very low score to discourage this hyperparameter combination
         return -999.0
     else:
-        return episode_return
+        return avg_figure_of_merit
+
+
+def _evaluate_gnn_policy(
+    policy: Any,  # noqa: ANN401
+    env: PredictorEnv,
+    config: GNNTrialConfig,
+    trial_id: int,
+    logger: logging.Logger,
+) -> float:
+    """Evaluate a trained GNN policy on a few test circuits (stochastic mode).
+
+    Args:
+        policy: Trained SAGEActorCritic model.
+        env: PredictorEnv instance (already initialized).
+        config: GNNTrialConfig with evaluation parameters.
+        trial_id: Trial ID for logging.
+        logger: Logger instance.
+
+    Returns:
+        Average figure of merit across test circuits.
+    """
+    # Load test circuits
+    test_dir = get_path_training_circuits_test()
+    test_circuits = load_test_circuits(test_dir)
+    # Use subset for quick evaluation
+    test_circuits_subset = test_circuits[: config.max_eval_circuits]
+
+    torch_device = next(policy.parameters()).device
+    figure_of_merit_values = []
+
+    try:
+        for qc in test_circuits_subset:
+            obs, _ = env.reset(qc)
+            terminated = False
+            truncated = False
+            step_count = 0
+
+            while not (terminated or truncated) and step_count < config.max_eval_steps:
+                # Prepare batched observation
+                batch_obs = Batch.from_data_list([obs]).to(torch_device)  # type: ignore[arg-type]
+
+                # Get action from policy (stochastic)
+                with torch.no_grad():
+                    logits, _ = policy(batch_obs)
+
+                # Apply action mask to prevent invalid actions
+                mask = torch.tensor(env.action_masks(), dtype=torch.bool, device=torch_device)
+                logits = logits.masked_fill(~mask.unsqueeze(0), float("-inf"))
+
+                # Sample action from distribution (stochastic)
+                dist = Categorical(logits=logits.squeeze(0))
+                action_idx = dist.sample().item()
+
+                obs, _reward, terminated, truncated, _info = env.step(action_idx)
+                step_count += 1
+
+            # Get final figure of merit for this circuit
+            figure_of_merit_value, _ = env.calculate_reward(mode="auto")
+            figure_of_merit_values.append(figure_of_merit_value)
+
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Trial %d evaluation failed during rollouts: %s. Returning 0.", trial_id, e)
+        # Return 0 if evaluation fails (better than -999 which discourages architecture)
+        return 0.0
+    else:
+        # Average across test circuits
+        avg_figure_of_merit = sum(figure_of_merit_values) / len(figure_of_merit_values)
+        logger.debug(
+            "Trial %d evaluation: %d circuits, avg=%.4f, values=%s",
+            trial_id,
+            len(figure_of_merit_values),
+            avg_figure_of_merit,
+            [f"{v:.4f}" for v in figure_of_merit_values],
+        )
+        return avg_figure_of_merit
