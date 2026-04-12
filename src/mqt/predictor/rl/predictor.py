@@ -22,7 +22,7 @@ from torch.distributions import Categorical
 from torch_geometric.data import Batch
 
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
-from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_trained_model, predicted_action_to_index
+from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_trained_model, logger, predicted_action_to_index
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -278,9 +278,22 @@ class Predictor:
             self._train_gnn(test=test, **kwargs)
             return
 
-        self._train_maskable_ppo(timesteps=timesteps, verbose=verbose, test=test)
+        self._train_maskable_ppo(
+            timesteps=timesteps,
+            verbose=verbose,
+            test=test,
+            callback=callback,
+            resume_from=resume_from,
+        )
 
-    def _train_maskable_ppo(self, timesteps: int, verbose: int, test: bool) -> None:
+    def _train_maskable_ppo(
+        self,
+        timesteps: int,
+        verbose: int,
+        test: bool,
+        callback: BaseCallback | None = None,
+        resume_from: Path | None = None,
+    ) -> None:
         """Trains a MaskablePPO model.
 
         Arguments:

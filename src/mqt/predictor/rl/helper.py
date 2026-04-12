@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import zipfile
 from importlib import resources
@@ -30,6 +31,9 @@ from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_
 if TYPE_CHECKING:
     from numpy.random import Generator
     from numpy.typing import NDArray
+
+
+logger = logging.getLogger("mqt-predictor")
 
 
 # Number of circuit-level global features appended to each PyG Data object when
