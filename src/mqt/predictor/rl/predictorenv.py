@@ -122,6 +122,11 @@ def _clear_circuit_layout(circuit: QuantumCircuit) -> QuantumCircuit:
     return circuit
 
 
+def _contains_operation_wider_than_two_qubits(circuit: QuantumCircuit) -> bool:
+    """Return whether the circuit contains any operation acting on more than two qubits."""
+    return any(len(item.qubits) > 2 for item in circuit.data)
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -441,6 +446,12 @@ class PredictorEnv(Env):
             )
             return 0.0, "exact"
 
+        reward_layout = cast("TranspileLayout | Layout | None", getattr(qc, "_layout", None))
+        if reward_layout is None:
+            # use the env layout if the circuit has no attached layout
+            # (e.g., if it's an intermediate state or a newly exported copy)
+            reward_layout = self.layout
+
         # Dual-path evaluation (exact vs. approximate) for EF / ESP.
         if mode == "exact":
             kind = "exact"
@@ -448,15 +459,19 @@ class PredictorEnv(Env):
             kind = "approx"
         else:  # "auto"
             only_native = self.is_circuit_synthesized(qc)
-            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map()))
+            laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
+            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
 
-            kind = "exact" if (only_native and mapped) else "approx"
+            kind = "exact" if (only_native and laid_out and mapped) else "approx"
 
         if kind == "exact":
+            exact_qc = (
+                qc if reward_layout is None or getattr(qc, "_layout", None) is not None else self.export_circuit(qc)
+            )
             if self.reward_function == "expected_fidelity":
-                return expected_fidelity(qc, self.device), "exact"
+                return expected_fidelity(exact_qc, self.device), "exact"
 
-            return estimated_success_probability(qc, self.device), "exact"
+            return estimated_success_probability(exact_qc, self.device), "exact"
 
         # Approximate metrics use per-basis-gate averages cached from device calibration
         self._ensure_device_averages_cached()
@@ -550,6 +565,17 @@ class PredictorEnv(Env):
             action_mask = [
                 action_mask[i]
                 and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
+                for i in range(len(action_mask))
+            ]
+
+        if _contains_operation_wider_than_two_qubits(self.state):
+            # some TKET actions do not support gates wider than 2 qubits (only after synthesis)
+            action_mask = [
+                action_mask[i]
+                and not (
+                    self.action_set[i].origin == CompilationOrigin.TKET
+                    and (i in self.actions_layout_indices or i in self.actions_routing_indices)
+                )
                 for i in range(len(action_mask))
             ]
 
@@ -802,11 +828,9 @@ class PredictorEnv(Env):
                 return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
             else:
                 qc_tmp = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
-
-                qiskit_mapping = {
-                    qc_tmp.qubits[i]: placement[list(placement.keys())[i]].index[0] for i in range(len(placement))
-                }
-                layout = Layout(qiskit_mapping)
+                layout = self._translate_tket_placement_to_qiskit_layout(qc_tmp, placement, action.name)
+                if layout is None:
+                    return tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
                 pm = PassManager([
                     SetLayout(layout),
@@ -846,6 +870,84 @@ class PredictorEnv(Env):
             )
 
         return altered_qc
+
+    def _translate_tket_placement_to_qiskit_layout(
+        self,
+        qc_tmp: QuantumCircuit,
+        placement: dict[Any, Any],
+        action_name: str,
+    ) -> Layout | None:
+        """Translate a TKET placement map into a full Qiskit layout.
+
+        TKET identifies logical qubits by full register identity, not only by a
+        numeric index. Preserve that identity when translating the placement map
+        back to Qiskit so circuits with multiple quantum registers such as
+        ``eval[0]`` and ``q[0]`` are handled correctly. Logical qubits that are
+        left ``unplaced`` are assigned to remaining free hardware qubits.
+        """
+        qiskit_qubits_by_identity: dict[tuple[str, tuple[int, ...]], Any] = {}
+        for qiskit_qubit in qc_tmp.qubits:
+            bit_location = qc_tmp.find_bit(qiskit_qubit)
+            registers = bit_location.registers
+            if registers:
+                register, register_index = registers[0]
+                identity = (register.name, (register_index,))
+            else:
+                identity = ("q", (bit_location.index,))
+            qiskit_qubits_by_identity[identity] = qiskit_qubit
+
+        qiskit_mapping: dict[Any, int] = {}
+        unassigned_qiskit_qubits: list[Any] = []
+        used_physical_indices: set[int] = set()
+
+        for tket_qubit, target_node in placement.items():
+            identity = (str(tket_qubit.reg_name), tuple(int(index) for index in tket_qubit.index))
+            qiskit_qubit = qiskit_qubits_by_identity.get(identity)
+            if qiskit_qubit is None:
+                logger.warning(
+                    "Warning: Placement failed (%s): unknown logical qubit %s. Falling back to original circuit.",
+                    action_name,
+                    tket_qubit,
+                )
+                return None
+
+            reg_name = getattr(target_node, "reg_name", None)
+            node_index = getattr(target_node, "index", None)
+
+            if reg_name == "node" and node_index:
+                physical_index = int(node_index[0])
+                qiskit_mapping[qiskit_qubit] = physical_index
+                used_physical_indices.add(physical_index)
+            else:
+                unassigned_qiskit_qubits.append(qiskit_qubit)
+
+        # Any Qiskit qubit that was not explicitly assigned by TKET still needs a
+        # physical location before ApplyLayout can succeed.
+        for qiskit_qubit in qc_tmp.qubits:
+            if qiskit_qubit not in qiskit_mapping and qiskit_qubit not in unassigned_qiskit_qubits:
+                unassigned_qiskit_qubits.append(qiskit_qubit)
+
+        remaining_physical_indices = [i for i in range(self.device.num_qubits) if i not in used_physical_indices]
+        if len(remaining_physical_indices) < len(unassigned_qiskit_qubits):
+            logger.warning(
+                "Warning: Placement failed (%s): only %d free physical qubits for %d unassigned logical qubits. "
+                "Falling back to original circuit.",
+                action_name,
+                len(remaining_physical_indices),
+                len(unassigned_qiskit_qubits),
+            )
+            return None
+
+        qiskit_mapping.update(
+            dict(
+                zip(
+                    unassigned_qiskit_qubits,
+                    remaining_physical_indices[: len(unassigned_qiskit_qubits)],
+                    strict=True,
+                )
+            )
+        )
+        return Layout(qiskit_mapping)
 
     def _apply_bqskit_action(self, action: Action, action_index: int) -> QuantumCircuit:
         """Applies the given BQSKit action to the current state and returns the altered state.

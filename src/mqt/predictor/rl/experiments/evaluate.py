@@ -30,7 +30,12 @@ def main() -> None:
     parser.add_argument(
         "--figure-of-merit",
         default="expected_fidelity",
-        choices=["expected_fidelity", "critical_depth", "estimated_success_probability"],
+        choices=[
+            "expected_fidelity",
+            "critical_depth",
+            "estimated_success_probability",
+            "estimated_hellinger_distance",
+        ],
         help="Figure of merit used for RL evaluation.",
     )
     parser.add_argument(

@@ -30,6 +30,7 @@ from mqt.predictor.rl.helper import (
     get_path_training_circuits,
     get_path_training_circuits_test,
     get_path_training_circuits_train,
+    predicted_action_to_index,
 )
 from mqt.predictor.rl.predictor import Predictor
 from mqt.predictor.utils import get_openqasm_gates_for_rl
@@ -321,7 +322,7 @@ def rollout_circuit(
         policy_obs = clone_observation(obs)
         action_masks = get_action_masks(predictor.env)
         action, _ = model.predict(policy_obs, action_masks=action_masks, deterministic=deterministic)
-        action_index = int(action)
+        action_index = predicted_action_to_index(action)
         action_item = predictor.env.action_set[action_index]
         used_compilation_passes.append(action_item.name)
         previous_state_flags = predictor.env.get_compilation_state_flags()

@@ -44,6 +44,24 @@ if TYPE_CHECKING:
 GLOBAL_FEATURE_DIM: int = 7
 
 
+def predicted_action_to_index(action: object) -> int:
+    """Normalize an SB3 action prediction to a scalar action index.
+
+    SB3 may return either a scalar value or a single-element array depending on
+    the environment/policy path. RL compilation uses a non-vectorized single
+    environment, so anything other than one predicted action is invalid here.
+    """
+    action_array = np.asarray(action)
+    if action_array.ndim == 0:
+        return int(action_array.item())
+
+    flattened_action = action_array.reshape(-1)
+    if flattened_action.size != 1:
+        msg = f"Expected a scalar action prediction, received shape {action_array.shape}."
+        raise ValueError(msg)
+    return int(flattened_action[0])
+
+
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
@@ -58,31 +76,57 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     Raises:
         RuntimeError: If no quantum circuit could be read from the training circuits folder.
     """
-    file_list = list(path_training_circuits.glob("*.qasm"))
+    file_list = get_training_circuit_files(path_training_circuits)
+    if not file_list:
+        msg = f"No training circuits found in '{path_training_circuits}'."
+        raise RuntimeError(msg)
 
-    path_zip = path_training_circuits / "training_data_compilation.zip"
-    if len(file_list) == 0 and path_zip.exists():
-        with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
-            zip_ref.extractall(path_training_circuits)
+    suitable_files = [
+        file_path
+        for file_path in file_list
+        if not max_qubits or get_num_qubits_for_training_circuit(file_path) <= max_qubits
+    ]
+    if not suitable_files:
+        msg = f"No training circuits with at most {max_qubits} qubits found in '{path_training_circuits}'."
+        raise RuntimeError(msg)
 
-        file_list = list(path_training_circuits.glob("*.qasm"))
-        assert len(file_list) > 0
-
-    found_suitable_qc = False
-    while not found_suitable_qc:
-        random_index = rng.integers(len(file_list))
-        num_qubits = int(str(file_list[random_index]).split("_")[-1].split(".")[0])
-        if max_qubits and num_qubits > max_qubits:
-            continue
-        found_suitable_qc = True
+    random_index = int(rng.integers(len(suitable_files)))
+    selected_path = suitable_files[random_index]
 
     try:
-        qc = QuantumCircuit.from_qasm_file(file_list[random_index])
+        qc = QuantumCircuit.from_qasm_file(str(selected_path))
     except Exception as e:
-        msg = f"Could not read QuantumCircuit from: {file_list[random_index]}"
+        msg = f"Could not read QuantumCircuit from: {selected_path}"
         raise RuntimeError(msg) from e
 
-    return qc, str(file_list[random_index])
+    return qc, str(selected_path)
+
+
+def get_num_qubits_for_training_circuit(path: Path) -> int:
+    """Return the qubit count for one training circuit.
+
+    The historical RL datasets often end in ``_<num>.qasm``, while newer
+    split/test layouts can also use names like ``qft_5_indep.qasm`` where the
+    numeric token is not the final filename segment. When no numeric token is
+    present at all, fall back to parsing the QASM file.
+    """
+    qubit_count_from_name = get_num_qubits_from_filename(path)
+    if qubit_count_from_name is not None:
+        return qubit_count_from_name
+
+    try:
+        return int(QuantumCircuit.from_qasm_file(str(path)).num_qubits)
+    except Exception as e:
+        msg = f"Could not determine the number of qubits for training circuit '{path}'."
+        raise RuntimeError(msg) from e
+
+
+def get_num_qubits_from_filename(path: Path) -> int | None:
+    """Extract an encoded qubit count from a training-circuit filename."""
+    for part in reversed(path.stem.split("_")):
+        if part.isdigit():
+            return int(part)
+    return None
 
 
 def get_bqskit_gates() -> list[str]:

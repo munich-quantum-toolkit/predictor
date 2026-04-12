@@ -22,12 +22,13 @@ from torch.distributions import Categorical
 from torch_geometric.data import Batch
 
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
-from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_trained_model
+from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_trained_model, predicted_action_to_index
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
     from qiskit.transpiler import Target
+    from stable_baselines3.common.callbacks import BaseCallback
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.gnn import SAGEActorCritic
@@ -109,8 +110,8 @@ class Predictor:
             gates_before = sum(v for k, v in self.env.state.count_ops().items() if k != "barrier")
 
             action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)  # ty: ignore[invalid-argument-type]
-            action = int(action)
+            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+            action = predicted_action_to_index(action)
             action_item = self.env.action_set[action]
             used_compilation_passes.append(action_item.name)
             obs, reward, terminated, truncated, _info = self.env.step(action)
@@ -250,8 +251,10 @@ class Predictor:
         timesteps: int = 1000,
         verbose: int = 2,
         test: bool = False,
+        callback: BaseCallback | None = None,
+        resume_from: Path | None = None,
         **kwargs: object,
-    ) -> None:
+    ) -> MaskablePPO:
         """Trains a model for the given reward function and device.
 
         Arguments:
@@ -284,6 +287,8 @@ class Predictor:
             timesteps: Total training timesteps.
             verbose: Verbosity level for training.
             test: If True, uses reduced hyperparameters for fast testing.
+            callback: Optional SB3 callback used during training.
+            resume_from: Optional path to a previously saved PPO checkpoint.
         """
         if test:
             set_random_seed(0)
@@ -298,18 +303,100 @@ class Predictor:
             batch_size = 64
             progress_bar = True
 
-        model = MaskablePPO(
-            MaskableMultiInputActorCriticPolicy,
-            self.env,
-            verbose=verbose,
-            tensorboard_log="./model_" + self.figure_of_merit + "_" + self.device_name,
-            gamma=0.98,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            n_epochs=n_epochs,
+        logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
+        tensorboard_log = "./model_" + self.figure_of_merit + "_" + self.device_name
+        if resume_from is None:
+            model = MaskablePPO(
+                MaskableMultiInputActorCriticPolicy,
+                self.env,
+                verbose=verbose,
+                tensorboard_log=tensorboard_log,
+                gamma=0.98,
+                n_steps=n_steps,
+                batch_size=batch_size,
+                n_epochs=n_epochs,
+            )
+            reset_num_timesteps = True
+        else:
+            model = MaskablePPO.load(resume_from, env=self.env)
+            model.verbose = verbose
+            model.tensorboard_log = tensorboard_log
+            reset_num_timesteps = False
+
+        # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
+        # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
+        model.learn(
+            total_timesteps=timesteps,
+            progress_bar=progress_bar,
+            callback=callback,
+            reset_num_timesteps=reset_num_timesteps,
         )
-        model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
         model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
+        return model
+
+    def _train_gnn(self, test: bool = False, **kwargs: object) -> None:
+        """Trains the GNN model.
+
+        Arguments:
+            test: If True, uses reduced hyperparameters for fast testing.
+            **kwargs: Additional hyperparameters for GNN training (see train_model).
+        """
+        if test:
+            # Set init values for testing
+            kwargs.setdefault("iterations", 10)
+            kwargs.setdefault("steps", 20)
+            kwargs.setdefault("num_epochs", 1)
+            kwargs.setdefault("minibatch_size", 32)
+            kwargs.setdefault("hidden_dim", 128)
+            kwargs.setdefault("num_conv_wo_resnet", 3)
+            kwargs.setdefault("num_resnet_layers", 5)
+
+        sample_obs, _ = self.env.reset()
+        node_feature_dim = sample_obs.x.shape[1]  # ty: ignore[unresolved-attribute]
+
+        hidden_dim = int(kwargs.get("hidden_dim", 128))  # ty: ignore[invalid-argument-type]
+        num_conv_wo_resnet = int(kwargs.get("num_conv_wo_resnet", 3))  # ty: ignore[invalid-argument-type]
+        num_resnet_layers = int(kwargs.get("num_resnet_layers", 5))  # ty: ignore[invalid-argument-type]
+        dropout_p = float(kwargs.get("dropout_p", 0.2))  # ty: ignore[invalid-argument-type]
+        bidirectional = bool(kwargs.get("bidirectional", True))
+
+        policy = create_gnn_policy(
+            node_feature_dim=node_feature_dim,
+            num_actions=self.env.action_space.n,  # ty: ignore[unresolved-attribute]
+            hidden_dim=hidden_dim,
+            num_conv_wo_resnet=num_conv_wo_resnet,
+            num_resnet_layers=num_resnet_layers,
+            dropout_p=dropout_p,
+            bidirectional=bidirectional,
+            global_feature_dim=GLOBAL_FEATURE_DIM,
+        )
+
+        self.gnn_model = train_ppo_with_gnn(
+            env=self.env,
+            policy=policy,
+            num_iterations=int(kwargs.get("iterations", 1000)),  # type: ignore[arg-type]
+            steps_per_iteration=int(kwargs.get("steps", 2048)),  # type: ignore[arg-type]
+            num_epochs=int(kwargs.get("num_epochs", 10)),  # type: ignore[arg-type]
+            minibatch_size=int(kwargs.get("minibatch_size", 64)),  # type: ignore[arg-type]
+            lr=float(kwargs.get("lr", 3e-4)),  # type: ignore[arg-type]
+            gnn_lr=float(kwargs.get("gnn_lr", 1e-4)),  # type: ignore[arg-type]
+        )
+
+        model_path = get_path_trained_model() / f"gnn_{self.figure_of_merit}_{self.device_name}.pt"
+        ckpt = {
+            "state_dict": self.gnn_model.state_dict(),
+            "config": {
+                "hidden_dim": hidden_dim,
+                "num_conv_wo_resnet": num_conv_wo_resnet,
+                "num_resnet_layers": num_resnet_layers,
+                "dropout_p": dropout_p,
+                "bidirectional": bidirectional,
+                "node_feature_dim": node_feature_dim,
+                "num_actions": self.env.action_space.n,  # ty: ignore[unresolved-attribute]
+                "global_feature_dim": GLOBAL_FEATURE_DIM,
+            },
+        }
+        torch.save(ckpt, model_path)
 
     def _train_gnn(self, test: bool = False, **kwargs: object) -> None:
         """Trains the GNN model.

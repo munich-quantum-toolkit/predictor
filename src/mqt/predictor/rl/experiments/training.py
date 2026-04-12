@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mqt.bench.targets import get_device
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 
 from mqt.predictor.rl.helper import get_path_trained_model, get_path_training_circuits_train
 from mqt.predictor.rl.predictor import Predictor
 
 if TYPE_CHECKING:
     from qiskit.transpiler import Target
+    from stable_baselines3.common.callbacks import BaseCallback
 
     from mqt.predictor.reward import figure_of_merit
 
@@ -32,6 +34,9 @@ class RLTrainingResult:
 
     model_path: Path
     training_directory: Path
+    total_timesteps: int
+    checkpoint_directory: Path | None = None
+    resumed_from_checkpoint: Path | None = None
 
 
 def run_rl_training(
@@ -42,11 +47,17 @@ def run_rl_training(
     verbose: int = 1,
     test: bool = False,
     path_training_circuits: str | Path | None = None,
+    checkpoint_directory: str | Path | None = None,
+    checkpoint_frequency: int | None = None,
+    resume_from_checkpoint: str | Path | None = None,
+    callback: BaseCallback | None = None,
 ) -> RLTrainingResult:
     """Train an RL predictor on an existing training split."""
     training_directory = (
         Path(path_training_circuits) if path_training_circuits is not None else get_path_training_circuits_train()
     )
+    resolved_checkpoint_directory = Path(checkpoint_directory) if checkpoint_directory is not None else None
+    resolved_resume_from_checkpoint = Path(resume_from_checkpoint) if resume_from_checkpoint is not None else None
 
     predictor = Predictor(
         figure_of_merit=figure_of_merit,
@@ -54,14 +65,35 @@ def run_rl_training(
         mdp=mdp,
         path_training_circuits=training_directory,
     )
-    predictor.train_model(
+    callbacks: list[BaseCallback] = []
+    if resolved_checkpoint_directory is not None and checkpoint_frequency is not None and checkpoint_frequency > 0:
+        resolved_checkpoint_directory.mkdir(parents=True, exist_ok=True)
+        callbacks.append(
+            CheckpointCallback(
+                save_freq=checkpoint_frequency,
+                save_path=str(resolved_checkpoint_directory),
+                name_prefix="model_checkpoint",
+            )
+        )
+    if callback is not None:
+        callbacks.append(callback)
+
+    trained_model = predictor.train_model(
         timesteps=timesteps,
         verbose=verbose,
         test=test,
+        callback=CallbackList(callbacks) if callbacks else None,
+        resume_from=resolved_resume_from_checkpoint,
     )
 
     model_path = get_path_trained_model() / f"model_{figure_of_merit}_{device.description}.zip"
-    return RLTrainingResult(model_path=model_path, training_directory=training_directory)
+    return RLTrainingResult(
+        model_path=model_path,
+        training_directory=training_directory,
+        total_timesteps=int(trained_model.num_timesteps),
+        checkpoint_directory=resolved_checkpoint_directory,
+        resumed_from_checkpoint=resolved_resume_from_checkpoint,
+    )
 
 
 def main() -> None:
@@ -71,7 +103,12 @@ def main() -> None:
     parser.add_argument(
         "--figure-of-merit",
         default="expected_fidelity",
-        choices=["expected_fidelity", "critical_depth", "estimated_success_probability"],
+        choices=[
+            "expected_fidelity",
+            "critical_depth",
+            "estimated_success_probability",
+            "estimated_hellinger_distance",
+        ],
         help="Figure of merit used for RL training.",
     )
     parser.add_argument(
@@ -93,6 +130,24 @@ def main() -> None:
         default=None,
         help="Optional path to the existing training circuits.",
     )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for periodic PPO checkpoints.",
+    )
+    parser.add_argument(
+        "--checkpoint-frequency",
+        type=int,
+        default=None,
+        help="Optional PPO checkpoint frequency in timesteps.",
+    )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        type=Path,
+        default=None,
+        help="Optional PPO checkpoint to resume training from.",
+    )
     args = parser.parse_args()
 
     result = run_rl_training(
@@ -103,6 +158,9 @@ def main() -> None:
         verbose=args.verbose,
         test=args.test,
         path_training_circuits=args.train_dir,
+        checkpoint_directory=args.checkpoint_dir,
+        checkpoint_frequency=args.checkpoint_frequency,
+        resume_from_checkpoint=args.resume_from_checkpoint,
     )
 
     print(f"Training directory: {result.training_directory}")
