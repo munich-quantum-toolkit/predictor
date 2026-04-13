@@ -240,7 +240,9 @@ class CompilationTracer:
         Args:
             filepath: The destination path or filename for the output JSON file.
         """
-        with Path(filepath).open("w", encoding="utf-8") as f:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
             json.dump(asdict(self), f, indent=4)
 
     @staticmethod
