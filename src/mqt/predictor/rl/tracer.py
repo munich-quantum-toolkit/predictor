@@ -16,7 +16,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import qiskit.qasm2 as qasm2
+from qiskit import qasm2
+from qiskit.qasm2 import QASM2ExportError
 
 if TYPE_CHECKING:
     import numpy as np
@@ -221,7 +222,7 @@ class CompilationTracer:
             fom_value=round(fom_value, 6),
             fom_kind=fom_kind,
             is_terminal=done,
-            circuit_qasm=qasm2.dumps(current_qc),
+            circuit_qasm=self._safe_qasm_dumps(current_qc),
             program_communication=self._extract_float(features["program_communication"]),
             critical_depth=self._extract_float(features["critical_depth"]),
             entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
@@ -279,3 +280,11 @@ class CompilationTracer:
         if isinstance(val, int):
             return float(val)
         return float(val[0])
+
+    @staticmethod
+    def _safe_qasm_dumps(qc: QuantumCircuit) -> str:
+        """Safely export circuit to QASM2, returning error message on failure."""
+        try:
+            return qasm2.dumps(qc)
+        except QASM2ExportError as e:
+            return f"QASM2 export failed: {e}"

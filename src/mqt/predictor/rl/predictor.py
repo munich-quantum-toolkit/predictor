@@ -209,4 +209,10 @@ def rl_compile(
         predictor = predictor_singleton
         predictor.env.tracer_output_path = tracer_output_path
 
-    return predictor.compile_as_predicted(qc)
+    result = predictor.compile_as_predicted(qc)
+
+    # Reset tracer path to prevent leakage to subsequent calls
+    if predictor_singleton is not None:
+        predictor.env.tracer_output_path = None
+
+    return result

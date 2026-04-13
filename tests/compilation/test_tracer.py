@@ -11,13 +11,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 
 from mqt.predictor.qcompile import qcompile
 from mqt.predictor.rl.tracer import CompilationStep, DeviceMetadata
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
@@ -31,7 +34,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert trace_file.exists(), "Tracer JSON file was not generated."
     assert trace_file.is_file(), "Tracer output path is not a valid file."
 
-    with Path(trace_file).open(encoding="utf-8") as f:
+    with trace_file.open(encoding="utf-8") as f:
         trace_data = json.load(f)
 
     assert "circuit_name" in trace_data, "Tracer JSON is missing the circuit name."
