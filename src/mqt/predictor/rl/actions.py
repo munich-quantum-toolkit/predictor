@@ -15,7 +15,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bqskit import MachineModel
 from bqskit import compile as bqskit_compile
@@ -86,8 +86,10 @@ if TYPE_CHECKING:
     from typing import Any
 
     from bqskit import Circuit
-    from pytket._tket.passes import BasePass as tket_BasePass
-    from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
+    from pytket._tket.passes import BasePass as TketBasePass
+    from qiskit.passmanager.base_tasks import Task
+
+    TaskList = list[Task | TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]
 
 
 class CompilationOrigin(str, Enum):
@@ -119,8 +121,8 @@ class Action:
     origin: CompilationOrigin
     pass_type: PassType
     transpile_pass: (
-        list[qiskit_BasePass | tket_BasePass]
-        | Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        TaskList
+        | Callable[..., TaskList]
         | Callable[
             ...,
             Callable[..., tuple[Any, ...] | Circuit],
@@ -138,7 +140,7 @@ class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
     transpile_pass: (
-        Callable[..., list[qiskit_BasePass | tket_BasePass]]
+        Callable[..., TaskList]
         | Callable[
             ...,
             Callable[..., tuple[Any, ...] | Circuit],
@@ -295,25 +297,28 @@ register_action(
         "QiskitO3",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        transpile_pass=lambda native_gate, coupling_map: [
-            Collect2qBlocks(),
-            ConsolidateBlocks(basis_gates=native_gate),
-            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-            Optimize1qGatesDecomposition(basis=native_gate),
-            CommutativeCancellation(basis_gates=native_gate),
-            GatesInBasis(native_gate),
-            ConditionalController(
-                common.generate_translation_passmanager(
-                    target=None, basis_gates=native_gate, coupling_map=coupling_map
-                ).to_flow_controller(),
-                condition=lambda property_set: not property_set["all_gates_in_basis"],
-            ),
-            Depth(recurse=True),
-            FixedPoint("depth"),
-            Size(recurse=True),
-            FixedPoint("size"),
-            MinimumPoint(["depth", "size"], "optimization_loop"),
-        ],
+        transpile_pass=lambda native_gate, coupling_map: cast(
+            "TaskList",
+            [
+                Collect2qBlocks(),
+                ConsolidateBlocks(basis_gates=native_gate),
+                UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+                Optimize1qGatesDecomposition(basis=native_gate),
+                CommutativeCancellation(basis_gates=native_gate),
+                GatesInBasis(native_gate),
+                ConditionalController(
+                    common.generate_translation_passmanager(
+                        target=None, basis_gates=native_gate, coupling_map=coupling_map
+                    ).to_flow_controller(),
+                    condition=lambda property_set: not property_set["all_gates_in_basis"],
+                ),
+                Depth(recurse=True),
+                FixedPoint("depth"),
+                Size(recurse=True),
+                FixedPoint("size"),
+                MinimumPoint(["depth", "size"], "optimization_loop"),
+            ],
+        ),
         do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
     )
 )
@@ -348,12 +353,15 @@ register_action(
         "DenseLayout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: [
-            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-        ],
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                EnlargeWithAncilla(),
+                ApplyLayout(),
+            ],
+        ),
     )
 )
 
@@ -362,19 +370,22 @@ register_action(
         "VF2Layout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: [
-            VF2Layout(target=device),
-            ConditionalController(
-                [
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                condition=lambda property_set: (
-                    property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                VF2Layout(target=device),
+                ConditionalController(
+                    [
+                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                        EnlargeWithAncilla(),
+                        ApplyLayout(),
+                    ],
+                    condition=lambda property_set: (
+                        property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+                    ),
                 ),
-            ),
-        ],
+            ],
+        ),
     )
 )
 
@@ -383,10 +394,13 @@ register_action(
         "RoutingPass",
         CompilationOrigin.TKET,
         PassType.ROUTING,
-        transpile_pass=lambda device: [
-            PreProcessTKETRoutingAfterQiskitLayout(),
-            RoutingPass(Architecture(list(device.build_coupling_map()))),
-        ],
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                PreProcessTKETRoutingAfterQiskitLayout(),
+                RoutingPass(Architecture(list(device.build_coupling_map()))),
+            ],
+        ),
     )
 )
 
@@ -395,9 +409,9 @@ register_action(
         "SabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
-        transpile_pass=lambda device: [
-            SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)
-        ],
+        transpile_pass=lambda device: cast(
+            "TaskList", [SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)]
+        ),
     )
 )
 
@@ -430,9 +444,9 @@ register_action(
         "BasisTranslator",
         CompilationOrigin.QISKIT,
         PassType.SYNTHESIS,
-        transpile_pass=lambda device: [
-            BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
-        ],
+        transpile_pass=lambda device: cast(
+            "TaskList", [BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)]
+        ),
     )
 )
 
