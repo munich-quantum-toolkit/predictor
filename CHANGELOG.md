@@ -14,7 +14,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Improved the MDP and extended the RL predictor's action/state space (expanded observation vector, support for stochastic passes, wrapped stochastic actions) ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Added AIRouting and new optimization actions (KAKDecomposition, ElidePermutations) to the RL action set ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
-- ✨ Added CompilationTracer that exports collects compilation information and exports it to a JSON file ([**@linus-hologram**])
+- ✨ Added CompilationTracer that collects compilation information and exports it to a JSON file ([`#641`]) ([**@linus-hologram**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 
