@@ -205,14 +205,11 @@ def rl_compile(
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
         predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
-    else:
-        predictor = predictor_singleton
-        predictor.env.tracer_output_path = tracer_output_path
-
-    result = predictor.compile_as_predicted(qc)
-
-    # Reset tracer path to prevent leakage to subsequent calls
-    if predictor_singleton is not None:
-        predictor.env.tracer_output_path = None
-
-    return result
+        return predictor.compile_as_predicted(qc)
+    predictor = predictor_singleton
+    original_tracer_output_path = predictor.env.tracer_output_path
+    predictor.env.tracer_output_path = tracer_output_path
+    try:
+        return predictor.compile_as_predicted(qc)
+    finally:
+        predictor.env.tracer_output_path = original_tracer_output_path
