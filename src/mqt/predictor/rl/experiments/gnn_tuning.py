@@ -52,8 +52,8 @@ class GNNTrialConfig:
     mdp: str = "paper"
     trial_steps: int = 2000
     steps_per_iteration: int = 2048
-    lr: float = 3e-4
-    gnn_lr: float = 1e-4
+    lr: float = 1e-3
+    gnn_lr: float = 1e-3
     num_epochs: int = 10
     minibatch_size: int = 64
     max_eval_circuits: int = 32
@@ -160,10 +160,10 @@ def _objective(
         Mean episode return (higher is better).
     """
     # Suggest hyperparameters
-    hidden_dim = trial.suggest_int("hidden_dim", 8, 64)
+    hidden_dim = trial.suggest_int("hidden_dim", 32, 128)
     num_conv_wo_resnet = trial.suggest_int("num_conv_wo_resnet", 1, 3)
     num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 9)
-    dropout_p = trial.suggest_categorical("dropout_p", [0.0, 0.1, 0.2, 0.3])
+    dropout_p = trial.suggest_categorical("dropout_p", [0.0, 0.1, 0.2])
     bidirectional = trial.suggest_categorical("bidirectional", [False, True])
 
     trial_id = trial.number
