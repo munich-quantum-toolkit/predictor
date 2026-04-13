@@ -44,17 +44,22 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert "timestamp" in trace_data, "Tracer JSON is missing the timestamp."
     assert "steps" in trace_data, "Tracer JSON is missing the steps array."
 
-    assert len(trace_data["steps"]) > 0, "Tracer did not record any compilation steps."
-    assert trace_data["steps"][0]["action"] == "Baseline"
+    assert len(trace_data["steps"]) > 1, "Tracer should record subsequent compilation steps beyond the Baseline."
+    assert trace_data["steps"][0]["action"] == "Baseline", "First step must be Baseline."
     assert trace_data["schema_version"] == "1.0.0"
 
+    last_step_data = trace_data["steps"][-1]
+    assert last_step_data.get("isTerminal") is True, "The final compilation step must be marked as terminal."
+
     try:
-        # initialize from JSON (throws if the structures don't match)
+        # Initialize from JSON (throws if the structures don't match)
         DeviceMetadata(**trace_data["device"])
+
+        # Semantically validate both the first and the last steps
         CompilationStep(**trace_data["steps"][0])
+        CompilationStep(**last_step_data)
 
     except TypeError as e:
-        # pytest.fail instantly stops the test and prints your custom error message
         pytest.fail(
             f"Semantic Validation Failed! The generated JSON does not match your Python dataclasses. Error: {e}"
         )
