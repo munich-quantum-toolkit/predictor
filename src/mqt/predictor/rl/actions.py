@@ -15,7 +15,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bqskit import MachineModel
 from bqskit import compile as bqskit_compile
@@ -297,25 +297,28 @@ register_action(
         "QiskitO3",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        transpile_pass=lambda native_gate, coupling_map: TaskList([
-            Collect2qBlocks(),
-            ConsolidateBlocks(basis_gates=native_gate),
-            UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
-            Optimize1qGatesDecomposition(basis=native_gate),
-            CommutativeCancellation(basis_gates=native_gate),
-            GatesInBasis(native_gate),
-            ConditionalController(
-                common.generate_translation_passmanager(
-                    target=None, basis_gates=native_gate, coupling_map=coupling_map
-                ).to_flow_controller(),
-                condition=lambda property_set: not property_set["all_gates_in_basis"],
-            ),
-            Depth(recurse=True),
-            FixedPoint("depth"),
-            Size(recurse=True),
-            FixedPoint("size"),
-            MinimumPoint(["depth", "size"], "optimization_loop"),
-        ]),
+        transpile_pass=lambda native_gate, coupling_map: cast(
+            "TaskList",
+            [
+                Collect2qBlocks(),
+                ConsolidateBlocks(basis_gates=native_gate),
+                UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
+                Optimize1qGatesDecomposition(basis=native_gate),
+                CommutativeCancellation(basis_gates=native_gate),
+                GatesInBasis(native_gate),
+                ConditionalController(
+                    common.generate_translation_passmanager(
+                        target=None, basis_gates=native_gate, coupling_map=coupling_map
+                    ).to_flow_controller(),
+                    condition=lambda property_set: not property_set["all_gates_in_basis"],
+                ),
+                Depth(recurse=True),
+                FixedPoint("depth"),
+                Size(recurse=True),
+                FixedPoint("size"),
+                MinimumPoint(["depth", "size"], "optimization_loop"),
+            ],
+        ),
         do_while=lambda property_set: not property_set["optimization_loop_minimum_point"],
     )
 )
@@ -350,12 +353,15 @@ register_action(
         "DenseLayout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: TaskList([
-            DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
-            FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-            EnlargeWithAncilla(),
-            ApplyLayout(),
-        ]),
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                DenseLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                EnlargeWithAncilla(),
+                ApplyLayout(),
+            ],
+        ),
     )
 )
 
@@ -364,19 +370,22 @@ register_action(
         "VF2Layout",
         CompilationOrigin.QISKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: TaskList([
-            VF2Layout(target=device),
-            ConditionalController(
-                [
-                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
-                    EnlargeWithAncilla(),
-                    ApplyLayout(),
-                ],
-                condition=lambda property_set: (
-                    property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                VF2Layout(target=device),
+                ConditionalController(
+                    [
+                        FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                        EnlargeWithAncilla(),
+                        ApplyLayout(),
+                    ],
+                    condition=lambda property_set: (
+                        property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
+                    ),
                 ),
-            ),
-        ]),
+            ],
+        ),
     )
 )
 
@@ -385,10 +394,13 @@ register_action(
         "RoutingPass",
         CompilationOrigin.TKET,
         PassType.ROUTING,
-        transpile_pass=lambda device: TaskList([
-            PreProcessTKETRoutingAfterQiskitLayout(),
-            RoutingPass(Architecture(list(device.build_coupling_map()))),
-        ]),
+        transpile_pass=lambda device: cast(
+            "TaskList",
+            [
+                PreProcessTKETRoutingAfterQiskitLayout(),
+                RoutingPass(Architecture(list(device.build_coupling_map()))),
+            ],
+        ),
     )
 )
 
@@ -397,9 +409,9 @@ register_action(
         "SabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
-        transpile_pass=lambda device: TaskList([
-            SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)
-        ]),
+        transpile_pass=lambda device: cast(
+            "TaskList", [SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)]
+        ),
     )
 )
 
@@ -432,9 +444,9 @@ register_action(
         "BasisTranslator",
         CompilationOrigin.QISKIT,
         PassType.SYNTHESIS,
-        transpile_pass=lambda device: TaskList([
-            BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)
-        ]),
+        transpile_pass=lambda device: cast(
+            "TaskList", [BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)]
+        ),
     )
 )
 
