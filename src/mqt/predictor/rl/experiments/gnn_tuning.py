@@ -160,7 +160,7 @@ def _objective(
         Mean episode return (higher is better).
     """
     # Suggest hyperparameters
-    hidden_dim = trial.suggest_int("hidden_dim", 32, 128)
+    hidden_dim = trial.suggest_int("hidden_dim", 64, 128)
     num_conv_wo_resnet = trial.suggest_int("num_conv_wo_resnet", 1, 3)
     num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 9)
     dropout_p = trial.suggest_categorical("dropout_p", [0.0, 0.1, 0.2])
