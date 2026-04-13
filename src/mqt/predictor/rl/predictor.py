@@ -206,6 +206,8 @@ def rl_compile(
             raise ValueError(msg)
         predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
         return predictor.compile_as_predicted(qc)
+
+    # use singleton and restore tracer path afterward
     predictor = predictor_singleton
     original_tracer_output_path = predictor.env.tracer_output_path
     predictor.env.tracer_output_path = tracer_output_path

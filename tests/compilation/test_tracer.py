@@ -49,7 +49,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert trace_data["schema_version"] == "1.0.0"
 
     last_step_data = trace_data["steps"][-1]
-    assert last_step_data.get("isTerminal") is True, "The final compilation step must be marked as terminal."
+    assert last_step_data.get("is_terminal") is True, "The final compilation step must be marked as terminal."
 
     try:
         # Initialize from JSON (throws if the structures don't match)
