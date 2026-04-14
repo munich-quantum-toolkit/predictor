@@ -172,10 +172,7 @@ def parse_args() -> argparse.Namespace:
 def selected_gnn_mdp(args: argparse.Namespace) -> str:
     """Return the single MDP used for GNN tuning mode."""
     if len(args.mdps) != 1:
-        msg = (
-            "GNN hyperparameter tuning requires exactly one MDP. "
-            f"Received: {', '.join(args.mdps)}"
-        )
+        msg = f"GNN hyperparameter tuning requires exactly one MDP. Received: {', '.join(args.mdps)}"
         raise ValueError(msg)
     return args.mdps[0]
 
