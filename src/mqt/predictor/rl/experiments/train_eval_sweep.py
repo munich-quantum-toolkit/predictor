@@ -169,6 +169,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def selected_gnn_mdp(args: argparse.Namespace) -> str:
+    """Return the single MDP used for GNN tuning mode."""
+    if len(args.mdps) != 1:
+        msg = (
+            "GNN hyperparameter tuning requires exactly one MDP. "
+            f"Received: {', '.join(args.mdps)}"
+        )
+        raise ValueError(msg)
+    return args.mdps[0]
+
+
 def now_utc_iso() -> str:
     """Return the current UTC timestamp in ISO format."""
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat()
@@ -943,6 +954,7 @@ def log_progress(logger: logging.Logger, progress: dict[str, Any]) -> None:
 def run_gnn_tuning_phase(
     *,
     device_name: str,
+    mdp: str,
     output_dir: Path,
     args: argparse.Namespace,
     logger: logging.Logger,
@@ -963,7 +975,7 @@ def run_gnn_tuning_phase(
             output_dir=tuning_dir,
             num_trials=args.gnn_trials,
             trial_steps=args.gnn_trial_steps,
-            mdp="paper",  # Fixed MDP for tuning
+            mdp=mdp,
             path_training_circuits=args.train_dir,
             path_validation_circuits=args.gnn_validation_dir,
             logger=logger,
@@ -982,12 +994,13 @@ def run_gnn_tuning_phase(
 def print_plan(args: argparse.Namespace) -> None:
     """Print the planned sweep and exit."""
     if args.gnn_tuning:
+        gnn_mdp = selected_gnn_mdp(args)
         print(f"Figure of merit: {FIGURE_OF_MERIT}")
         print("Mode: GNN hyperparameter tuning")
         print(f"Devices: {', '.join(args.devices)}")
         print(f"Trials per device: {args.gnn_trials}")
         print(f"Steps per trial: {args.gnn_trial_steps}")
-        print("MDP: paper (fixed)")
+        print(f"MDP: {gnn_mdp}")
         print(f"Output directory: {args.output_dir}")
         print(f"Planned GNN tuning runs: {len(args.devices)}")
         for index, device_name in enumerate(args.devices, start=1):
@@ -1010,6 +1023,7 @@ def main() -> None:
     """Run the full ESP sweep."""
     args = parse_args()
     args.output_dir = args.output_dir.resolve()
+    gnn_mdp = selected_gnn_mdp(args) if args.gnn_tuning else None
 
     if args.dry_run:
         print_plan(args)
@@ -1030,10 +1044,12 @@ def main() -> None:
     # Handle GNN tuning mode separately
     if args.gnn_tuning:
         logger.info("Running in GNN hyperparameter tuning mode.")
+        logger.info("Selected GNN tuning MDP: %s", gnn_mdp)
         try:
             for device_name in args.devices:
                 run_gnn_tuning_phase(
                     device_name=device_name,
+                    mdp=gnn_mdp,
                     output_dir=args.output_dir,
                     args=args,
                     logger=logger,
