@@ -17,12 +17,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 from qiskit import QuantumCircuit
 from qiskit.transpiler.exceptions import TranspilerError
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from sklearn.metrics import mutual_info_score
+from torch.distributions import Categorical
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.reward import esp_data_available, estimated_success_probability, expected_fidelity
 from mqt.predictor.rl.actions import PassType
@@ -33,6 +36,7 @@ from mqt.predictor.rl.helper import (
     predicted_action_to_index,
 )
 from mqt.predictor.rl.predictor import Predictor
+from mqt.predictor.rl.predictorenv import PredictorEnv
 from mqt.predictor.utils import get_openqasm_gates_for_rl
 
 if TYPE_CHECKING:
@@ -42,6 +46,7 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.gnn import SAGEActorCritic
 
 
 logger = logging.getLogger("mqt-predictor")
@@ -243,6 +248,54 @@ def evaluate_trained_predictor(
     )
 
 
+def evaluate_gnn_policy(
+    policy: SAGEActorCritic,
+    device: Target,
+    figure_of_merit: figure_of_merit = "expected_fidelity",
+    mdp: str = "paper",
+    path_training_circuits: str | Path | None = None,
+    path_evaluation_circuits: str | Path | None = None,
+    max_steps: int = 200,
+    deterministic: bool = True,
+    seed: int = 0,
+    max_circuits: int | None = None,
+) -> tuple[Path, list[CircuitEvaluationResult]]:
+    """Evaluate a graph-policy on a held-out split.
+
+    The tuner prefers a validation split when available and falls back to the
+    regular held-out test split otherwise. This keeps tuning off the training
+    circuits without forcing a new dataset layout.
+    """
+    training_dir = (
+        Path(path_training_circuits) if path_training_circuits is not None else get_path_training_circuits_train()
+    )
+    evaluation_dir = resolve_validation_circuit_directory(training_dir, path_evaluation_circuits)
+    circuits = load_test_circuits(evaluation_dir)
+    if max_circuits is not None:
+        circuits = circuits[:max_circuits]
+
+    env = PredictorEnv(
+        reward_function=figure_of_merit,
+        device=device,
+        path_training_circuits=training_dir,
+        graph=True,
+        mdp=mdp,
+    )
+
+    results = [
+        rollout_circuit_with_gnn_policy(
+            env=env,
+            policy=policy,
+            qc=qc,
+            max_steps=max_steps,
+            deterministic=deterministic,
+            seed=seed,
+        )
+        for qc in circuits
+    ]
+    return evaluation_dir, results
+
+
 def compute_feature_importance(
     predictor: Predictor,
     model: MaskablePPO,
@@ -364,6 +417,78 @@ def rollout_circuit(
     )
 
 
+def rollout_circuit_with_gnn_policy(
+    env: PredictorEnv,
+    policy: SAGEActorCritic,
+    qc: QuantumCircuit,
+    max_steps: int = 200,
+    deterministic: bool = True,
+    seed: int = 0,
+) -> CircuitEvaluationResult:
+    """Run a graph-policy on one circuit and collect the standard evaluation result."""
+    logger.info("Evaluating circuit=%s", qc.name or "<unnamed>")
+    env.episode_count = 0
+    initial_obs, _ = env.reset(qc, seed=seed)
+    obs = require_graph_observation(initial_obs)
+
+    used_compilation_passes: list[str] = []
+    effective_compilation_passes: list[str] = []
+    effective_steps = 0
+    terminated = False
+    truncated = False
+    hit_step_limit = False
+    step_count = 0
+    torch_device = next(policy.parameters()).device
+
+    policy.eval()
+    with torch.no_grad():
+        while not (terminated or truncated) and step_count < max_steps:
+            batch_obs = Batch.from_data_list([obs]).to(torch_device)  # ty: ignore[unresolved-attribute]
+            logits, _ = policy(batch_obs)
+            mask = torch.as_tensor(env.action_masks(), dtype=torch.bool, device=torch_device)
+            logits = logits.masked_fill(~mask.unsqueeze(0), float("-inf"))
+
+            if deterministic:
+                action_index = int(torch.argmax(logits.squeeze(0)).item())
+            else:
+                action_index = int(Categorical(logits=logits.squeeze(0)).sample().item())
+
+            action_item = env.action_set[action_index]
+            used_compilation_passes.append(action_item.name)
+            previous_state_flags = env.get_compilation_state_flags()
+
+            next_obs, reward_value, terminated, truncated, _ = env.step(action_index)
+            current_state_flags = env.get_compilation_state_flags()
+            if is_effective_action(action_item, reward_value, previous_state_flags, current_state_flags):
+                effective_compilation_passes.append(action_item.name)
+                effective_steps += 1
+
+            if not (terminated or truncated):
+                obs = require_graph_observation(next_obs)
+            step_count += 1
+
+    if not (terminated or truncated) and step_count >= max_steps:
+        hit_step_limit = True
+        if env.action_terminate_index in env.valid_actions:
+            terminate_item = env.action_set[env.action_terminate_index]
+            used_compilation_passes.append(terminate_item.name)
+            env.step(env.action_terminate_index)
+
+    figure_of_merit_value, figure_of_merit_kind = env.calculate_reward(mode="auto")
+
+    return CircuitEvaluationResult(
+        circuit_name=env.current_circuit_name,
+        figure_of_merit_value=figure_of_merit_value,
+        figure_of_merit_kind=figure_of_merit_kind,
+        metrics=collect_final_metrics(env.state, env.device),
+        used_compilation_passes=used_compilation_passes,
+        effective_compilation_passes=effective_compilation_passes,
+        effective_steps=effective_steps,
+        terminated=terminated,
+        hit_step_limit=hit_step_limit,
+    )
+
+
 def clone_observation(obs: Observation) -> PolicyObservation:
     """Return a detached copy of an observation dictionary for policy inference."""
     return {key: clone_feature_value(value) for key, value in obs.items()}
@@ -375,6 +500,14 @@ def require_flat_observation(obs: object) -> Observation:
         msg = "Evaluation with MaskablePPO requires flat observations. Construct the predictor with graph=False."
         raise TypeError(msg)
     return cast("Observation", obs)
+
+
+def require_graph_observation(obs: object) -> Data:
+    """Return a graph observation for graph-policy inference."""
+    if not isinstance(obs, Data):
+        msg = "Evaluation with a GNN policy requires graph observations. Construct the predictor with graph=True."
+        raise TypeError(msg)
+    return obs
 
 
 def clone_feature_value(value: FeatureValue) -> NDArray[np.float32]:
@@ -448,6 +581,11 @@ def compute_average_metrics(results: list[CircuitEvaluationResult]) -> FinalCirc
     )
 
 
+def average_figure_of_merit(results: list[CircuitEvaluationResult]) -> float:
+    """Compute the mean figure-of-merit over a set of evaluation results."""
+    return nanmean_or_nan([result.figure_of_merit_value for result in results])
+
+
 def compute_action_effectiveness_summary(results: list[CircuitEvaluationResult]) -> ActionEffectivenessSummary:
     """Aggregate action usage/effectiveness statistics over all evaluated circuits."""
     total_counter: Counter[str] = Counter()
@@ -491,10 +629,8 @@ def resolve_test_circuit_directory(
         test_dir = Path(path_test_circuits)
     else:
         candidates = [
+            *_candidate_split_directories(path_training_circuits, ("test",)),
             get_path_training_circuits_test(),
-            path_training_circuits.parent / "test"
-            if path_training_circuits.name == "train"
-            else path_training_circuits / "test",
             path_training_circuits / "new_indep_circuits" / "special_test",
             path_training_circuits / "special_test",
             path_training_circuits.parent / "special_test",
@@ -506,6 +642,37 @@ def resolve_test_circuit_directory(
         msg = f"Test circuit directory '{test_dir}' does not exist."
         raise FileNotFoundError(msg)
     return test_dir
+
+
+def resolve_validation_circuit_directory(
+    path_training_circuits: Path,
+    path_validation_circuits: str | Path | None = None,
+) -> Path:
+    """Resolve a validation directory, falling back to the held-out test split."""
+    if path_validation_circuits is not None:
+        validation_dir = Path(path_validation_circuits)
+        if not validation_dir.exists():
+            msg = f"Validation circuit directory '{validation_dir}' does not exist."
+            raise FileNotFoundError(msg)
+        return validation_dir
+
+    validation_candidates = _candidate_split_directories(path_training_circuits, ("validation", "val", "valid"))
+    existing_validation_dir = next((candidate for candidate in validation_candidates if candidate.exists()), None)
+    if existing_validation_dir is not None:
+        return existing_validation_dir
+
+    return resolve_test_circuit_directory(path_training_circuits)
+
+
+def _candidate_split_directories(path_training_circuits: Path, split_names: tuple[str, ...]) -> list[Path]:
+    """Return candidate split directories relative to the configured training directory."""
+    sibling_candidates = (
+        [path_training_circuits.parent / split_name for split_name in split_names]
+        if path_training_circuits.name == "train"
+        else []
+    )
+    local_candidates = [path_training_circuits / split_name for split_name in split_names]
+    return [*sibling_candidates, *local_candidates]
 
 
 def load_test_circuits(test_dir: Path) -> list[QuantumCircuit]:

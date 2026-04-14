@@ -8,12 +8,13 @@
 
 """GNN hyperparameter tuning via Optuna for RL compilation predictor.
 
-This module provides infrastructure for tuning GNN architecture hyperparameters
-(hidden_dim, num_conv_wo_resnet, num_resnet_layers, dropout, bidirectional)
-using Optuna and quick training trials (e.g., 2k steps each).
+This module tunes GNN architecture hyperparameters
+(``hidden_dim``, ``num_conv_wo_resnet``, ``num_resnet_layers``, ``dropout_p``,
+``bidirectional``) using short PPO training runs and held-out evaluation.
 
-The goal is to identify optimal GNN configurations without full training,
-outputting best parameters for downstream use.
+The tuner trains on the configured RL training split and prefers a sibling
+validation split when available. If no validation split exists, it falls back
+to the regular held-out test split rather than evaluating on the training data.
 """
 
 from __future__ import annotations
@@ -21,22 +22,23 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import optuna
-import torch
 from optuna.samplers import TPESampler
-from torch.distributions import Categorical
-from torch_geometric.data import Batch
 
-from mqt.predictor.rl.experiments.evaluation import load_test_circuits
+from mqt.predictor.rl.experiments.evaluation import (
+    average_figure_of_merit,
+    evaluate_gnn_policy,
+    resolve_validation_circuit_directory,
+)
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy, train_ppo_with_gnn
-from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_training_circuits_test
+from mqt.predictor.rl.helper import GLOBAL_FEATURE_DIM, get_path_training_circuits_train
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
     import logging
-    from pathlib import Path
 
     from qiskit.transpiler import Target
 
@@ -49,8 +51,10 @@ class GNNTrialConfig:
 
     device_name: str
     figure_of_merit: figure_of_merit
+    path_training_circuits: Path
+    path_evaluation_circuits: Path
     mdp: str = "paper"
-    trial_steps: int = 2000
+    trial_steps: int = 5000
     steps_per_iteration: int = 2048
     lr: float = 3e-4
     gnn_lr: float = 1e-4
@@ -58,6 +62,7 @@ class GNNTrialConfig:
     minibatch_size: int = 64
     max_eval_circuits: int = 32
     max_eval_steps: int = 200
+    evaluation_deterministic: bool = True
 
 
 def run_gnn_hyperparameter_tuning(
@@ -66,8 +71,10 @@ def run_gnn_hyperparameter_tuning(
     figure_of_merit: figure_of_merit,
     output_dir: Path,
     num_trials: int = 10,
-    trial_steps: int = 2000,
+    trial_steps: int = 5000,
     mdp: str = "paper",
+    path_training_circuits: str | Path | None = None,
+    path_validation_circuits: str | Path | None = None,
     logger: logging.Logger,
 ) -> dict[str, Any]:
     """Run Optuna-based GNN hyperparameter tuning for one device.
@@ -79,16 +86,24 @@ def run_gnn_hyperparameter_tuning(
         num_trials: Number of Optuna trials to run.
         trial_steps: Training steps per trial.
         mdp: MDP variant (fixed, typically "paper").
+        path_training_circuits: Optional training split directory for PPO.
+        path_validation_circuits: Optional held-out validation directory.
         logger: Logger for progress.
 
     Returns:
         Dict with best_params, best_score, trial_history, and metadata.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    training_dir = (
+        Path(path_training_circuits) if path_training_circuits is not None else get_path_training_circuits_train()
+    )
+    evaluation_dir = resolve_validation_circuit_directory(training_dir, path_validation_circuits)
 
     trial_config = GNNTrialConfig(
         device_name=device.description,
         figure_of_merit=figure_of_merit,
+        path_training_circuits=training_dir,
+        path_evaluation_circuits=evaluation_dir,
         mdp=mdp,
         trial_steps=trial_steps,
     )
@@ -96,12 +111,16 @@ def run_gnn_hyperparameter_tuning(
     logger.info("Starting GNN hyperparameter tuning for %s.", device.description)
     logger.info("Number of trials: %d", num_trials)
     logger.info("Steps per trial: %d", trial_steps)
+    logger.info("Training circuits: %s", training_dir)
+    logger.info("Held-out evaluation circuits: %s", evaluation_dir)
 
     def objective(trial: optuna.Trial) -> float:
         """Optuna objective function for GNN hyperparameter optimization."""
         return _objective(trial=trial, device=device, config=trial_config, logger=logger)
 
-    sampler = TPESampler(n_startup_trials=10)
+    startup_trials = min(10, max(1, num_trials // 3))
+    logger.info("Optuna startup trials: %d", startup_trials)
+    sampler = TPESampler(n_startup_trials=startup_trials)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     study.optimize(objective, n_trials=num_trials, show_progress_bar=True)
 
@@ -125,6 +144,12 @@ def run_gnn_hyperparameter_tuning(
         "figure_of_merit": figure_of_merit,
         "mdp": mdp,
         "completed_at": datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(),
+        "training_directory": str(training_dir),
+        "evaluation_directory": str(evaluation_dir),
+        "evaluation_deterministic": trial_config.evaluation_deterministic,
+        "trial_steps": trial_steps,
+        "steps_per_iteration": trial_config.steps_per_iteration,
+        "startup_trials": startup_trials,
         "best_params": best_params,
         "best_score": best_score,
         "best_trial": best_trial.number,
@@ -182,6 +207,7 @@ def _objective(
         env = PredictorEnv(
             reward_function=config.figure_of_merit,
             device=device,
+            path_training_circuits=config.path_training_circuits,
             graph=True,  # Use graph observations for GNN
             mdp=config.mdp,
         )
@@ -217,14 +243,20 @@ def _objective(
             gnn_lr=config.gnn_lr,
         )
 
-        # Evaluate on test circuits
-        avg_figure_of_merit = _evaluate_gnn_policy(
+        # Evaluate on a held-out split using the shared RL evaluation helpers
+        _evaluation_dir, evaluation_results = evaluate_gnn_policy(
             policy=policy,
-            env=env,
-            config=config,
-            trial_id=trial_id,
-            logger=logger,
+            device=device,
+            figure_of_merit=config.figure_of_merit,
+            mdp=config.mdp,
+            path_training_circuits=config.path_training_circuits,
+            path_evaluation_circuits=config.path_evaluation_circuits,
+            max_steps=config.max_eval_steps,
+            deterministic=config.evaluation_deterministic,
+            seed=trial_id,
+            max_circuits=config.max_eval_circuits,
         )
+        avg_figure_of_merit = average_figure_of_merit(evaluation_results)
         logger.debug("Trial %d completed: avg_figure_of_merit=%.4f", trial_id, avg_figure_of_merit)
 
     except Exception:
@@ -232,79 +264,4 @@ def _objective(
         # Return a very low score to discourage this hyperparameter combination
         return -999.0
     else:
-        return avg_figure_of_merit
-
-
-def _evaluate_gnn_policy(
-    policy: Any,  # noqa: ANN401
-    env: PredictorEnv,
-    config: GNNTrialConfig,
-    trial_id: int,
-    logger: logging.Logger,
-) -> float:
-    """Evaluate a trained GNN policy on a few test circuits (stochastic mode).
-
-    Args:
-        policy: Trained SAGEActorCritic model.
-        env: PredictorEnv instance (already initialized).
-        config: GNNTrialConfig with evaluation parameters.
-        trial_id: Trial ID for logging.
-        logger: Logger instance.
-
-    Returns:
-        Average figure of merit across test circuits.
-    """
-    # Load test circuits
-    test_dir = get_path_training_circuits_test()
-    test_circuits = load_test_circuits(test_dir)
-    # Use subset for quick evaluation
-    test_circuits_subset = test_circuits[: config.max_eval_circuits]
-
-    torch_device = next(policy.parameters()).device
-    figure_of_merit_values = []
-
-    try:
-        for qc in test_circuits_subset:
-            obs, _ = env.reset(qc)
-            terminated = False
-            truncated = False
-            step_count = 0
-
-            while not (terminated or truncated) and step_count < config.max_eval_steps:
-                # Prepare batched observation
-                batch_obs = Batch.from_data_list([obs]).to(torch_device)  # type: ignore[arg-type]
-
-                # Get action from policy (stochastic)
-                with torch.no_grad():
-                    logits, _ = policy(batch_obs)
-
-                # Apply action mask to prevent invalid actions
-                mask = torch.tensor(env.action_masks(), dtype=torch.bool, device=torch_device)
-                logits = logits.masked_fill(~mask.unsqueeze(0), float("-inf"))
-
-                # Sample action from distribution (stochastic)
-                dist = Categorical(logits=logits.squeeze(0))
-                action_idx = dist.sample().item()
-
-                obs, _reward, terminated, truncated, _info = env.step(action_idx)
-                step_count += 1
-
-            # Get final figure of merit for this circuit
-            figure_of_merit_value, _ = env.calculate_reward(mode="auto")
-            figure_of_merit_values.append(figure_of_merit_value)
-
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Trial %d evaluation failed during rollouts: %s. Returning 0.", trial_id, e)
-        # Return 0 if evaluation fails (better than -999 which discourages architecture)
-        return 0.0
-    else:
-        # Average across test circuits
-        avg_figure_of_merit = sum(figure_of_merit_values) / len(figure_of_merit_values)
-        logger.debug(
-            "Trial %d evaluation: %d circuits, avg=%.4f, values=%s",
-            trial_id,
-            len(figure_of_merit_values),
-            avg_figure_of_merit,
-            [f"{v:.4f}" for v in figure_of_merit_values],
-        )
         return avg_figure_of_merit

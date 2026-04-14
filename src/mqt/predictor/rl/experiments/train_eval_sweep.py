@@ -157,8 +157,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gnn-trial-steps",
         type=int,
-        default=2000,
+        default=5000,
         help="Training steps per GNN tuning trial.",
+    )
+    parser.add_argument(
+        "--gnn-validation-dir",
+        type=Path,
+        default=None,
+        help="Optional held-out validation directory for GNN tuning. Falls back to the test split when omitted.",
     )
     return parser.parse_args()
 
@@ -958,6 +964,8 @@ def run_gnn_tuning_phase(
             num_trials=args.gnn_trials,
             trial_steps=args.gnn_trial_steps,
             mdp="paper",  # Fixed MDP for tuning
+            path_training_circuits=args.train_dir,
+            path_validation_circuits=args.gnn_validation_dir,
             logger=logger,
         )
         logger.info(
