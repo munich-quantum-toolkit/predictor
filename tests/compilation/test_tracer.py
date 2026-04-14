@@ -15,8 +15,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
+from mqt.bench.targets.devices import get_device
 
 from mqt.predictor.qcompile import qcompile
+from mqt.predictor.rl.helper import get_path_trained_model
+from mqt.predictor.rl.predictor import Predictor
 from mqt.predictor.rl.tracer import CompilationStep, DeviceMetadata
 
 if TYPE_CHECKING:
@@ -27,6 +30,16 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     """Test that the compilation tracer correctly generates a JSON file when a path is provided."""
     trace_file = tmp_path / "test_trace.json"
     qc = get_benchmark("ghz", level=BenchmarkLevel.INDEP, circuit_size=3)
+
+    figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_path = get_path_trained_model() / (model_name + ".zip")
+
+    if not model_path.exists():
+        predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
+        predictor.train_model(timesteps=1000, test=True)
+
     _compiled_qc, _compilation_info, _selected_device = qcompile(
         qc, figure_of_merit="expected_fidelity", tracer_output_path=str(trace_file)
     )
