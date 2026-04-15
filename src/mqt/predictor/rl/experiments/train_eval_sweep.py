@@ -109,6 +109,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--train-verbose", type=int, default=1, help="Verbosity passed to PPO.")
     parser.add_argument("--max-steps", type=int, default=200, help="Maximum evaluation rollout steps.")
+    parser.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=100,
+        help="Hard cap on environment steps per episode before truncation.",
+    )
     parser.add_argument("--seed", type=int, default=0, help="Evaluation seed.")
     parser.add_argument(
         "--output-dir",
@@ -574,6 +580,7 @@ def run_training_phase(
         "timesteps": args.timesteps,
         "completed_timesteps": completed_timesteps,
         "verbose": args.train_verbose,
+        "max_episode_steps": args.max_episode_steps,
         "checkpoint_directory": str(checkpoint_dir),
         "checkpoint_frequency": args.checkpoint_frequency,
         "resumed_from_checkpoint": str(checkpoint_path) if checkpoint_path is not None else None,
@@ -599,6 +606,7 @@ def run_training_phase(
                 verbose=args.train_verbose,
                 test=args.test_training,
                 path_training_circuits=args.train_dir,
+                max_episode_steps=args.max_episode_steps,
                 checkpoint_directory=checkpoint_dir,
                 checkpoint_frequency=args.checkpoint_frequency,
                 resume_from_checkpoint=checkpoint_path,
@@ -613,6 +621,7 @@ def run_training_phase(
             "mdp": spec.mdp,
             "timesteps": args.timesteps,
             "completed_timesteps": training_result.total_timesteps,
+            "max_episode_steps": args.max_episode_steps,
             "saved_model_path": str(copied_model_path),
             "source_model_path": str(training_result.model_path),
             "checkpoint_directory": str(checkpoint_dir),
@@ -631,6 +640,7 @@ def run_training_phase(
             "timesteps": args.timesteps,
             "completed_timesteps": training_result.total_timesteps,
             "verbose": args.train_verbose,
+            "max_episode_steps": args.max_episode_steps,
             "checkpoint_directory": str(checkpoint_dir),
             "checkpoint_frequency": args.checkpoint_frequency,
             "resumed_from_checkpoint": (
@@ -653,6 +663,7 @@ def run_training_phase(
             "finished_at": now_utc_iso(),
             "timesteps": args.timesteps,
             "completed_timesteps": latest_timesteps,
+            "max_episode_steps": args.max_episode_steps,
             "checkpoint_directory": str(checkpoint_dir),
             "checkpoint_frequency": args.checkpoint_frequency,
             "resumed_from_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
@@ -670,6 +681,7 @@ def run_training_phase(
             "finished_at": now_utc_iso(),
             "timesteps": args.timesteps,
             "completed_timesteps": latest_timesteps,
+            "max_episode_steps": args.max_episode_steps,
             "checkpoint_directory": str(checkpoint_dir),
             "checkpoint_frequency": args.checkpoint_frequency,
             "resumed_from_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
@@ -709,6 +721,7 @@ def run_evaluation_phase(
         "started_at": now_utc_iso(),
         "seed": args.seed,
         "max_steps": args.max_steps,
+        "max_episode_steps": args.max_episode_steps,
         "deterministic": deterministic,
     }
     save_rl_status(status_path, status)
@@ -722,6 +735,7 @@ def run_evaluation_phase(
             path_training_circuits=args.train_dir,
             path_test_circuits=args.test_dir,
             max_steps=args.max_steps,
+            max_episode_steps=args.max_episode_steps,
             deterministic=deterministic,
             seed=args.seed,
         )
@@ -734,6 +748,7 @@ def run_evaluation_phase(
                 "mdp": spec.mdp,
                 "evaluation_mode": mode_name,
                 "deterministic": deterministic,
+                "max_episode_steps": args.max_episode_steps,
                 "result": result,
             },
         )
@@ -743,6 +758,7 @@ def run_evaluation_phase(
             "finished_at": now_utc_iso(),
             "seed": args.seed,
             "max_steps": args.max_steps,
+            "max_episode_steps": args.max_episode_steps,
             "deterministic": deterministic,
             "result_path": str(result_path),
             "summary": summarize_predictor_evaluation(result),
@@ -756,6 +772,7 @@ def run_evaluation_phase(
             "finished_at": now_utc_iso(),
             "seed": args.seed,
             "max_steps": args.max_steps,
+            "max_episode_steps": args.max_episode_steps,
             "deterministic": deterministic,
         }
         save_rl_status(status_path, status)
@@ -767,6 +784,7 @@ def run_evaluation_phase(
             "finished_at": now_utc_iso(),
             "seed": args.seed,
             "max_steps": args.max_steps,
+            "max_episode_steps": args.max_episode_steps,
             "deterministic": deterministic,
             "error": str(exc),
             "traceback": traceback.format_exc(),
@@ -855,6 +873,7 @@ def write_manifest(output_dir: Path, args: argparse.Namespace) -> None:
         "checkpoint_frequency": args.checkpoint_frequency,
         "train_verbose": args.train_verbose,
         "max_steps": args.max_steps,
+        "max_episode_steps": args.max_episode_steps,
         "seed": args.seed,
         "output_dir": str(args.output_dir),
         "train_dir": args.train_dir,
@@ -964,6 +983,7 @@ def run_gnn_tuning_phase(
     logger.info("Starting GNN hyperparameter tuning for %s.", device_name)
     logger.info("Number of trials: %d", args.gnn_trials)
     logger.info("Steps per trial: %d", args.gnn_trial_steps)
+    logger.info("Max episode steps: %d", args.max_episode_steps)
 
     try:
         results = run_gnn_hyperparameter_tuning(
@@ -975,6 +995,7 @@ def run_gnn_tuning_phase(
             mdp=mdp,
             path_training_circuits=args.train_dir,
             path_validation_circuits=args.gnn_validation_dir,
+            max_episode_steps=args.max_episode_steps,
             logger=logger,
         )
         logger.info(
@@ -998,6 +1019,7 @@ def print_plan(args: argparse.Namespace) -> None:
         print(f"Trials per device: {args.gnn_trials}")
         print(f"Steps per trial: {args.gnn_trial_steps}")
         print(f"MDP: {gnn_mdp}")
+        print(f"Max episode steps: {args.max_episode_steps}")
         print(f"Output directory: {args.output_dir}")
         print(f"Planned GNN tuning runs: {len(args.devices)}")
         for index, device_name in enumerate(args.devices, start=1):
@@ -1009,6 +1031,7 @@ def print_plan(args: argparse.Namespace) -> None:
         print(f"MDPs: {', '.join(args.mdps)}")
         print(f"Timesteps: {args.timesteps}")
         print(f"Checkpoint frequency: {args.checkpoint_frequency}")
+        print(f"Max episode steps: {args.max_episode_steps}")
         print(f"Output directory: {args.output_dir}")
         print(f"Pipelines: {'disabled' if args.skip_pipelines else ', '.join(DEFAULT_PIPELINES)}")
         print(f"Planned RL runs: {len(specs)}")
@@ -1041,6 +1064,7 @@ def main() -> None:
     # Handle GNN tuning mode separately
     if args.gnn_tuning:
         logger.info("Running in GNN hyperparameter tuning mode.")
+        assert gnn_mdp is not None
         logger.info("Selected GNN tuning MDP: %s", gnn_mdp)
         try:
             for device_name in args.devices:

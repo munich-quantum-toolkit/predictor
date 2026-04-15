@@ -63,6 +63,7 @@ class GNNTrialConfig:
     gnn_lr: float = 1e-3
     num_epochs: int = 10
     minibatch_size: int = 64
+    max_episode_steps: int | None = None
     max_eval_circuits: int = 32
     max_eval_steps: int = 200
     evaluation_deterministic: bool = True
@@ -92,6 +93,7 @@ def _study_config_payload(config: GNNTrialConfig) -> dict[str, Any]:
         "gnn_lr": config.gnn_lr,
         "num_epochs": config.num_epochs,
         "minibatch_size": config.minibatch_size,
+        "max_episode_steps": config.max_episode_steps,
         "max_eval_circuits": config.max_eval_circuits,
         "max_eval_steps": config.max_eval_steps,
         "evaluation_deterministic": config.evaluation_deterministic,
@@ -196,6 +198,7 @@ def _build_results_payload(
         "evaluation_deterministic": config.evaluation_deterministic,
         "trial_steps": config.trial_steps,
         "steps_per_iteration": config.steps_per_iteration,
+        "max_episode_steps": config.max_episode_steps,
         "startup_trials": startup_trials,
         "study_name": study.study_name,
         "storage_uri": _study_storage_uri(Path(study.user_attrs["output_dir"])),
@@ -240,6 +243,7 @@ def run_gnn_hyperparameter_tuning(
     mdp: str = "paper",
     path_training_circuits: str | Path | None = None,
     path_validation_circuits: str | Path | None = None,
+    max_episode_steps: int | None = None,
     logger: logging.Logger,
 ) -> dict[str, Any]:
     """Run Optuna-based GNN hyperparameter tuning for one device.
@@ -253,6 +257,7 @@ def run_gnn_hyperparameter_tuning(
         mdp: MDP variant (fixed, typically "paper").
         path_training_circuits: Optional training split directory for PPO.
         path_validation_circuits: Optional held-out validation directory.
+        max_episode_steps: Optional hard cap on environment steps per training/evaluation episode.
         logger: Logger for progress.
 
     Returns:
@@ -271,6 +276,7 @@ def run_gnn_hyperparameter_tuning(
         path_evaluation_circuits=evaluation_dir,
         mdp=mdp,
         trial_steps=trial_steps,
+        max_episode_steps=max_episode_steps,
     )
 
     logger.info("Starting GNN hyperparameter tuning for %s.", device.description)
@@ -386,6 +392,7 @@ def _objective(
             reward_function=config.figure_of_merit,
             device=device,
             path_training_circuits=config.path_training_circuits,
+            max_episode_steps=config.max_episode_steps,
             graph=True,  # Use graph observations for GNN
             mdp=config.mdp,
         )
@@ -430,6 +437,7 @@ def _objective(
             path_training_circuits=config.path_training_circuits,
             path_evaluation_circuits=config.path_evaluation_circuits,
             max_steps=config.max_eval_steps,
+            max_episode_steps=config.max_episode_steps,
             deterministic=config.evaluation_deterministic,
             seed=trial_id,
             max_circuits=config.max_eval_circuits,

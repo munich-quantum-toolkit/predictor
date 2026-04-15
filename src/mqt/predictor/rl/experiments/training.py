@@ -50,6 +50,7 @@ def run_rl_training(
     checkpoint_directory: str | Path | None = None,
     checkpoint_frequency: int | None = None,
     resume_from_checkpoint: str | Path | None = None,
+    max_episode_steps: int | None = None,
     callback: BaseCallback | None = None,
 ) -> RLTrainingResult:
     """Train an RL predictor on an existing training split."""
@@ -64,6 +65,7 @@ def run_rl_training(
         device=device,
         mdp=mdp,
         path_training_circuits=training_directory,
+        max_episode_steps=max_episode_steps,
     )
     callbacks: list[BaseCallback] = []
     if resolved_checkpoint_directory is not None and checkpoint_frequency is not None and checkpoint_frequency > 0:
@@ -149,6 +151,12 @@ def main() -> None:
         default=None,
         help="Optional PPO checkpoint to resume training from.",
     )
+    parser.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=None,
+        help="Optional hard cap on environment steps per training episode.",
+    )
     args = parser.parse_args()
 
     result = run_rl_training(
@@ -162,6 +170,7 @@ def main() -> None:
         checkpoint_directory=args.checkpoint_dir,
         checkpoint_frequency=args.checkpoint_frequency,
         resume_from_checkpoint=args.resume_from_checkpoint,
+        max_episode_steps=args.max_episode_steps,
     )
 
     print(f"Training directory: {result.training_directory}")

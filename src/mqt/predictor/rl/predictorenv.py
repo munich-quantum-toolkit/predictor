@@ -138,6 +138,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         reward_scale: float = 1.0,
         no_effect_penalty: float = -0.001,
+        max_episode_steps: int | None = None,
         graph: bool = False,
     ) -> None:
         """Initializes the PredictorEnv object.
@@ -153,6 +154,8 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
             no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
+            max_episode_steps: Optional hard cap on environment steps per episode. When reached without
+                taking the terminate action, the episode ends with ``truncated=True``.
             graph: If True, observations are returned as PyG Data objects for GNN-based agents. Defaults to False.
 
         Raises:
@@ -255,6 +258,7 @@ class PredictorEnv(Env):
         self.readout_err: dict[Node, float] | None = None
         self.reward_scale = reward_scale
         self.no_effect_penalty = no_effect_penalty
+        self.max_episode_steps = max_episode_steps
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
         self.episode_count = 0
@@ -317,6 +321,10 @@ class PredictorEnv(Env):
                 reward_val,
             )
 
+    def _episode_budget_exhausted(self) -> bool:
+        """Return whether the current episode reached the configured step cap."""
+        return self.max_episode_steps is not None and self.num_steps >= self.max_episode_steps
+
     def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
         if self.compilation_state_flags is not None:
@@ -361,11 +369,19 @@ class PredictorEnv(Env):
             return self._create_observation(), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
+        truncated = False
+        info: dict[Any, Any] = {}
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self._log_step_reward(step_index, action_name, reward_val, done)
-            return self._create_observation(), reward_val, done, False, {}
+            if not done and self._episode_budget_exhausted():
+                truncated = True
+                info = {
+                    "time_limit_reached": True,
+                    "max_episode_steps": self.max_episode_steps,
+                }
+            self._log_step_reward(step_index, action_name, reward_val, done or truncated)
+            return self._create_observation(), reward_val, done, truncated, info
 
         # Lazy init: compute prev_reward only once per episode (or if missing)
         if self.prev_reward is None:
@@ -395,9 +411,22 @@ class PredictorEnv(Env):
                 reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
+        if not done and self._episode_budget_exhausted():
+            truncated = True
+            info = {
+                "time_limit_reached": True,
+                "max_episode_steps": self.max_episode_steps,
+            }
+            logger.info(
+                "Episode %d step %d: reached max_episode_steps=%d, truncating episode",
+                self.episode_count,
+                step_index,
+                self.max_episode_steps,
+            )
+
         obs = self._create_observation()
-        self._log_step_reward(step_index, action_name, reward_val, done)
-        return obs, reward_val, done, False, {}
+        self._log_step_reward(step_index, action_name, reward_val, done or truncated)
+        return obs, reward_val, done, truncated, info
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
         """Compute the reward for a circuit and report whether it was computed exactly or approximately.

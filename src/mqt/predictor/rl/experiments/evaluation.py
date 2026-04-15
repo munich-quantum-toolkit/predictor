@@ -193,6 +193,7 @@ def evaluate_trained_predictor(
     path_training_circuits: str | Path | None = None,
     path_test_circuits: str | Path | None = None,
     max_steps: int = 200,
+    max_episode_steps: int | None = None,
     deterministic: bool = False,
     seed: int = 0,
 ) -> PredictorEvaluationResult:
@@ -214,6 +215,7 @@ def evaluate_trained_predictor(
         device=device,
         mdp=mdp,
         path_training_circuits=training_dir,
+        max_episode_steps=max_episode_steps,
     )
     model = load_model_from_path(model_path)
 
@@ -256,6 +258,7 @@ def evaluate_gnn_policy(
     path_training_circuits: str | Path | None = None,
     path_evaluation_circuits: str | Path | None = None,
     max_steps: int = 200,
+    max_episode_steps: int | None = None,
     deterministic: bool = True,
     seed: int = 0,
     max_circuits: int | None = None,
@@ -278,6 +281,7 @@ def evaluate_gnn_policy(
         reward_function=figure_of_merit,
         device=device,
         path_training_circuits=training_dir,
+        max_episode_steps=max_episode_steps,
         graph=True,
         mdp=mdp,
     )
@@ -394,6 +398,9 @@ def rollout_circuit(
             )
         step_count += 1
 
+    if truncated:
+        hit_step_limit = True
+
     if not (terminated or truncated) and step_count >= max_steps:
         hit_step_limit = True
         if predictor.env.action_terminate_index in predictor.env.valid_actions:
@@ -466,6 +473,9 @@ def rollout_circuit_with_gnn_policy(
             if not (terminated or truncated):
                 obs = require_graph_observation(next_obs)
             step_count += 1
+
+    if truncated:
+        hit_step_limit = True
 
     if not (terminated or truncated) and step_count >= max_steps:
         hit_step_limit = True

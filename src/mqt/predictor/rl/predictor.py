@@ -70,6 +70,7 @@ class Predictor:
         device: Target,
         mdp: str = "paper",
         path_training_circuits: Path | None = None,
+        max_episode_steps: int | None = None,
         graph: bool = False,
     ) -> None:
         """Initializes the Predictor object.
@@ -79,6 +80,7 @@ class Predictor:
             device: The target quantum device.
             mdp: The MDP formulation to use ("paper" or "alternative"). Defaults to "paper".
             path_training_circuits: Path to training circuits. Defaults to None.
+            max_episode_steps: Optional hard cap on environment steps per episode.
             logger_level: Logging level. Defaults to INFO.
             graph: If True, uses a GNN-based policy with PyG graph observations
                    (including circuit-level global features matching the non-GNN policy).
@@ -89,6 +91,7 @@ class Predictor:
             reward_function=figure_of_merit,
             device=device,
             path_training_circuits=path_training_circuits,
+            max_episode_steps=max_episode_steps,
             graph=graph,
             mdp=mdp,
         )
