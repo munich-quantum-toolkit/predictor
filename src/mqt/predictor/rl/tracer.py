@@ -16,8 +16,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from qiskit import qasm2
-from qiskit.qasm2 import QASM2ExportError
+from qiskit import qasm3
 
 if TYPE_CHECKING:
     import numpy as np
@@ -92,7 +91,7 @@ class CompilationStep:
         laid_out: Whether the circuit has already been laid out.
         routed: Whether the circuit has already been routed.
         is_terminal: A flag indicating if the compilation process has concluded.
-        circuit_qasm: The structural representation of the circuit in OpenQASM 2.0 format.
+        circuit_qasm3: The structural representation of the circuit in OpenQASM 3.0 format.
         program_communication: The program communication value for the current circuit.
         entanglement_ratio: The entanglement ratio for the current circuit.
         parallelism: The parallelism value for the current circuit.
@@ -114,7 +113,7 @@ class CompilationStep:
     laid_out: bool
     routed: bool
     is_terminal: bool
-    circuit_qasm: str
+    circuit_qasm3: str
     program_communication: float
     critical_depth: float
     entanglement_ratio: float
@@ -222,7 +221,7 @@ class CompilationTracer:
             fom_value=round(fom_value, 6),
             fom_kind=fom_kind,
             is_terminal=done,
-            circuit_qasm=self._safe_qasm_dumps(current_qc),
+            circuit_qasm3=qasm3.dumps(current_qc),
             program_communication=self._extract_float(features["program_communication"]),
             critical_depth=self._extract_float(features["critical_depth"]),
             entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
@@ -282,11 +281,3 @@ class CompilationTracer:
         if isinstance(val, int):
             return float(val)
         return float(val[0])
-
-    @staticmethod
-    def _safe_qasm_dumps(qc: QuantumCircuit) -> str:
-        """Safely export circuit to QASM2, returning error message on failure."""
-        try:
-            return qasm2.dumps(qc)
-        except QASM2ExportError as e:
-            return f"QASM2 export failed: {e}"

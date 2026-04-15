@@ -298,7 +298,7 @@ class PredictorEnv(Env):
         exported._layout = self.layout  # noqa: SLF001
         return exported
 
-    def _log_step_reward(
+    def _collect_tracer_data(
         self,
         step_index: int,
         action_name: str,
@@ -308,22 +308,7 @@ class PredictorEnv(Env):
         feature_vector: dict[str, int | NDArray[np.float32]],
         done: bool,
     ) -> None:
-        """Log the chosen action and resulting reward for the current episode step."""
-        logger.info(
-            "Episode %d step %d: action=%s reward=%.6f",
-            self.episode_count,
-            step_index,
-            action_name,
-            reward_val,
-        )
-        if done:
-            logger.info(
-                "Episode %d finished: circuit=%s final_reward=%.6f",
-                self.episode_count,
-                self.current_circuit_name,
-                reward_val,
-            )
-
+        """Collects the current compilation state and sends it to the tracer."""
         if self.tracer is not None and self.tracer_output_path is not None:
             synthesized, laid_out, routed = self._get_compilation_state_flags()
 
@@ -362,6 +347,30 @@ class PredictorEnv(Env):
 
                 self.tracer.save_to_json(out_path)
                 logger.info("✅TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
+        return
+
+    def _log_step_reward(
+        self,
+        step_index: int,
+        action_name: str,
+        reward_val: float,
+        done: bool,
+    ) -> None:
+        """Log the chosen action and resulting reward for the current episode step."""
+        logger.info(
+            "Episode %d step %d: action=%s reward=%.6f",
+            self.episode_count,
+            step_index,
+            action_name,
+            reward_val,
+        )
+        if done:
+            logger.info(
+                "Episode %d finished: circuit=%s final_reward=%.6f",
+                self.episode_count,
+                self.current_circuit_name,
+                reward_val,
+            )
 
     def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
@@ -404,7 +413,8 @@ class PredictorEnv(Env):
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
             obs = self._create_observation()
-            self._log_step_reward(
+            self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=0.0, done=True)
+            self._collect_tracer_data(
                 step_index=step_index,
                 action_name=action_name,
                 reward_val=0.0,
@@ -421,7 +431,8 @@ class PredictorEnv(Env):
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
             self.state._layout = self.layout  # noqa: SLF001
             obs = self._create_observation()
-            self._log_step_reward(
+            self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=0.0, done=done)
+            self._collect_tracer_data(
                 step_index=step_index,
                 action_name=action_name,
                 reward_val=reward_val,
@@ -457,7 +468,8 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         obs = self._create_observation()
-        self._log_step_reward(
+        self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=0.0, done=done)
+        self._collect_tracer_data(
             step_index=step_index,
             action_name=action_name,
             reward_val=reward_val,
@@ -627,6 +639,7 @@ class PredictorEnv(Env):
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
         if self.tracer_output_path is not None:
+            logger.info("Tracing enabled for compilation...")
             self.tracer = CompilationTracer.from_initial_state(
                 device=self.device,
                 circuit_name=self.current_circuit_name,
@@ -634,7 +647,7 @@ class PredictorEnv(Env):
                 mdp_policy=self.mdp,
             )
 
-            self._log_step_reward(
+            self._collect_tracer_data(
                 step_index=0,
                 action_name="Baseline",
                 reward_val=0.0,
