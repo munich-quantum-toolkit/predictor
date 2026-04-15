@@ -70,6 +70,7 @@ from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceDependentAction,
     PassType,
+    ensure_ai_routing_runtime_available,
     get_actions_by_pass_type,
 )
 from mqt.predictor.rl.approx_reward import (
@@ -219,6 +220,9 @@ class PredictorEnv(Env):
         self.action_set[index] = action_dict[PassType.TERMINATE][0]
         self.action_terminate_index = index
 
+        if any(action.name in {"AIRouting", "AIRouting_opt"} for action in self.action_set.values()):
+            ensure_ai_routing_runtime_available()
+
         if reward_function == "estimated_success_probability" and not esp_data_available(self.device):
             msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
@@ -362,6 +366,7 @@ class PredictorEnv(Env):
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
         previous_state_flags = self._get_compilation_state_flags()
+        previous_circuit = self.export_circuit()
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
@@ -383,29 +388,34 @@ class PredictorEnv(Env):
             self._log_step_reward(step_index, action_name, reward_val, done or truncated)
             return self._create_observation(), reward_val, done, truncated, info
 
-        # Lazy init: compute prev_reward only once per episode (or if missing)
-        if self.prev_reward is None:
-            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
-
         if done:
             assert action in self.valid_actions, "Terminate action is not valid but was chosen."
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            assert self.prev_reward is not None
+            assert self.prev_reward_kind is not None
             current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
-            delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
             state_changed = any(
                 not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
             )
 
-            if reward_kind_changed or state_changed:
-                delta_reward = 0.0
+            if reward_kind_changed:
+                previous_compare = (
+                    self.prev_reward
+                    if self.prev_reward_kind == "approx"
+                    else self.calculate_reward(qc=previous_circuit, mode="approx")[0]
+                )
+                new_compare = new_val if new_kind == "approx" else self.calculate_reward(mode="approx")[0]
+                delta_reward = new_compare - previous_compare
+            else:
+                delta_reward = new_val - self.prev_reward
 
             if not isclose(delta_reward, 0.0, abs_tol=1e-12):
                 reward_val = self.reward_scale * delta_reward
-            elif reward_kind_changed or state_changed:
+            elif state_changed:
                 reward_val = 0.0
             else:
                 reward_val = self.no_effect_penalty
@@ -575,8 +585,11 @@ class PredictorEnv(Env):
 
         self.error_occurred = False
 
-        self.prev_reward = None
-        self.prev_reward_kind = None
+        if self.reward_function == "estimated_hellinger_distance":
+            self.prev_reward = None
+            self.prev_reward_kind = None
+        else:
+            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0

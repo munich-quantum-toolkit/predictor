@@ -106,6 +106,7 @@ if not IS_WIN_PY313:
                 category=SyntaxWarning,
             )
             from qiskit_ibm_transpiler.ai.routing import AIRouting
+            from qiskit_ibm_transpiler.local_routing.routing.inference import RoutingInference
 
             HAS_AI_ROUTING = True
     except ImportError:
@@ -187,6 +188,10 @@ class DeviceDependentAction(Action):
 
 # Registry of actions
 _ACTIONS: dict[str, Action] = {}
+_AI_ROUTING_RUNTIME_STATE: dict[str, bool | RuntimeError | None] = {
+    "validated": False,
+    "error": None,
+}
 
 
 def register_action(action: Action) -> Action:
@@ -212,6 +217,37 @@ def remove_action(name: str) -> None:
         msg = f"No action with name {name} is registered."
         raise KeyError(msg)
     del _ACTIONS[name]
+
+
+def ensure_ai_routing_runtime_available() -> None:
+    """Validate that AIRouting is usable at runtime and preload its model once.
+
+    Importing ``qiskit_ibm_transpiler`` is not enough: the routing model is loaded
+    lazily on first use via ``RoutingInference()``, which may trigger a network
+    download. Predictor should fail before training starts if that model is not
+    locally available and cannot be downloaded.
+    """
+    if not HAS_AI_ROUTING or bool(_AI_ROUTING_RUNTIME_STATE["validated"]):
+        return
+    cached_error = _AI_ROUTING_RUNTIME_STATE["error"]
+    if isinstance(cached_error, RuntimeError):
+        raise cached_error
+
+    try:
+        RoutingInference()
+    except Exception as exc:
+        runtime_error = RuntimeError(
+            "AIRouting is installed but not usable: the qiskit-ibm-transpiler routing model "
+            "could not be loaded during startup. Predictor fails early here because otherwise "
+            "training would repeatedly hit the same runtime error mid-episode. Ensure the "
+            "routing model is already cached locally or that the machine has network access "
+            "for the initial download. The model repository can be overridden with "
+            "QISKIT_TRANSPILER_ROUTING_REPO_ID."
+        )
+        _AI_ROUTING_RUNTIME_STATE["error"] = runtime_error
+        raise runtime_error from exc
+
+    _AI_ROUTING_RUNTIME_STATE["validated"] = True
 
 
 register_action(
