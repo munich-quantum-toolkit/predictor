@@ -80,8 +80,11 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert "value" in fom_data["success_probability"], "ESP is missing its float value."
     assert "kind" in fom_data["success_probability"], "ESP is missing its kind string."
 
-    # for this device HD should fallback to None
-    assert fom_data.get("hellinger_distance") is None, "Hellinger distance should be null when model is missing."
+    # It is valid for HD to be None (model missing) or a populated dictionary (model exists)
+    hd_metric = fom_data.get("hellinger_distance")
+    if hd_metric is not None:
+        assert "value" in hd_metric, "Hellinger distance is missing its float value."
+        assert "kind" in hd_metric, "Hellinger distance is missing its kind string."
 
     try:
         # Initialize from JSON (throws if the structures don't match)

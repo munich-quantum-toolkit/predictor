@@ -373,7 +373,6 @@ class PredictorEnv(Env):
 
                 self.tracer.save_to_json(out_path)
                 logger.info("✅TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
-        return
 
     def _log_step_reward(
         self,
