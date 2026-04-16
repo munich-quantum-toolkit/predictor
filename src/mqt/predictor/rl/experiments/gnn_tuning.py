@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
+
 @dataclass(frozen=True, slots=True)
 class GNNTrialConfig:
     """Configuration for one GNN hyperparameter tuning trial."""
