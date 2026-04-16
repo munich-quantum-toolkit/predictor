@@ -90,6 +90,8 @@ from mqt.predictor.rl.parsing import (
 )
 from mqt.predictor.rl.tracer import (
     CompilationTracer,
+    FigureOfMeritMetrics,
+    FOMMetric,
 )
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
@@ -171,6 +173,7 @@ class PredictorEnv(Env):
         self.used_actions: list[str] = []
         self.device = device
         self.tracer_output_path = tracer_output_path
+        self.hellinger_model = None
         self.tracer = None
 
         logger.info("MDP: " + mdp)
@@ -312,26 +315,49 @@ class PredictorEnv(Env):
         if self.tracer is not None and self.tracer_output_path is not None:
             synthesized, laid_out, routed = self._get_compilation_state_flags()
 
+            # Collect figures of merit
+            hd_metric: FOMMetric | None = None
+            cd_metric: FOMMetric
+            ef_metric: FOMMetric
+            esp_metric: FOMMetric | None = None
+
             if self.reward_function == "expected_fidelity":
-                fidelity_val = fom_value
-                fidelity_kind = fom_kind
+                ef_metric = FOMMetric(value=fom_value, kind=fom_kind)
             else:
-                fidelity_val = (
-                    expected_fidelity(qc=self.state, device=self.device)
-                    if (synthesized and routed)
-                    else approx_expected_fidelity(qc=self.state, device=self.device, error_rates=self.err_by_gate)
-                )
-                fidelity_kind = "exact" if (synthesized and routed) else "approx"
+                val, kind = self.calculate_expected_fidelity(qc=self.state, mode="auto")
+                ef_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "estimated_success_probability":
+                esp_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            elif esp_data_available(self.device):
+                val, kind = self.calculate_estimated_success_probability(qc=self.state, mode="auto")
+                esp_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "critical_depth":
+                cd_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            else:
+                val, kind = self.calculate_critical_depth(qc=self.state)
+                cd_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "estimated_hellinger_distance":
+                hd_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            elif self.hellinger_model is not None:
+                val, kind = self.calculate_estimated_hellinger_distance(qc=self.state)
+                hd_metric = FOMMetric(value=val, kind=kind)
+
+            metrics = FigureOfMeritMetrics(
+                expected_fidelity=ef_metric,
+                success_probability=esp_metric,
+                critical_depth=cd_metric,
+                hellinger_distance=hd_metric,
+            )
 
             self.tracer.record_step(
                 step_index=step_index,
                 action=action_name,
                 reward=reward_val,
                 current_qc=self.state,
-                expected_fidelity=fidelity_val,
-                fidelity_kind=fidelity_kind,
-                fom_value=fom_value,
-                fom_kind=fom_kind,
+                figures_of_merit=metrics,
                 features=feature_vector,
                 synthesized=synthesized,
                 laid_out=laid_out,
@@ -480,6 +506,204 @@ class PredictorEnv(Env):
         )
 
         return obs, reward_val, done, False, {}
+
+    def _resolve_evaluation_kind(self, qc: QuantumCircuit, mode: str) -> tuple[str, Any]:
+        """Resolves whether to use 'exact' or 'approx' evaluation based on the circuit state."""
+        reward_layout = getattr(qc, "_layout", None)
+        if reward_layout is None:
+            reward_layout = self.layout
+
+        if mode == "exact":
+            return "exact", reward_layout
+        if mode == "approx":
+            return "approx", reward_layout
+
+        # "auto" resolution
+        only_native = self.is_circuit_synthesized(qc)
+        laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
+        mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+
+        kind = "exact" if (only_native and laid_out and mapped) else "approx"
+        return kind, reward_layout
+
+    def _prepare_exact_qc(self, qc: QuantumCircuit, reward_layout: TranspileLayout | Layout | None) -> QuantumCircuit:
+        """Prepares the circuit for exact evaluation by exporting it if necessary."""
+        if reward_layout is None or getattr(qc, "_layout", None) is not None:
+            return qc
+        return self.export_circuit(qc)
+
+    def calculate_expected_fidelity(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
+        """Calculates the expected fidelity for the given quantum circuit.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+            mode:
+                Selects how the method chooses between exact and approximate evaluation:
+
+                - ``"auto"`` (default): determines computation automatically.
+                - ``"exact"``: always compute the exact, calibration-aware metric.
+                - ``"approx"``: always compute the approximate, transpile-based proxy.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the expected fidelity (float).
+            - ``kind`` is ``"exact"`` or ``"approx"`` indicating which regime was used.
+        """
+        if qc is None:
+            qc = self.state
+
+        kind, reward_layout = self._resolve_evaluation_kind(qc, mode)
+
+        if kind == "exact":
+            exact_qc = self._prepare_exact_qc(qc, reward_layout)
+            return expected_fidelity(exact_qc, self.device), "exact"
+
+        self._ensure_device_averages_cached()
+        val = approx_expected_fidelity(qc, device=self.device, error_rates=self.err_by_gate)
+        return val, "approx"
+
+    def calculate_estimated_success_probability(
+        self, qc: QuantumCircuit | None = None, mode: str = "auto"
+    ) -> tuple[float, str]:
+        """Calculates the estimated success probability (ESP) for the given quantum circuit.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+            mode:
+                Selects how the method chooses between exact and approximate evaluation:
+
+                - ``"auto"`` (default): determines computation automatically.
+                - ``"exact"``: always compute the exact, calibration-aware metric.
+                - ``"approx"``: always compute the approximate, transpile-based proxy.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the estimated success probability (float).
+            - ``kind`` is ``"exact"`` or ``"approx"`` indicating which regime was used.
+        """
+        if qc is None:
+            qc = self.state
+
+        kind, reward_layout = self._resolve_evaluation_kind(qc, mode)
+
+        if kind == "exact":
+            exact_qc = self._prepare_exact_qc(qc, reward_layout)
+            return estimated_success_probability(exact_qc, self.device), "exact"
+
+        self._ensure_device_averages_cached()
+        feats = calc_supermarq_features(qc)
+        val = approx_estimated_success_probability(
+            qc,
+            device=self.device,
+            error_rates=self.err_by_gate,
+            gate_durations=self.dur_by_gate,
+            tbar=self.tbar,
+            par_feature=float(feats.parallelism),
+            liv_feature=float(feats.liveness),
+            n_qubits=int(qc.num_qubits),
+        )
+        return val, "approx"
+
+    def calculate_critical_depth(self, qc: QuantumCircuit | None = None) -> tuple[float, str]:
+        """Calculates the critical depth for the given quantum circuit.
+
+        Note:
+            Critical depth is always computed exactly.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the critical depth (float).
+            - ``kind`` is always ``"exact"``.
+        """
+        if qc is None:
+            qc = self.state
+        return crit_depth(qc), "exact"
+
+    def calculate_estimated_hellinger_distance(self, qc: QuantumCircuit | None = None) -> tuple[float, str]:
+        """Calculates the estimated Hellinger distance for the given quantum circuit.
+
+        Note:
+            Hellinger distance is always computed exactly using the environment's
+            pretrained machine learning model.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the estimated Hellinger distance (float).
+            - ``kind`` is always ``"exact"``.
+        """
+        if qc is None:
+            qc = self.state
+        return estimated_hellinger_distance(qc, self.device, self.hellinger_model), "exact"
+
+    # -----------------------------------------------------------------------------------------------------
+    # MARK: New, cleaner method for reward calculation, functionally identical to original calculate_reward
+    #       It might be worth using this method (unless you plan to change the original implementation),
+    #       since this now cleanly uses above methods that are also required by the tracer data collection.
+    #       @flowerthrower
+    # -----------------------------------------------------------------------------------------------------
+
+    # def calculate_reward_new(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
+    #     """Compute the reward for a circuit and report whether it was computed exactly or approximately.
+    #
+    #     This environment supports two evaluation regimes for selected figures of merit:
+    #
+    #     - **Exact**: uses the calibration-aware implementation on the full circuit/device
+    #     (e.g., uses the device Target calibration data as-is).
+    #     - **Approximate**: uses a transpile-based proxy:
+    #     the circuit is transpiled to the device's basis gates and the resulting basis-gate
+    #     counts are combined with cached **per-basis-gate** calibration statistics
+    #     (error rates and durations) to estimate the metric. This approximation ignores
+    #     additional mapping/routing overhead beyond what is reflected in the transpiled
+    #     basis-gate counts.
+    #
+    #     Args:
+    #         qc:
+    #             Circuit to evaluate. If ``None``, evaluates the environment's current state.
+    #         mode:
+    #             Selects how the method chooses between exact and approximate evaluation:
+    #
+    #             - ``"auto"`` (default): compute the exact metric if the circuit is already
+    #             **native and mapped** for the device; otherwise compute the approximate metric.
+    #             - ``"exact"``: always compute the exact, calibration-aware metric.
+    #             - ``"approx"``: always compute the approximate, transpile-based proxy.
+    #
+    #     Returns:
+    #         A pair ``(value, kind)`` where:
+    #
+    #         - ``value`` is the scalar reward value (typically in ``[0, 1]`` for EF/ESP).
+    #         - ``kind`` is ``"exact"`` or ``"approx"`` indicating which regime was used.
+    #     """
+    #     if qc is None:
+    #         qc = self.state
+    #
+    #     if self.reward_function == "expected_fidelity":
+    #         return self.calculate_expected_fidelity(qc, mode)
+    #
+    #     if self.reward_function == "estimated_success_probability":
+    #         return self.calculate_estimated_success_probability(qc, mode)
+    #
+    #     if self.reward_function == "critical_depth":
+    #         return self.calculate_critical_depth(qc)
+    #
+    #     if self.reward_function == "estimated_hellinger_distance":
+    #         return self.calculate_estimated_hellinger_distance(qc)
+    #
+    #     # Fallback for other unknown / not-yet-implemented reward functions:
+    #     logger.warning(
+    #         "Reward function '%s' is not supported in PredictorEnv. Returning 0.0 as a fallback reward.",
+    #         self.reward_function,
+    #     )
+    #     return 0.0, "exact"
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
         """Compute the reward for a circuit and report whether it was computed exactly or approximately.
@@ -640,6 +864,14 @@ class PredictorEnv(Env):
 
         if self.tracer_output_path is not None:
             logger.info("Tracing enabled for compilation...")
+
+            if self.reward_function != "estimated_hellinger_distance":
+                self.hellinger_model = None
+                hellinger_model_path = get_hellinger_model_path(self.device)
+                if hellinger_model_path.is_file():
+                    # load the model so it can be used in _collect_tracer_data
+                    self.hellinger_model = load(hellinger_model_path)
+
             self.tracer = CompilationTracer.from_initial_state(
                 device=self.device,
                 circuit_name=self.current_circuit_name,

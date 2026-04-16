@@ -72,6 +72,36 @@ class DeviceMetadata:
 
 
 @dataclass
+class FOMMetric:
+    """Represents a Figure of Merit metric value.
+
+    Attributes:
+        value: The figure-of-merit value.
+        kind: The used calculation method of the value, "exact" or "approx".
+    """
+
+    value: float
+    kind: str
+
+
+@dataclass
+class FigureOfMeritMetrics:
+    """Data containing information about various figures of merit.
+
+    Attributes:
+        expected_fidelity: The expected fidelity value of the circuit.
+        critical_depth: The critical depth of the circuit.
+        hellinger_distance: The hellinger distance of the circuit, if available.
+        success_probability: The success probability of the circuit, if available.
+    """
+
+    expected_fidelity: FOMMetric
+    critical_depth: FOMMetric
+    hellinger_distance: FOMMetric | None
+    success_probability: FOMMetric | None
+
+
+@dataclass
 class CompilationStep:
     """A snapshot of the circuit state and environment metrics at a single timestep.
 
@@ -83,16 +113,14 @@ class CompilationStep:
         num_qubits: The number of qubits in the circuit.
         gates_per_operation: The number of gates per operation occurring in the circuit.
         total_gates: The total number of gates included in the circuit.
-        expected_fidelity: The expected fidelity of the circuit.
-        fidelity_kind: The kind of fidelity value: 'exact' or 'approx'.
-        fom_value: The figure of merit value for this compilation pass.
-        fom_kind: The kind of fom value: 'exact' or 'approx'.
+        figures_of_merit: The figure of merit values for the current circuit.
         synthesized: Whether the circuit has already been synthesized.
         laid_out: Whether the circuit has already been laid out.
         routed: Whether the circuit has already been routed.
         is_terminal: A flag indicating if the compilation process has concluded.
         circuit_qasm3: The structural representation of the circuit in OpenQASM 3.0 format.
         program_communication: The program communication value for the current circuit.
+        raw_critical_depth: The raw critical depth of the circuit.
         entanglement_ratio: The entanglement ratio for the current circuit.
         parallelism: The parallelism value for the current circuit.
         liveness: The liveness value for the current circuit.
@@ -105,17 +133,14 @@ class CompilationStep:
     num_qubits: int
     gates_per_operation: dict[str, int]
     total_gates: int
-    expected_fidelity: float
-    fidelity_kind: str
-    fom_value: float
-    fom_kind: str
+    figures_of_merit: FigureOfMeritMetrics
     synthesized: bool
     laid_out: bool
     routed: bool
     is_terminal: bool
     circuit_qasm3: str
     program_communication: float
-    critical_depth: float
+    raw_critical_depth: float
     entanglement_ratio: float
     parallelism: float
     liveness: float
@@ -174,10 +199,7 @@ class CompilationTracer:
         action: str,
         reward: float,
         current_qc: QuantumCircuit,
-        expected_fidelity: float,
-        fidelity_kind: str,
-        fom_value: float,
-        fom_kind: str,
+        figures_of_merit: FigureOfMeritMetrics,
         features: dict[str, int | NDArray[np.float32]],
         synthesized: bool,
         laid_out: bool,
@@ -191,10 +213,7 @@ class CompilationTracer:
             action: The name of the compilation pass that was just applied.
             reward: The calculated reward for the applied pass.
             current_qc: The current Qiskit QuantumCircuit object after the pass.
-            expected_fidelity: The expected fidelity of the circuit after applying the pass.
-            fidelity_kind: The kind of fidelity value: 'exact' or 'approx'.
-            fom_value: The figure of merit value for the compilation pass.
-            fom_kind: The kind of fom value: 'exact' or 'approx'.
+            figures_of_merit: The available figures of merit for the current circuit.
             features: The quantum circuit's feature vector used by the RL agent.
             synthesized: Whether the circuit has already been synthesized.
             laid_out: Whether the circuit has already been laid out.
@@ -216,14 +235,11 @@ class CompilationTracer:
             num_qubits=current_qc.num_qubits,
             gates_per_operation=present_ops_dict,
             total_gates=total_gates,
-            expected_fidelity=round(expected_fidelity, 6),
-            fidelity_kind=fidelity_kind,
-            fom_value=round(fom_value, 6),
-            fom_kind=fom_kind,
+            figures_of_merit=figures_of_merit,
             is_terminal=done,
             circuit_qasm3=qasm3.dumps(current_qc),
             program_communication=self._extract_float(features["program_communication"]),
-            critical_depth=self._extract_float(features["critical_depth"]),
+            raw_critical_depth=self._extract_float(features["critical_depth"]),
             entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
             parallelism=self._extract_float(features["parallelism"]),
             liveness=self._extract_float(features["liveness"]),

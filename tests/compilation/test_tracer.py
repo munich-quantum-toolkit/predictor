@@ -67,6 +67,22 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     last_step_data = trace_data["steps"][-1]
     assert last_step_data.get("is_terminal") is True, "The final compilation step must be marked as terminal."
 
+    # Verify Figures of Merit
+    fom_data = last_step_data.get("figures_of_merit")
+    assert fom_data is not None, "Figures of merit dictionary is missing from the trace step."
+
+    # always calculated ones
+    assert fom_data.get("expected_fidelity") is not None, "Expected fidelity failed to populate."
+    assert fom_data.get("critical_depth") is not None, "Critical depth fallback failed."
+
+    # for this device ESP should be populated
+    assert fom_data.get("success_probability") is not None, "ESP fallback calculation failed."
+    assert "value" in fom_data["success_probability"], "ESP is missing its float value."
+    assert "kind" in fom_data["success_probability"], "ESP is missing its kind string."
+
+    # for this device HD should fallback to None
+    assert fom_data.get("hellinger_distance") is None, "Hellinger distance should be null when model is missing."
+
     try:
         # Initialize from JSON (throws if the structures don't match)
         DeviceMetadata(**trace_data["device"])
