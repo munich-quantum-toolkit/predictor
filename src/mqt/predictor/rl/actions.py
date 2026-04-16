@@ -32,7 +32,6 @@ from bqskit.passes import (
     BlockZXZPass,
     ExtractMeasurements,
     FullBlockZXZPass,
-    FullQSDPass,
     GeneralizedSabreLayoutPass,
     GeneralizedSabreRoutingPass,
     GreedyPlacementPass,
@@ -40,9 +39,6 @@ from bqskit.passes import (
     LEAPSynthesisPass,
     MGDPass,
     PassPredicate,
-    PermutationAwareSynthesisPass,
-    QFASTDecompositionPass,
-    QPredictDecompositionPass,
     QSDPass,
     QSearchSynthesisPass,
     RestoreMeasurements,
@@ -591,36 +587,6 @@ register_action(
 
 register_action(
     DeviceDependentAction(
-        "QFASTDecompositionPass",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
-            device,
-            QFASTDecompositionPass(
-                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
-                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
-            ),
-        ),
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        "QPredictDecompositionPass",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
-            device,
-            QPredictDecompositionPass(
-                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
-                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
-            ),
-        ),
-    )
-)
-
-register_action(
-    DeviceDependentAction(
         "WalshDiagonalSynthesisPass",
         CompilationOrigin.BQSKIT,
         PassType.SYNTHESIS,
@@ -633,37 +599,10 @@ register_action(
 
 register_action(
     DeviceDependentAction(
-        "PermutationAwareSynthesisPass",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
-            device,
-            PermutationAwareSynthesisPass(
-                inner_synthesis=LEAPSynthesisPass(
-                    success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
-                    min_prefix_size=[3, 4][min(_BQSKIT_OPT_LEVEL, 2) - 1],
-                    instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
-                )
-            ),
-        ),
-    )
-)
-
-register_action(
-    DeviceDependentAction(
         "QSDPass",
         CompilationOrigin.BQSKIT,
         PassType.SYNTHESIS,
         transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, QSDPass()),
-    )
-)
-
-register_action(
-    DeviceDependentAction(
-        "FullQSDPass",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, FullQSDPass()),
     )
 )
 

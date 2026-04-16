@@ -581,6 +581,7 @@ class PredictorEnv(Env):
             action_mask = [
                 action_mask[i] and self.action_set[i].name != "VF2PostLayout" for i in range(len(action_mask))
             ]
+
         return action_mask
 
     def apply_action(self, action_index: int) -> QuantumCircuit | None:
