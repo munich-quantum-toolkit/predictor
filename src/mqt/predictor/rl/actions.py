@@ -16,10 +16,43 @@ import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
 from bqskit import MachineModel
-from bqskit import compile as bqskit_compile
+from bqskit.compiler import Compiler, Workflow
+from bqskit.compiler.compile import (
+    build_multi_qudit_retarget_workflow,
+    build_partitioning_workflow,
+    build_single_qudit_retarget_workflow,
+    get_instantiate_options,
+)
+from bqskit.passes import (
+    ApplyPlacement,
+    BlockZXZPass,
+    ExtractMeasurements,
+    FullBlockZXZPass,
+    FullQSDPass,
+    GeneralizedSabreLayoutPass,
+    GeneralizedSabreRoutingPass,
+    GreedyPlacementPass,
+    IfThenElsePass,
+    LEAPSynthesisPass,
+    MGDPass,
+    PassPredicate,
+    PermutationAwareSynthesisPass,
+    QFASTDecompositionPass,
+    QPredictDecompositionPass,
+    QSDPass,
+    QSearchSynthesisPass,
+    RestoreMeasurements,
+    SetModelPass,
+    SetRandomSeedPass,
+    StaticPlacementPass,
+    TrivialPlacementPass,
+    UnfoldPass,
+    WalshDiagonalSynthesisPass,
+)
 from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
@@ -106,13 +139,16 @@ if not IS_WIN_PY313:
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import Any
 
     from bqskit import Circuit
+    from bqskit.compiler.basepass import BasePass as bqskit_BasePass
+    from bqskit.compiler.passdata import PassData
+    from bqskit.compiler.workflow import WorkflowLike
     from pytket._tket.passes import BasePass as tket_BasePass
     from qiskit.circuit import ClassicalRegister, Clbit, Instruction, Qubit
     from qiskit.dagcircuit import DAGCircuit
     from qiskit.passmanager import PropertySet
+    from qiskit.transpiler import Target
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
 
 
@@ -179,6 +215,162 @@ class DeviceDependentAction(Action):
 
 # Registry of actions
 _ACTIONS: dict[str, Action] = {}
+
+_BQSKIT_OPT_LEVEL = 1 if os.getenv("GITHUB_ACTIONS") == "true" else 2
+_BQSKIT_SYNTHESIS_EPSILON = 1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8
+_BQSKIT_MAX_SYNTHESIS_SIZE = 3
+_BQSKIT_SEED = 10
+
+
+class _DiagonalUnitaryPredicate(PassPredicate):
+    """Return ``True`` when the current BQSKit block unitary is diagonal."""
+
+    def __init__(self, atol: float = 1e-9) -> None:
+        self.atol = atol
+
+    def get_truth_value(self, circuit: Circuit, data: PassData) -> bool:
+        """Check whether ``circuit`` represents a diagonal unitary."""
+        del data
+        unitary = np.asarray(circuit.get_unitary())
+        diagonal = np.diag(np.diag(unitary))
+        return np.allclose(unitary, diagonal, atol=self.atol)
+
+
+def _run_bqskit_workflow(
+    circuit: Circuit, workflow: Workflow, request_data: bool = False
+) -> Circuit | tuple[Circuit, dict[str, Any]]:
+    """Compile ``circuit`` with a custom BQSKit workflow."""
+    compiler = Compiler()
+    try:
+        result = compiler.compile(circuit, workflow, request_data=request_data)
+    finally:
+        compiler.close()
+
+    if request_data:
+        compiled_circuit, data = cast("tuple[Circuit, Any]", result)
+        return compiled_circuit, {
+            "initial_mapping": tuple(data.initial_mapping),
+            "final_mapping": tuple(data.final_mapping),
+        }
+
+    return cast("Circuit", result)
+
+
+def _build_bqskit_synthesis_model(device: Target, num_qudits: int) -> MachineModel:
+    """Build a BQSKit model for retargeting to ``device`` without mapping."""
+    return MachineModel(num_qudits, gate_set=get_bqskit_native_gates(device))
+
+
+def _build_bqskit_mapping_model(device: Target) -> MachineModel:
+    """Build a BQSKit model for layout and routing on ``device``."""
+    return MachineModel(
+        num_qudits=device.num_qubits,
+        gate_set=get_bqskit_native_gates(device),
+        coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
+    )
+
+
+def _build_bqskit_common_prefix(model: MachineModel) -> list[bqskit_BasePass]:
+    """Build the common BQSKit workflow prefix used for RL actions."""
+    return [
+        SetRandomSeedPass(_BQSKIT_SEED),
+        UnfoldPass(),
+        ExtractMeasurements(),
+        SetModelPass(model),
+    ]
+
+
+def _build_bqskit_common_suffix() -> list[bqskit_BasePass]:
+    """Build the common BQSKit workflow suffix used for RL actions."""
+    return [RestoreMeasurements()]
+
+
+def _bqskit_partitioned_synthesis_factory(
+    device: Target,
+    synthesis_pass: WorkflowLike,
+) -> Callable[[Circuit], Circuit]:
+    """Create a block-based BQSKit synthesis callable for an RL action."""
+
+    def _compile(circuit: Circuit) -> Circuit:
+        model = _build_bqskit_synthesis_model(device, circuit.num_qudits)
+        workflow = Workflow([
+            *_build_bqskit_common_prefix(model),
+            build_partitioning_workflow(
+                synthesis_pass,
+                _BQSKIT_MAX_SYNTHESIS_SIZE,
+                replace_filter_method="less-than-respecting-fully",
+            ),
+            build_multi_qudit_retarget_workflow(
+                _BQSKIT_OPT_LEVEL,
+                _BQSKIT_SYNTHESIS_EPSILON,
+                _BQSKIT_MAX_SYNTHESIS_SIZE,
+            ),
+            build_single_qudit_retarget_workflow(
+                _BQSKIT_OPT_LEVEL,
+                _BQSKIT_SYNTHESIS_EPSILON,
+                _BQSKIT_MAX_SYNTHESIS_SIZE,
+            ),
+            *_build_bqskit_common_suffix(),
+        ])
+        return cast("Circuit", _run_bqskit_workflow(circuit, workflow))
+
+    return _compile
+
+
+def _bqskit_diagonal_only_workflow(synthesis_pass: WorkflowLike) -> IfThenElsePass:
+    """Wrap a BQSKit synthesis workflow so it only runs on diagonal blocks."""
+    return IfThenElsePass(_DiagonalUnitaryPredicate(), synthesis_pass)
+
+
+def _bqskit_layout_factory(
+    device: Target,
+    *layout_passes: bqskit_BasePass,
+) -> Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]:
+    """Create a BQSKit layout callable that materializes the placement."""
+
+    def _compile(circuit: Circuit) -> tuple[Circuit, tuple[int, ...], tuple[int, ...]]:
+        model = _build_bqskit_mapping_model(device)
+        workflow = Workflow([
+            *_build_bqskit_common_prefix(model),
+            *layout_passes,
+            ApplyPlacement(),
+            *_build_bqskit_common_suffix(),
+        ])
+        compiled_circuit, data = cast(
+            "tuple[Circuit, dict[str, Any]]", _run_bqskit_workflow(circuit, workflow, request_data=True)
+        )
+        return (
+            compiled_circuit,
+            cast("tuple[int, ...]", data["initial_mapping"]),
+            cast("tuple[int, ...]", data["final_mapping"]),
+        )
+
+    return _compile
+
+
+def _bqskit_routing_factory(
+    device: Target,
+    routing_pass: bqskit_BasePass,
+) -> Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]:
+    """Create a BQSKit routing callable for already laid-out physical circuits."""
+
+    def _compile(circuit: Circuit) -> tuple[Circuit, tuple[int, ...], tuple[int, ...]]:
+        model = _build_bqskit_mapping_model(device)
+        workflow = Workflow([
+            *_build_bqskit_common_prefix(model),
+            routing_pass,
+            *_build_bqskit_common_suffix(),
+        ])
+        compiled_circuit, data = cast(
+            "tuple[Circuit, dict[str, Any]]", _run_bqskit_workflow(circuit, workflow, request_data=True)
+        )
+        return (
+            compiled_circuit,
+            cast("tuple[int, ...]", data["initial_mapping"]),
+            cast("tuple[int, ...]", data["final_mapping"]),
+        )
+
+    return _compile
 
 
 def register_action(action: Action) -> Action:
@@ -366,21 +558,141 @@ register_action(
     )
 )
 
-#register_action(
-#    DeviceDependentAction(
-#        "BQSKitO2",
-#        CompilationOrigin.BQSKIT,
-#        PassType.OPT,
-#        transpile_pass=lambda circuit: bqskit_compile(
-#            circuit,
-#            optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#            synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#            max_synthesis_size=3,
-#            seed=10,
-#            num_workers=-1,
-#        ),
-#    )
-#)
+register_action(
+    DeviceDependentAction(
+        "QSearchSynthesisPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            QSearchSynthesisPass(
+                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
+            ),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "LEAPSynthesisPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            LEAPSynthesisPass(
+                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                min_prefix_size=[3, 4][min(_BQSKIT_OPT_LEVEL, 2) - 1],
+                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
+            ),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "QFASTDecompositionPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            QFASTDecompositionPass(
+                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
+            ),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "QPredictDecompositionPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            QPredictDecompositionPass(
+                success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
+            ),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "WalshDiagonalSynthesisPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            _bqskit_diagonal_only_workflow(WalshDiagonalSynthesisPass()),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "PermutationAwareSynthesisPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+            device,
+            PermutationAwareSynthesisPass(
+                inner_synthesis=LEAPSynthesisPass(
+                    success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                    min_prefix_size=[3, 4][min(_BQSKIT_OPT_LEVEL, 2) - 1],
+                    instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
+                )
+            ),
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "QSDPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, QSDPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "FullQSDPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, FullQSDPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "MGDPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, MGDPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "BlockZXZPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, BlockZXZPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "FullBlockZXZPass",
+        CompilationOrigin.BQSKIT,
+        PassType.SYNTHESIS,
+        transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, FullBlockZXZPass()),
+    )
+)
 
 register_action(
     DeviceDependentAction(
@@ -457,6 +769,44 @@ register_action(
 
 register_action(
     DeviceDependentAction(
+        "GreedyPlacementPass",
+        CompilationOrigin.BQSKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: _bqskit_layout_factory(device, GreedyPlacementPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "TrivialPlacementPass",
+        CompilationOrigin.BQSKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: _bqskit_layout_factory(device, TrivialPlacementPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "StaticPlacementPass",
+        CompilationOrigin.BQSKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: _bqskit_layout_factory(device, StaticPlacementPass()),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "GeneralizedSabreLayoutPass",
+        CompilationOrigin.BQSKIT,
+        PassType.LAYOUT,
+        transpile_pass=lambda device: _bqskit_layout_factory(
+            device, GreedyPlacementPass(), GeneralizedSabreLayoutPass()
+        ),
+    )
+)
+
+register_action(
+    DeviceDependentAction(
         "RoutingPass",
         CompilationOrigin.TKET,
         PassType.ROUTING,
@@ -464,6 +814,15 @@ register_action(
             PreProcessTKETRoutingAfterQiskitLayout(),
             RoutingPass(Architecture(list(device.build_coupling_map()))),
         ],
+    )
+)
+
+register_action(
+    DeviceDependentAction(
+        "GeneralizedSabreRoutingPass",
+        CompilationOrigin.BQSKIT,
+        PassType.ROUTING,
+        transpile_pass=lambda device: _bqskit_routing_factory(device, GeneralizedSabreRoutingPass()),
     )
 )
 
@@ -526,30 +885,6 @@ register_action(
     )
 )
 
-#register_action(
-#    DeviceDependentAction(
-#        "BQSKitMapping",
-#        CompilationOrigin.BQSKIT,
-#        PassType.MAPPING,
-#        transpile_pass=lambda device: (
-#            lambda bqskit_circuit: bqskit_compile(
-#                bqskit_circuit,
-#                model=MachineModel(
-#                    num_qudits=device.num_qubits,
-#                    gate_set=get_bqskit_native_gates(device),
-#                    coupling_graph=[(elem[0], elem[1]) for elem in device.build_coupling_map()],
-#                ),
-#                with_mapping=True,
-#                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#                max_synthesis_size=3,
-#                seed=10,
-#                num_workers=-1,
-#            )
-#        ),
-#    )
-#)
-
 register_action(
     DeviceDependentAction(
         "BasisTranslator",
@@ -560,25 +895,6 @@ register_action(
         ],
     )
 )
-
-#register_action(
-#    DeviceDependentAction(
-#        "BQSKitSynthesis",
-#        CompilationOrigin.BQSKIT,
-#        PassType.SYNTHESIS,
-#        transpile_pass=lambda device: (
-#            lambda bqskit_circuit: bqskit_compile(
-#                bqskit_circuit,
-#                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-#                optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
-#                synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-#                max_synthesis_size=3,
-#                seed=10,
-#                num_workers=-1,
-#            )
-#        ),
-#    )
-#)
 
 register_action(
     DeviceIndependentAction(

@@ -264,6 +264,31 @@ def final_layout_bqskit_to_qiskit(
     )
 
 
+def final_layout_bqskit_routing_to_qiskit(
+    bqskit_final_layout: tuple[int, ...],
+    output_qubits: list[QiskitQubit],
+) -> Layout | None:
+    """Convert a BQSKit routing permutation into a Qiskit final layout."""
+    if bqskit_final_layout == tuple(range(len(bqskit_final_layout))):
+        return None
+
+    qiskit_final_layout = {}
+    used_output_positions = set()
+    for input_position, final_position in enumerate(bqskit_final_layout):
+        qiskit_final_layout[final_position] = output_qubits[input_position]
+        used_output_positions.add(input_position)
+
+    remaining_physical_positions = [i for i in range(len(output_qubits)) if i not in qiskit_final_layout]
+    remaining_output_positions = [i for i in range(len(output_qubits)) if i not in used_output_positions]
+
+    for physical_position, output_position in zip(
+        remaining_physical_positions, remaining_output_positions, strict=True
+    ):
+        qiskit_final_layout[physical_position] = output_qubits[output_position]
+
+    return Layout(input_dict=qiskit_final_layout)
+
+
 def postprocess_vf2postlayout(
     qc: QuantumCircuit, post_layout: Layout, layout_before: TranspileLayout
 ) -> tuple[QuantumCircuit, ApplyLayout]:

@@ -81,6 +81,7 @@ from mqt.predictor.rl.helper import (
     get_state_sample,
 )
 from mqt.predictor.rl.parsing import (
+    final_layout_bqskit_routing_to_qiskit,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
@@ -568,9 +569,8 @@ class PredictorEnv(Env):
                 for i in range(len(action_mask))
             ]
 
-        if self.has_parameterized_gates or self.layout is not None:
+        if self.has_parameterized_gates:
             # remove all actions that are from "origin"=="bqskit" because they are not supported for parameterized gates
-            # or after layout since using BQSKit after a layout is set may result in an error
             action_mask = [
                 action_mask[i] and self.action_set[i].origin != CompilationOrigin.BQSKIT
                 for i in range(len(action_mask))
@@ -957,7 +957,7 @@ class PredictorEnv(Env):
         elif action_index in self.actions_synthesis_indices:
             factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action.transpile_pass)
             bqskit_compiled_qc = factory(self.device)(bqskit_qc)
-        elif action_index in self.actions_mapping_indices:
+        elif action_index in self.actions_layout_indices + self.actions_mapping_indices:
             factory = cast(
                 "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
                 action.transpile_pass,
@@ -965,6 +965,21 @@ class PredictorEnv(Env):
             bqskit_compiled_qc, initial, final = factory(self.device)(bqskit_qc)
             compiled_qiskit_qc = bqskit_to_qiskit(bqskit_compiled_qc)
             self.layout = final_layout_bqskit_to_qiskit(initial, final, compiled_qiskit_qc, self.state)
+            return compiled_qiskit_qc
+        elif action_index in self.actions_routing_indices:
+            if self.layout is None:
+                msg = "BQSKit routing requires an existing layout."
+                raise ValueError(msg)
+            factory = cast(
+                "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
+                action.transpile_pass,
+            )
+            bqskit_compiled_qc, _initial, final = factory(self.device)(bqskit_qc)
+            compiled_qiskit_qc = bqskit_to_qiskit(bqskit_compiled_qc)
+            self.layout.final_layout = final_layout_bqskit_routing_to_qiskit(
+                final,
+                _layout_output_qubits(self.layout),
+            )
             return compiled_qiskit_qc
         else:
             msg = f"Unhandled BQSKit action index: {action_index}"
