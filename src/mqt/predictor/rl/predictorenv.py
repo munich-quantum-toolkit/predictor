@@ -968,9 +968,7 @@ class PredictorEnv(Env):
             self.layout = final_layout_bqskit_to_qiskit(initial, final, compiled_qiskit_qc, self.state)
             return compiled_qiskit_qc
         elif action_index in self.actions_routing_indices:
-            if self.layout is None:
-                msg = "BQSKit routing requires an existing layout."
-                raise ValueError(msg)
+            assert self.layout is not None, "BQSKit routing requires an existing layout."
             factory = cast(
                 "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
                 action.transpile_pass,
