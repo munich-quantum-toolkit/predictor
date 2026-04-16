@@ -351,32 +351,33 @@ class PredictorEnv(Env):
         """Run one environment step.
 
         This method:
-            1. Evaluates the current circuit with the configured reward function
-            (using either the exact or approximate metric, depending on state).
+            1. Evaluates the pre-step figure of merit value (using either the exact or approximate metric, depending on state).
             2. Applies the selected transpiler pass (the action).
             3. Computes a shaped step reward based on the change in the figure of merit.
 
         Reward design:
-            - For non-terminal actions, the step reward is a scaled delta between
-            the new and previous reward (plus an optional step penalty).
-            - For the terminate action, the episode ends and the final reward is
-            the exact (calibration-aware) metric.
+            - For non-terminal actions that stay within the same reward kind (``"approx"`` or ``"exact"``),
+              the step reward is a scaled delta between the new and previous figure of merit values.
+            - When an action changes the reward kind, the reward is neutral because the pre- and post-step
+              figure of merit values are no longer directly comparable.
+            - If the figure of merit does not change within the same reward kind, an (optional) small penalty
+              is applied to discourage ineffective actions.
+            - For the terminate action, the episode ends and the final reward is the exact (calibration-aware) figure of merit.
+            - For ``estimated_hellinger_distance``, intermediate steps use sparse rewards and only the terminate action
+              returns the exact figure of merit value.
         """
+        truncated = False
+        done = action == self.action_terminate_index
         action_name = str(self.action_set[action].name)
         step_index = self.num_steps + 1
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
-        previous_state_flags = self._get_compilation_state_flags()
-        previous_circuit = self.export_circuit()
 
-        altered_qc = self._apply_and_update(action)
-        if altered_qc is None:
-            self._log_step_reward(step_index, action_name, 0.0, done=True)
-            return self._create_observation(), 0.0, True, False, {}
+        if self.reward_function != "estimated_hellinger_distance" and self.prev_reward is None:
+            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
-        done = action == self.action_terminate_index
-        truncated = False
-        info: dict[Any, Any] = {}
+        # Apply the action and update the circuit state.
+        self._apply_and_update(action)
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
@@ -390,36 +391,28 @@ class PredictorEnv(Env):
             return self._create_observation(), reward_val, done, truncated, info
 
         if done:
+            # proper end of compilation gets rewarded with the exact figure of merit value
             assert action in self.valid_actions, "Terminate action is not valid but was chosen."
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            # determine figure of merit delta wrt the previous step
             assert self.prev_reward is not None
             assert self.prev_reward_kind is not None
-            current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
-            reward_kind_changed = self.prev_reward_kind != new_kind
-            state_changed = any(
-                not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
-            )
+            delta_reward = new_val - self.prev_reward
 
-            if reward_kind_changed:
-                previous_compare = (
-                    self.prev_reward
-                    if self.prev_reward_kind == "approx"
-                    else self.calculate_reward(qc=previous_circuit, mode="approx")[0]
-                )
-                new_compare = new_val if new_kind == "approx" else self.calculate_reward(mode="approx")[0]
-                delta_reward = new_compare - previous_compare
-            else:
-                delta_reward = new_val - self.prev_reward
-
-            if not isclose(delta_reward, 0.0, abs_tol=1e-12):
-                reward_val = self.reward_scale * delta_reward
-            elif state_changed:
+            if self.prev_reward_kind != new_kind:
+                # Switching estimator kind breaks direct comparability of the figure of merit values.
                 reward_val = 0.0
-            else:
+            elif isclose(delta_reward, 0.0, abs_tol=1e-12):
+                # No change in the figure of merit after applying the action -> penalty to discourage no-ops.
                 reward_val = self.no_effect_penalty
+            else:
+                # Positive or negative change in the figure of merit compared to the previous step, scaled by the reward factor.
+                reward_val = self.reward_scale * delta_reward
+
+            # Cache the previous reward and kind for the next step.
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         if not done and self._episode_budget_exhausted():
