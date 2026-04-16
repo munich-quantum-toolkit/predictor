@@ -188,7 +188,7 @@ def evaluate_trained_predictor(
     path_training_circuits: str | Path | None = None,
     path_test_circuits: str | Path | None = None,
     max_steps: int = 200,
-        deterministic: bool = False,
+    deterministic: bool = False,
     seed: int = 0,
 ) -> PredictorEvaluationResult:
     """Evaluate a trained predictor on a held-out test set and compute feature importance.
@@ -209,7 +209,7 @@ def evaluate_trained_predictor(
         device=device,
         mdp=mdp,
         path_training_circuits=training_dir,
-            )
+    )
     model = load_model_from_path(model_path)
 
     evaluation_results = [
@@ -340,9 +340,7 @@ def rollout_circuit(
             if predictor.env.action_terminate_index in predictor.env.valid_actions:
                 terminate_item = predictor.env.action_set[predictor.env.action_terminate_index]
                 used_compilation_passes.append(terminate_item.name)
-                obs, _reward_value, terminated, truncated, _ = predictor.env.step(
-                    predictor.env.action_terminate_index
-                )
+                obs, _reward_value, terminated, truncated, _ = predictor.env.step(predictor.env.action_terminate_index)
 
     figure_of_merit_value, figure_of_merit_kind = predictor.env.calculate_reward(mode="auto")
 
@@ -360,15 +358,28 @@ def rollout_circuit(
     )
 
 
-def clone_observation(obs: Observation) -> PolicyObservation:
+def clone_observation(obs: object) -> PolicyObservation:
     """Return a detached copy of an observation dictionary for policy inference."""
-    return {key: clone_feature_value(value) for key, value in obs.items()}
+    if not isinstance(obs, dict):
+        msg = f"Expected a flat observation dictionary, received {type(obs).__name__}."
+        raise TypeError(msg)
+
+    cloned: PolicyObservation = {}
+    for key, value in obs.items():
+        if not isinstance(key, str):
+            msg = f"Expected string observation keys, received {type(key).__name__}."
+            raise TypeError(msg)
+        cloned[key] = clone_feature_value(value)
+    return cloned
 
 
-def clone_feature_value(value: FeatureValue) -> NDArray[np.float32]:
+def clone_feature_value(value: object) -> NDArray[np.float32]:
     """Clone a feature value into a float32 array for policy inference."""
     if isinstance(value, np.ndarray):
         return np.array(value, copy=True, dtype=np.float32)
+    if not isinstance(value, int):
+        msg = f"Expected int or ndarray observation values, received {type(value).__name__}."
+        raise TypeError(msg)
     return np.array([value], dtype=np.float32)
 
 
@@ -479,8 +490,8 @@ def resolve_test_circuit_directory(
         test_dir = Path(path_test_circuits)
     else:
         candidates = [
-                        get_path_training_circuits_test(),
-path_training_circuits.parent / "test"
+            get_path_training_circuits_test(),
+            path_training_circuits.parent / "test"
             if path_training_circuits.name == "train"
             else path_training_circuits / "test",
             path_training_circuits / "new_indep_circuits" / "special_test",
