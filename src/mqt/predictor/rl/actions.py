@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-import os
+# import os
 import sys
 import warnings
 from collections import defaultdict
@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from bqskit import MachineModel
-from bqskit import compile as bqskit_compile
+# from bqskit import MachineModel
+# from bqskit import compile as bqskit_compile
 from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
@@ -78,30 +78,39 @@ from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
-    get_bqskit_native_gates,
+    # get_bqskit_native_gates,
 )
 
 IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
+
+# Try to import AIRouting; it is optional (requires qiskit-ibm-transpiler).
+HAS_AI_ROUTING = False
 if not IS_WIN_PY313:
-    # qiskit-ibm-transpiler currently emits import-time warnings
-    # these can not be ignored by the filterwarnings in pyproject.toml
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"invalid escape sequence '\\w'",
-            category=DeprecationWarning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r"invalid escape sequence '\\w'",
-            category=SyntaxWarning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=r'"is" with (?:a literal|\'str\' literal)',
-            category=SyntaxWarning,
-        )
-        from qiskit_ibm_transpiler.ai.routing import AIRouting
+    try:
+        # qiskit-ibm-transpiler currently emits import-time warnings
+        # these cannot be suppressed via pyproject.toml filterwarnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence '\\w'",
+                category=DeprecationWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence '\\w'",
+                category=SyntaxWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r'"is" with (?:a literal|\'str\' literal)',
+                category=SyntaxWarning,
+            )
+            from qiskit_ibm_transpiler.ai.routing import AIRouting
+            from qiskit_ibm_transpiler.local_routing.routing.inference import RoutingInference
+
+            HAS_AI_ROUTING = True
+    except ImportError:
+        pass
 
 
 if TYPE_CHECKING:
@@ -179,6 +188,10 @@ class DeviceDependentAction(Action):
 
 # Registry of actions
 _ACTIONS: dict[str, Action] = {}
+_AI_ROUTING_RUNTIME_STATE: dict[str, bool | RuntimeError | None] = {
+    "validated": False,
+    "error": None,
+}
 
 
 def register_action(action: Action) -> Action:
@@ -204,6 +217,37 @@ def remove_action(name: str) -> None:
         msg = f"No action with name {name} is registered."
         raise KeyError(msg)
     del _ACTIONS[name]
+
+
+def ensure_ai_routing_runtime_available() -> None:
+    """Validate that AIRouting is usable at runtime and preload its model once.
+
+    Importing ``qiskit_ibm_transpiler`` is not enough: the routing model is loaded
+    lazily on first use via ``RoutingInference()``, which may trigger a network
+    download. Predictor should fail before training starts if that model is not
+    locally available and cannot be downloaded.
+    """
+    if not HAS_AI_ROUTING or bool(_AI_ROUTING_RUNTIME_STATE["validated"]):
+        return
+    cached_error = _AI_ROUTING_RUNTIME_STATE["error"]
+    if isinstance(cached_error, RuntimeError):
+        raise cached_error
+
+    try:
+        RoutingInference()
+    except Exception as exc:
+        runtime_error = RuntimeError(
+            "AIRouting is installed but not usable: the qiskit-ibm-transpiler routing model "
+            "could not be loaded during startup. Predictor fails early here because otherwise "
+            "training would repeatedly hit the same runtime error mid-episode. Ensure the "
+            "routing model is already cached locally or that the machine has network access "
+            "for the initial download. The model repository can be overridden with "
+            "QISKIT_TRANSPILER_ROUTING_REPO_ID."
+        )
+        _AI_ROUTING_RUNTIME_STATE["error"] = runtime_error
+        raise runtime_error from exc
+
+    _AI_ROUTING_RUNTIME_STATE["validated"] = True
 
 
 register_action(
@@ -366,7 +410,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitO2",
 #        CompilationOrigin.BQSKIT,
@@ -380,7 +424,7 @@ register_action(
 #            num_workers=-1,
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceDependentAction(
@@ -479,7 +523,7 @@ register_action(
     )
 )
 
-if not IS_WIN_PY313:
+if HAS_AI_ROUTING:
     register_action(
         DeviceDependentAction(
             "AIRouting",
@@ -526,7 +570,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitMapping",
 #        CompilationOrigin.BQSKIT,
@@ -548,7 +592,7 @@ register_action(
 #            )
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceDependentAction(
@@ -561,7 +605,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitSynthesis",
 #        CompilationOrigin.BQSKIT,
@@ -578,7 +622,7 @@ register_action(
 #            )
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceIndependentAction(
@@ -690,7 +734,7 @@ def add_cregs_and_measurements(
     return qc
 
 
-if not IS_WIN_PY313:
+if HAS_AI_ROUTING:
 
     class SafeAIRouting(AIRouting):
         """Custom AIRouting wrapper that removes classical registers before routing.
