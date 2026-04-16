@@ -39,6 +39,7 @@ from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
+from numpy.typing import NDArray
 from pytket.circuit import Qubit
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from pytket.placement import Placement
@@ -55,6 +56,7 @@ from qiskit.transpiler.passes import (
     SetLayout,
 )
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
+from torch_geometric.data import Data
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
@@ -68,6 +70,7 @@ from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceDependentAction,
     PassType,
+    ensure_ai_routing_runtime_available,
     get_actions_by_pass_type,
 )
 from mqt.predictor.rl.approx_reward import (
@@ -90,6 +93,11 @@ from mqt.predictor.rl.parsing import (
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
+
+
+FeatureValue = int | NDArray[np.float32]
+FlatObservation = dict[str, FeatureValue]
+EnvironmentObservation = FlatObservation | Data
 
 
 def _layout_output_qubits(layout: TranspileLayout) -> list[Any]:
@@ -132,6 +140,8 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         reward_scale: float = 1.0,
         no_effect_penalty: float = -0.001,
+        max_episode_steps: int | None = None,
+        graph: bool = False,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -146,12 +156,16 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
             no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
+            max_episode_steps: Optional hard cap on environment steps per episode. When reached without
+                taking the terminate action, the episode ends with ``truncated=True``.
+            graph: If True, observations are returned as PyG Data objects for GNN-based agents. Defaults to False.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
         """
         logger.info("Init env: " + reward_function)
 
+        self.graph = graph
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
 
         self.action_set = {}
@@ -207,6 +221,9 @@ class PredictorEnv(Env):
         self.action_set[index] = action_dict[PassType.TERMINATE][0]
         self.action_terminate_index = index
 
+        if any(action.name in {"AIRouting", "AIRouting_opt"} for action in self.action_set.values()):
+            ensure_ai_routing_runtime_available()
+
         if reward_function == "estimated_success_probability" and not esp_data_available(self.device):
             msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
@@ -246,6 +263,7 @@ class PredictorEnv(Env):
         self.readout_err: dict[Node, float] | None = None
         self.reward_scale = reward_scale
         self.no_effect_penalty = no_effect_penalty
+        self.max_episode_steps = max_episode_steps
         self.prev_reward: float | None = None
         self.prev_reward_kind: str | None = None
         self.episode_count = 0
@@ -278,10 +296,11 @@ class PredictorEnv(Env):
 
         return altered_qc
 
-    def _create_observation(self, qc: QuantumCircuit | None = None) -> dict[str, Any]:
+    def _create_observation(self, qc: QuantumCircuit | None = None) -> EnvironmentObservation:
         """Create an observation directly from the actual circuit state."""
         circuit = self.state if qc is None else qc
-        return create_feature_dict(circuit)
+        graph = self.graph if qc is None else False
+        return create_feature_dict(circuit, graph=graph)
 
     def export_circuit(self, qc: QuantumCircuit | None = None) -> QuantumCircuit:
         """Return a copy of a circuit with the current env layout attached."""
@@ -307,6 +326,10 @@ class PredictorEnv(Env):
                 reward_val,
             )
 
+    def _episode_budget_exhausted(self) -> bool:
+        """Return whether the current episode reached the configured step cap."""
+        return self.max_episode_steps is not None and self.num_steps >= self.max_episode_steps
+
     def _get_compilation_state_flags(self) -> tuple[bool, bool, bool]:
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
         if self.compilation_state_flags is not None:
@@ -324,7 +347,7 @@ class PredictorEnv(Env):
         """Return `(synthesized, laid_out, routed)` for the current circuit state."""
         return self._get_compilation_state_flags()
 
-    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+    def step(self, action: int) -> tuple[EnvironmentObservation, float, bool, bool, dict[Any, Any]]:
         """Run one environment step.
 
         This method:
@@ -344,6 +367,7 @@ class PredictorEnv(Env):
         self.used_actions.append(action_name)
         logger.info("Episode %d step %d: applying %s", self.episode_count, step_index, action_name)
         previous_state_flags = self._get_compilation_state_flags()
+        previous_circuit = self.export_circuit()
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
@@ -351,43 +375,69 @@ class PredictorEnv(Env):
             return self._create_observation(), 0.0, True, False, {}
 
         done = action == self.action_terminate_index
+        truncated = False
+        info: dict[Any, Any] = {}
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self._log_step_reward(step_index, action_name, reward_val, done)
-            return self._create_observation(), reward_val, done, False, {}
-
-        # Lazy init: compute prev_reward only once per episode (or if missing)
-        if self.prev_reward is None:
-            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
+            if not done and self._episode_budget_exhausted():
+                truncated = True
+                info = {
+                    "time_limit_reached": True,
+                    "max_episode_steps": self.max_episode_steps,
+                }
+            self._log_step_reward(step_index, action_name, reward_val, done or truncated)
+            return self._create_observation(), reward_val, done, truncated, info
 
         if done:
             assert action in self.valid_actions, "Terminate action is not valid but was chosen."
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="exact")
             reward_val = self.prev_reward
         else:
+            assert self.prev_reward is not None
+            assert self.prev_reward_kind is not None
             current_state_flags = self._get_compilation_state_flags()
             new_val, new_kind = self.calculate_reward(mode="auto")
-            delta_reward = new_val - self.prev_reward
             reward_kind_changed = self.prev_reward_kind != new_kind
             state_changed = any(
                 not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
             )
 
-            if reward_kind_changed or state_changed:
-                delta_reward = 0.0
+            if reward_kind_changed:
+                previous_compare = (
+                    self.prev_reward
+                    if self.prev_reward_kind == "approx"
+                    else self.calculate_reward(qc=previous_circuit, mode="approx")[0]
+                )
+                new_compare = new_val if new_kind == "approx" else self.calculate_reward(mode="approx")[0]
+                delta_reward = new_compare - previous_compare
+            else:
+                delta_reward = new_val - self.prev_reward
 
             if not isclose(delta_reward, 0.0, abs_tol=1e-12):
                 reward_val = self.reward_scale * delta_reward
-            elif reward_kind_changed or state_changed:
+            elif state_changed:
                 reward_val = 0.0
             else:
                 reward_val = self.no_effect_penalty
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
+        if not done and self._episode_budget_exhausted():
+            truncated = True
+            info = {
+                "time_limit_reached": True,
+                "max_episode_steps": self.max_episode_steps,
+            }
+            logger.info(
+                "Episode %d step %d: reached max_episode_steps=%d, truncating episode",
+                self.episode_count,
+                step_index,
+                self.max_episode_steps,
+            )
+
         obs = self._create_observation()
-        self._log_step_reward(step_index, action_name, reward_val, done)
-        return obs, reward_val, done, False, {}
+        self._log_step_reward(step_index, action_name, reward_val, done or truncated)
+        return obs, reward_val, done, truncated, info
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
         """Compute the reward for a circuit and report whether it was computed exactly or approximately.
@@ -497,7 +547,7 @@ class PredictorEnv(Env):
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
         options: dict[str, Any] | None = None,  # noqa: ARG002
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[EnvironmentObservation, dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
         Arguments:
@@ -536,8 +586,11 @@ class PredictorEnv(Env):
 
         self.error_occurred = False
 
-        self.prev_reward = None
-        self.prev_reward_kind = None
+        if self.reward_function == "estimated_hellinger_distance":
+            self.prev_reward = None
+            self.prev_reward_kind = None
+        else:
+            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
@@ -666,7 +719,7 @@ class PredictorEnv(Env):
 
                 except (QiskitError, TranspilerError, RuntimeError, ValueError, TypeError) as e:
                     logger.warning(f"[Fallback to SWAP counts] Synthesis or fidelity computation failed: {e}")
-                    swap_count = out_circ.count_ops().get("swap", 0)  # ty: ignore[no-matching-overload]
+                    swap_count = out_circ.count_ops().get("swap", 0)
                     if best_result is None or swap_count < best_swap_count:
                         best_swap_count = swap_count
                         best_result = out_circ
@@ -725,9 +778,9 @@ class PredictorEnv(Env):
 
         # BasisTranslator errors on unitary gates; decompose them immediately so
         # the circuit is always in a consistent state after a Qiskit action.
-        if altered_qc.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
+        if altered_qc.count_ops().get("unitary"):
             altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
-        elif altered_qc.count_ops().get("clifford"):  # ty: ignore[invalid-argument-type]
+        elif altered_qc.count_ops().get("clifford"):
             altered_qc = altered_qc.decompose(gates_to_decompose="clifford")
         return altered_qc
 
@@ -849,6 +902,7 @@ class PredictorEnv(Env):
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
+        # Replace implicit wire swaps with explicit SWAP gates during conversion to Qiskit
         altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
         if action_index in self.actions_routing_indices:

@@ -21,31 +21,38 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_available_device_names, get_device
 from qiskit import QuantumCircuit
 from qiskit.qasm2 import dump
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.hellinger import calc_device_specific_features, hellinger_distance
 from mqt.predictor.ml import Predictor as ml_Predictor
 from mqt.predictor.ml import predict_device_for_figure_of_merit
-from mqt.predictor.ml.helper import TrainingData, get_path_training_data
+from mqt.predictor.ml.helper import TrainingData, create_dag, get_path_training_data
 from mqt.predictor.rl import Predictor as rl_Predictor
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from qiskit.transpiler import Target
 
 
-@pytest.fixture
+torch = pytest.importorskip("torch", exc_type=ModuleNotFoundError)
+pytest.importorskip("torch_geometric", exc_type=ModuleNotFoundError)
+
+
+@pytest.fixture(scope="module")
 def source_path() -> Path:
     """Return the source path."""
     return Path("./test_uncompiled_circuits")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def target_path() -> Path:
     """Return the target path."""
     return Path("./test_compiled_circuits")
 
 
-@pytest.fixture
-def device() -> Path:
+@pytest.fixture(scope="module")
+def device() -> Target:
     """Return the target device."""
     return get_device("quantinuum_h2_56")
 
@@ -151,9 +158,12 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
-def test_train_random_forest_regressor_and_predict(device: Target) -> None:
-    """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
-    # Setup the training environment
+@pytest.mark.parametrize(
+    ("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"]
+)
+def test_train_model_and_predict(device: Target, model_type: str, verbose: bool) -> None:
+    """Test the training of the RF and GNN models. The trained models are saved and used in the following tests."""
+    gnn = model_type == "gnn"
     n_circuits = 20
 
     qc = QuantumCircuit(device.num_qubits)
@@ -161,8 +171,12 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
         qc.cz(0, i)
 
     # 1. Feature Extraction
-    feature_vector = calc_device_specific_features(qc, device)
-    feature_vector_list = np.tile(feature_vector, (n_circuits, 1))
+    if not gnn:
+        feature_vector = calc_device_specific_features(qc, device)
+        feature_vector_list = np.tile(feature_vector, (n_circuits, 1))
+    else:
+        x, edge_index, number_of_gates = create_dag(qc)
+        training_sample = [(x, edge_index, number_of_gates)] * n_circuits
 
     # 2. Label Generation
     rng = np.random.default_rng()
@@ -171,20 +185,61 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     noiseless = np.zeros_like(noisy)
     noiseless[0] = 1.0
     distance_label = hellinger_distance(noisy, noiseless)
-    labels_list = np.full(n_circuits, distance_label)
-    training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
+    labels_list = [distance_label] * n_circuits
+    # Creation of the training data object, which is different for RF and GNN models
+    if not gnn:
+        labels_array = np.asarray(labels_list, dtype=np.float64)
+        training_data = TrainingData(X_train=feature_vector_list, y_train=labels_array)
+    else:
+        training_data_list = []
+        for i in range(n_circuits):
+            x, edge_idx, n_nodes = training_sample[i]
+            gnn_training_sample = Data(
+                x=x,
+                y=torch.tensor(labels_list[i], dtype=torch.float32),
+                edge_index=edge_idx,
+                num_nodes=n_nodes,
+            )
+            training_data_list.append(gnn_training_sample)
+        training_data = TrainingData(X_train=training_data_list, y_train=np.asarray(labels_list, dtype=np.float32))
 
     # 3. Model Training
-    pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device])
-    trained_model = pred.train_random_forest_model(training_data)
+    pred = ml_Predictor(figure_of_merit="hellinger_distance", devices=[device], gnn=gnn)
+    if gnn:
+        trained_model = pred.train_gnn_model(training_data, num_epochs=5, patience=2, verbose=verbose)
+    else:
+        trained_model = pred.train_random_forest_model(training_data)
 
-    assert np.isclose(trained_model.predict([feature_vector]), distance_label)
+    if not gnn:
+        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor  # noqa: PLC0415
+
+        assert isinstance(trained_model, (RandomForestRegressor, RandomForestClassifier))
+        assert np.isclose(trained_model.predict([feature_vector]), distance_label)
+    else:
+        import torch.nn as nn  # noqa: PLC0415
+
+        assert isinstance(trained_model, nn.Module)
+        trained_model.eval()
+        model_device = next(trained_model.parameters()).device
+        with torch.no_grad():
+            batch = Batch.from_data_list(training_data.X_train).to(model_device)  # ty: ignore[invalid-argument-type,unresolved-attribute]
+            out = trained_model(batch)
+            out = out.squeeze(-1)
+            predicted_values = out.cpu().numpy()
+            labels = np.asarray(labels_list, dtype=np.float32)
+        # interested just in the shape not the actual values, since the model is not really trained
+        assert predicted_values.shape == labels.shape
 
 
-def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
-    """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
+@pytest.mark.parametrize(
+    ("model_type", "verbose"), [("rf", False), ("gnn", False), ("gnn", True)], ids=["rf", "gnn", "gnn_verbose"]
+)
+def test_train_and_qcompile_with_hellinger_model(
+    source_path: Path, target_path: Path, device: Target, model_type: str, verbose: bool
+) -> None:
+    """Test the entire predictor toolchain for estimating the Hellinger distance with both RF and GNN."""
     figure_of_merit = "estimated_hellinger_distance"
-
+    gnn = model_type == "gnn"
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -202,7 +257,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # 2. Setup and train the machine learning model for device selection
-        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit)
+        ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit, gnn=gnn)
 
         # Prepare uncompiled circuits
         if not source_path.exists():
@@ -222,22 +277,35 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         )
 
         # Generate training data from the compiled circuits
-        ml_predictor.generate_training_data(path_uncompiled_circuits=source_path, path_compiled_circuits=target_path)
-
-        for file in [
-            "training_data_estimated_hellinger_distance.npy",
-            "names_list_estimated_hellinger_distance.npy",
-            "scores_list_estimated_hellinger_distance.npy",
-        ]:
-            path = get_path_training_data() / "training_data_aggregated" / file
-            assert path.exists()
+        ml_predictor.generate_training_data(
+            path_uncompiled_circuits=source_path, path_compiled_circuits=target_path, num_workers=1
+        )
+        if gnn:
+            dataset_dir = (
+                get_path_training_data() / "training_data_aggregated" / "graph_dataset_estimated_hellinger_distance"
+            )
+            assert dataset_dir.exists()
+            assert dataset_dir.is_dir()
+            # check for controlling that the name starts with a number and ends with .safetensors asdefined in the predictor
+            assert any(f.is_file() and f.suffix == ".safetensors" and f.stem.isdigit() for f in dataset_dir.iterdir())
+        else:
+            for file in [
+                "training_data_estimated_hellinger_distance.npy",
+                "names_list_estimated_hellinger_distance.npy",
+                "scores_list_estimated_hellinger_distance.npy",
+            ]:
+                path = get_path_training_data() / "training_data_aggregated" / file
+                assert path.exists()
 
         # Train the ML model
-        ml_predictor.train_random_forest_model()
+        if gnn:
+            ml_predictor.train_gnn_model(verbose=verbose)
+        else:
+            ml_predictor.train_random_forest_model()
         qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
         # Test the prediction
-        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit)
+        predicted_dev = predict_device_for_figure_of_merit(qc, figure_of_merit, gnn=gnn)
         assert predicted_dev.description in get_available_device_names()
 
 
@@ -254,3 +322,53 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
         ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")
     ):
         pred.train_random_forest_model(training_data)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_artifacts(source_path: Path, target_path: Path) -> Iterator[None]:
+    """Remove files and directories created during testing in this module."""
+    # NOTE: This cleanup is intentionally conservative: we only delete *.qasm files that
+    # tests generate and then try to remove the directory.
+    # We do NOT use shutil.rmtree() to avoid deleting unexpected/non-test files.
+    # This means Path.rmdir() can fail if extra files/dirs exist (e.g., partial runs or
+    # platform artifacts). If this becomes flaky, switch to shutil.rmtree().
+
+    # Let the tests run
+    yield
+
+    # Cleanup compiled/uncompiled circuit files and directories
+    if source_path.exists():
+        for file in source_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        source_path.rmdir()
+
+    if target_path.exists():
+        for file in target_path.iterdir():
+            if file.suffix == ".qasm":
+                file.unlink()
+        target_path.rmdir()
+
+    # Cleanup training data artifacts
+    data_path = get_path_training_data() / "training_data_aggregated"
+    if data_path.exists():
+        for file in list(data_path.iterdir()):
+            if file.is_file() and file.suffix in (".npy", ".pt", ".safetensors", ".label"):
+                file.unlink()
+            elif file.is_dir() and file.name.startswith("graph_dataset_"):
+                for sub in file.iterdir():
+                    if sub.is_file():
+                        sub.unlink()
+                    elif sub.is_dir():
+                        # If nested dirs appear, consider switching to shutil.rmtree as noted above
+                        for nested in sub.iterdir():
+                            nested.unlink()
+                        sub.rmdir()
+                file.rmdir()
+
+    # Cleanup trained model artifacts
+    model_path = get_path_training_data() / "trained_model"
+    if model_path.exists():
+        for file in model_path.iterdir():
+            if file.suffix in (".joblib", ".pth", ".json"):
+                file.unlink()
