@@ -16,7 +16,7 @@ import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import numpy as np
 from bqskit import MachineModel
@@ -134,7 +134,8 @@ if not IS_WIN_PY313:
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
+    from typing import Protocol, TypeAlias
 
     from bqskit import Circuit
     from bqskit.compiler.basepass import BasePass as bqskit_BasePass
@@ -146,6 +147,24 @@ if TYPE_CHECKING:
     from qiskit.passmanager import PropertySet
     from qiskit.transpiler import Target
     from qiskit.transpiler.basepasses import BasePass as qiskit_BasePass
+
+    PassList: TypeAlias = list[qiskit_BasePass | tket_BasePass]
+    BQSKitMapping: TypeAlias = tuple[Circuit, tuple[int, ...], tuple[int, ...]]
+    BQSKitCompileFn: TypeAlias = Callable[[Circuit], Circuit | BQSKitMapping]
+    TranspilePassSpec: TypeAlias = PassList | Callable[..., PassList] | Callable[..., BQSKitCompileFn]
+
+    class BQSKitWorkflowDataLike(Protocol):
+        """Minimal attribute shape used from BQSKit request-data payloads."""
+
+        initial_mapping: Sequence[int]
+        final_mapping: Sequence[int]
+
+
+class _BQSKitCompileData(TypedDict):
+    """Materialized mapping metadata returned from BQSKit workflows."""
+
+    initial_mapping: tuple[int, ...]
+    final_mapping: tuple[int, ...]
 
 
 class CompilationOrigin(str, Enum):
@@ -176,15 +195,7 @@ class Action:
     name: str
     origin: CompilationOrigin
     pass_type: PassType
-    transpile_pass: (
-        list[qiskit_BasePass | tket_BasePass]
-        | Callable[..., list[Any]]
-        | Callable[..., list[qiskit_BasePass | tket_BasePass]]
-        | Callable[
-            ...,
-            Callable[..., tuple[Any, ...] | Circuit],
-        ]
-    )
+    transpile_pass: TranspilePassSpec
     stochastic: bool | None = False
     preserve_layout: bool | None = False
 
@@ -198,14 +209,7 @@ class DeviceIndependentAction(Action):
 class DeviceDependentAction(Action):
     """Action that represents a device-specific compilation pass that can be applied to a specific device."""
 
-    transpile_pass: (
-        Callable[..., list[Any]]
-        | Callable[..., list[qiskit_BasePass | tket_BasePass]]
-        | Callable[
-            ...,
-            Callable[..., tuple[Any, ...] | Circuit],
-        ]
-    )
+    transpile_pass: Callable[..., PassList] | Callable[..., BQSKitCompileFn]
     do_while: Callable[[PropertySet], bool] | None = None
 
 
@@ -234,7 +238,7 @@ class _DiagonalUnitaryPredicate(PassPredicate):
 
 def _run_bqskit_workflow(
     circuit: Circuit, workflow: Workflow, request_data: bool = False
-) -> Circuit | tuple[Circuit, dict[str, Any]]:
+) -> Circuit | tuple[Circuit, _BQSKitCompileData]:
     """Compile ``circuit`` with a custom BQSKit workflow."""
     compiler = Compiler()
     try:
@@ -243,27 +247,13 @@ def _run_bqskit_workflow(
         compiler.close()
 
     if request_data:
-        compiled_circuit, data = cast("tuple[Circuit, Any]", result)
+        compiled_circuit, data = cast("tuple[Circuit, BQSKitWorkflowDataLike]", result)
         return compiled_circuit, {
             "initial_mapping": tuple(data.initial_mapping),
             "final_mapping": tuple(data.final_mapping),
         }
 
     return cast("Circuit", result)
-
-
-def _build_bqskit_synthesis_model(device: Target, num_qudits: int) -> MachineModel:
-    """Build a BQSKit model for retargeting to ``device`` without mapping."""
-    return MachineModel(num_qudits, gate_set=get_bqskit_native_gates(device))
-
-
-def _build_bqskit_mapping_model(device: Target) -> MachineModel:
-    """Build a BQSKit model for layout and routing on ``device``."""
-    return MachineModel(
-        num_qudits=device.num_qubits,
-        gate_set=get_bqskit_native_gates(device),
-        coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
-    )
 
 
 def _build_bqskit_common_prefix(model: MachineModel) -> list[bqskit_BasePass]:
@@ -288,7 +278,7 @@ def _bqskit_partitioned_synthesis_factory(
     """Create a block-based BQSKit synthesis callable for an RL action."""
 
     def _compile(circuit: Circuit) -> Circuit:
-        model = _build_bqskit_synthesis_model(device, circuit.num_qudits)
+        model = MachineModel(circuit.num_qudits, gate_set=get_bqskit_native_gates(device))
         workflow = Workflow([
             *_build_bqskit_common_prefix(model),
             build_partitioning_workflow(
@@ -313,57 +303,34 @@ def _bqskit_partitioned_synthesis_factory(
     return _compile
 
 
-def _bqskit_diagonal_only_workflow(synthesis_pass: WorkflowLike) -> IfThenElsePass:
-    """Wrap a BQSKit synthesis workflow so it only runs on diagonal blocks."""
-    return IfThenElsePass(_DiagonalUnitaryPredicate(), synthesis_pass)
-
-
-def _bqskit_layout_factory(
+def _bqskit_mapping_factory(
     device: Target,
-    *layout_passes: bqskit_BasePass,
-) -> Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]:
-    """Create a BQSKit layout callable that materializes the placement."""
+    *mapping_passes: bqskit_BasePass,
+    apply_placement: bool,
+) -> Callable[[Circuit], BQSKitMapping]:
+    """Create a BQSKit mapping callable for layout or routing actions."""
 
-    def _compile(circuit: Circuit) -> tuple[Circuit, tuple[int, ...], tuple[int, ...]]:
-        model = _build_bqskit_mapping_model(device)
+    def _compile(circuit: Circuit) -> BQSKitMapping:
+        model = MachineModel(
+            num_qudits=device.num_qubits,
+            gate_set=get_bqskit_native_gates(device),
+            coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
+        )
+        workflow_passes = [*mapping_passes]
+        if apply_placement:
+            workflow_passes.append(ApplyPlacement())
         workflow = Workflow([
             *_build_bqskit_common_prefix(model),
-            *layout_passes,
-            ApplyPlacement(),
+            *workflow_passes,
             *_build_bqskit_common_suffix(),
         ])
         compiled_circuit, data = cast(
-            "tuple[Circuit, dict[str, Any]]", _run_bqskit_workflow(circuit, workflow, request_data=True)
+            "tuple[Circuit, _BQSKitCompileData]", _run_bqskit_workflow(circuit, workflow, request_data=True)
         )
         return (
             compiled_circuit,
-            cast("tuple[int, ...]", data["initial_mapping"]),
-            cast("tuple[int, ...]", data["final_mapping"]),
-        )
-
-    return _compile
-
-
-def _bqskit_routing_factory(
-    device: Target,
-    routing_pass: bqskit_BasePass,
-) -> Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]:
-    """Create a BQSKit routing callable for already laid-out physical circuits."""
-
-    def _compile(circuit: Circuit) -> tuple[Circuit, tuple[int, ...], tuple[int, ...]]:
-        model = _build_bqskit_mapping_model(device)
-        workflow = Workflow([
-            *_build_bqskit_common_prefix(model),
-            routing_pass,
-            *_build_bqskit_common_suffix(),
-        ])
-        compiled_circuit, data = cast(
-            "tuple[Circuit, dict[str, Any]]", _run_bqskit_workflow(circuit, workflow, request_data=True)
-        )
-        return (
-            compiled_circuit,
-            cast("tuple[int, ...]", data["initial_mapping"]),
-            cast("tuple[int, ...]", data["final_mapping"]),
+            data["initial_mapping"],
+            data["final_mapping"],
         )
 
     return _compile
@@ -592,7 +559,7 @@ register_action(
         PassType.SYNTHESIS,
         transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
             device,
-            _bqskit_diagonal_only_workflow(WalshDiagonalSynthesisPass()),
+            IfThenElsePass(_DiagonalUnitaryPredicate(), WalshDiagonalSynthesisPass()),
         ),
     )
 )
@@ -711,7 +678,7 @@ register_action(
         "GreedyPlacementPass",
         CompilationOrigin.BQSKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: _bqskit_layout_factory(device, GreedyPlacementPass()),
+        transpile_pass=lambda device: _bqskit_mapping_factory(device, GreedyPlacementPass(), apply_placement=True),
     )
 )
 
@@ -720,7 +687,7 @@ register_action(
         "TrivialPlacementPass",
         CompilationOrigin.BQSKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: _bqskit_layout_factory(device, TrivialPlacementPass()),
+        transpile_pass=lambda device: _bqskit_mapping_factory(device, TrivialPlacementPass(), apply_placement=True),
     )
 )
 
@@ -729,7 +696,7 @@ register_action(
         "StaticPlacementPass",
         CompilationOrigin.BQSKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: _bqskit_layout_factory(device, StaticPlacementPass()),
+        transpile_pass=lambda device: _bqskit_mapping_factory(device, StaticPlacementPass(), apply_placement=True),
     )
 )
 
@@ -738,8 +705,11 @@ register_action(
         "GeneralizedSabreLayoutPass",
         CompilationOrigin.BQSKIT,
         PassType.LAYOUT,
-        transpile_pass=lambda device: _bqskit_layout_factory(
-            device, GreedyPlacementPass(), GeneralizedSabreLayoutPass()
+        transpile_pass=lambda device: _bqskit_mapping_factory(
+            device,
+            GreedyPlacementPass(),
+            GeneralizedSabreLayoutPass(),
+            apply_placement=True,
         ),
     )
 )
@@ -761,7 +731,9 @@ register_action(
         "GeneralizedSabreRoutingPass",
         CompilationOrigin.BQSKIT,
         PassType.ROUTING,
-        transpile_pass=lambda device: _bqskit_routing_factory(device, GeneralizedSabreRoutingPass()),
+        transpile_pass=lambda device: _bqskit_mapping_factory(
+            device, GeneralizedSabreRoutingPass(), apply_placement=False
+        ),
     )
 )
 
