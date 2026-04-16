@@ -163,7 +163,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gnn-trial-steps",
         type=int,
-        default=5000,
+        default=10000,
         help="Training steps per GNN tuning trial.",
     )
     parser.add_argument(
@@ -181,8 +181,6 @@ def selected_gnn_mdp(args: argparse.Namespace) -> str:
         msg = f"GNN hyperparameter tuning requires exactly one MDP. Received: {', '.join(args.mdps)}"
         raise ValueError(msg)
     return args.mdps[0]
-
-
 def now_utc_iso() -> str:
     """Return the current UTC timestamp in ISO format."""
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat()

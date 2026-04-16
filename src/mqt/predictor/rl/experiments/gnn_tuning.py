@@ -47,7 +47,6 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
-
 @dataclass(frozen=True, slots=True)
 class GNNTrialConfig:
     """Configuration for one GNN hyperparameter tuning trial."""
@@ -369,11 +368,11 @@ def _objective(
         Mean episode return (higher is better).
     """
     # Suggest hyperparameters
-    hidden_dim = trial.suggest_int("hidden_dim", 64, 128)
-    num_conv_wo_resnet = trial.suggest_int("num_conv_wo_resnet", 1, 3)
-    num_resnet_layers = trial.suggest_int("num_resnet_layers", 1, 9)
-    dropout_p = trial.suggest_categorical("dropout_p", [0.0, 0.1, 0.2])
-    bidirectional = trial.suggest_categorical("bidirectional", [False, True])
+    hidden_dim = trial.suggest_int("hidden_dim", 112, 128)
+    num_conv_wo_resnet = trial.suggest_categorical("num_conv_wo_resnet", [1, 2])
+    num_resnet_layers = trial.suggest_int("num_resnet_layers", 4, 7)
+    dropout_p = trial.suggest_categorical("dropout_p", [0.1])
+    bidirectional = trial.suggest_categorical("bidirectional", [False])
 
     trial_id = trial.number
     logger.debug(
