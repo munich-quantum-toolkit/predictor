@@ -288,19 +288,23 @@ class Predictor:
         verbose: int = 2,
         test: bool = False,
         callback: BaseCallback | None = None,
+        checkpoint_directory: Path | None = None,
+        checkpoint_frequency: int | None = None,
         resume_from: Path | None = None,
         **kwargs: object,
     ) -> MaskablePPO | None:
         """Trains a model for the given reward function and device.
 
         Arguments:
-            timesteps: Training timesteps for MaskablePPO (ignored in GNN mode). Defaults to 1000.
+            timesteps: Target total training timesteps for MaskablePPO. Ignored in GNN mode.
             verbose: Verbosity level (MaskablePPO only). Defaults to 2.
             test: Use reduced hyperparameters for fast testing. Defaults to False.
             callback: Optional SB3 callback used during training (MaskablePPO only). Defaults to None.
-            resume_from: Optional path to a previously saved PPO checkpoint (MaskablePPO only). Defaults to None.
+            checkpoint_directory: Optional directory for intermediate checkpoints in both PPO and GNN mode.
+            checkpoint_frequency: Optional checkpoint cadence in environment steps for both PPO and GNN mode.
+            resume_from: Optional path to a previously saved checkpoint.
             **kwargs: Additional hyperparameters for GNN training:
-                - iterations (int): PPO iterations. Defaults to 1000.
+                - iterations (int): Target total PPO iterations. Defaults to 1000.
                 - steps (int): Steps per iteration. Defaults to 2048.
                 - num_epochs (int): PPO update epochs. Defaults to 10.
                 - minibatch_size (int): Minibatch size. Defaults to 64.
@@ -313,7 +317,13 @@ class Predictor:
                 - gnn_lr (float): Learning rate for GNN encoder. Defaults to 1e-4.
         """
         if self.graph:
-            self._train_gnn(test=test, **kwargs)
+            self._train_gnn(
+                test=test,
+                checkpoint_directory=checkpoint_directory,
+                checkpoint_frequency=checkpoint_frequency,
+                resume_from=resume_from,
+                **kwargs,
+            )
             return None
 
         return self._train_maskable_ppo(
@@ -335,7 +345,7 @@ class Predictor:
         """Trains a MaskablePPO model.
 
         Arguments:
-            timesteps: Total training timesteps.
+            timesteps: Target total training timesteps.
             verbose: Verbosity level for training.
             test: If True, uses reduced hyperparameters for fast testing.
             callback: Optional SB3 callback used during training.
@@ -368,74 +378,64 @@ class Predictor:
                 n_epochs=n_epochs,
             )
             reset_num_timesteps = True
+            remaining_timesteps = timesteps
         else:
             model = MaskablePPO.load(resume_from, env=self.env)
             model.verbose = verbose
             model.tensorboard_log = tensorboard_log
             reset_num_timesteps = False
+            remaining_timesteps = max(0, timesteps - int(model.num_timesteps))
 
-        # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
-        # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
-        model.learn(
-            total_timesteps=timesteps,
-            progress_bar=progress_bar,
-            callback=callback,
-            reset_num_timesteps=reset_num_timesteps,
-        )
+        if remaining_timesteps > 0:
+            model.learn(
+                total_timesteps=remaining_timesteps,
+                progress_bar=progress_bar,
+                callback=callback,
+                reset_num_timesteps=reset_num_timesteps,
+            )
         model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
         return model
 
-    def _train_gnn(self, test: bool = False, **kwargs: object) -> None:
-        """Trains the GNN model.
+    def _build_gnn_checkpoint_payload(
+        self,
+        *,
+        policy: SAGEActorCritic,
+        hidden_dim: int,
+        num_conv_wo_resnet: int,
+        num_resnet_layers: int,
+        dropout_p: float,
+        bidirectional: bool,
+        node_feature_dim: int,
+        num_iterations: int,
+        steps_per_iteration: int,
+        num_epochs: int,
+        minibatch_size: int,
+        lr: float,
+        gnn_lr: float,
+        completed_iterations: int,
+        optimizer: torch.optim.Optimizer | None = None,
+        shuffle_rng_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Build the serialized checkpoint payload shared by final and intermediate GNN saves."""
+        training_state: dict[str, object] = {
+            "completed_iterations": completed_iterations,
+            "completed_timesteps": completed_iterations * steps_per_iteration,
+            "num_iterations": num_iterations,
+            "steps_per_iteration": steps_per_iteration,
+            "num_epochs": num_epochs,
+            "minibatch_size": minibatch_size,
+            "lr": lr,
+            "gnn_lr": gnn_lr,
+            "env_rng_state": self.env.rng.bit_generator.state,
+            "torch_rng_state": torch.get_rng_state(),
+        }
+        if shuffle_rng_state is not None:
+            training_state["shuffle_rng_state"] = shuffle_rng_state
+        if torch.cuda.is_available():
+            training_state["torch_cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
 
-        Arguments:
-            test: If True, uses reduced hyperparameters for fast testing.
-            **kwargs: Additional hyperparameters for GNN training (see train_model).
-        """
-        if test:
-            # Set init values for testing
-            kwargs.setdefault("iterations", 10)
-            kwargs.setdefault("steps", 20)
-            kwargs.setdefault("num_epochs", 1)
-            kwargs.setdefault("minibatch_size", 32)
-            kwargs.setdefault("hidden_dim", 128)
-            kwargs.setdefault("num_conv_wo_resnet", 3)
-            kwargs.setdefault("num_resnet_layers", 5)
-
-        sample_obs, _ = self.env.reset()
-        node_feature_dim = sample_obs.x.shape[1]  # ty: ignore[unresolved-attribute]
-
-        hidden_dim = int(kwargs.get("hidden_dim", 128))  # ty: ignore[invalid-argument-type]
-        num_conv_wo_resnet = int(kwargs.get("num_conv_wo_resnet", 3))  # ty: ignore[invalid-argument-type]
-        num_resnet_layers = int(kwargs.get("num_resnet_layers", 5))  # ty: ignore[invalid-argument-type]
-        dropout_p = float(kwargs.get("dropout_p", 0.2))  # ty: ignore[invalid-argument-type]
-        bidirectional = bool(kwargs.get("bidirectional", True))
-
-        policy = create_gnn_policy(
-            node_feature_dim=node_feature_dim,
-            num_actions=self.env.action_space.n,  # ty: ignore[unresolved-attribute]
-            hidden_dim=hidden_dim,
-            num_conv_wo_resnet=num_conv_wo_resnet,
-            num_resnet_layers=num_resnet_layers,
-            dropout_p=dropout_p,
-            bidirectional=bidirectional,
-            global_feature_dim=GLOBAL_FEATURE_DIM,
-        )
-
-        self.gnn_model = train_ppo_with_gnn(
-            env=self.env,
-            policy=policy,
-            num_iterations=int(kwargs.get("iterations", 1000)),  # type: ignore[arg-type]
-            steps_per_iteration=int(kwargs.get("steps", 2048)),  # type: ignore[arg-type]
-            num_epochs=int(kwargs.get("num_epochs", 10)),  # type: ignore[arg-type]
-            minibatch_size=int(kwargs.get("minibatch_size", 64)),  # type: ignore[arg-type]
-            lr=float(kwargs.get("lr", 3e-4)),  # type: ignore[arg-type]
-            gnn_lr=float(kwargs.get("gnn_lr", 1e-4)),  # type: ignore[arg-type]
-        )
-
-        model_path = get_path_trained_model() / f"gnn_{self.figure_of_merit}_{self.device_name}.pt"
-        ckpt = {
-            "state_dict": self.gnn_model.state_dict(),
+        payload: dict[str, object] = {
+            "state_dict": policy.state_dict(),
             "config": {
                 "hidden_dim": hidden_dim,
                 "num_conv_wo_resnet": num_conv_wo_resnet,
@@ -446,18 +446,22 @@ class Predictor:
                 "num_actions": self.env.action_space.n,  # ty: ignore[unresolved-attribute]
                 "global_feature_dim": GLOBAL_FEATURE_DIM,
             },
+            "training_state": training_state,
         }
-        torch.save(ckpt, model_path)
+        if optimizer is not None:
+            payload["optimizer_state_dict"] = optimizer.state_dict()
+        return payload
 
-    def _train_gnn(self, test: bool = False, **kwargs: object) -> None:
-        """Trains the GNN model.
-
-        Arguments:
-            test: If True, uses reduced hyperparameters for fast testing.
-            **kwargs: Additional hyperparameters for GNN training (see train_model).
-        """
+    def _train_gnn(
+        self,
+        test: bool = False,
+        checkpoint_directory: Path | None = None,
+        checkpoint_frequency: int | None = None,
+        resume_from: Path | None = None,
+        **kwargs: object,
+    ) -> None:
+        """Train the GNN model, optionally resuming from a previous checkpoint."""
         if test:
-            # Set init values for testing
             kwargs.setdefault("iterations", 10)
             kwargs.setdefault("steps", 20)
             kwargs.setdefault("num_epochs", 1)
@@ -468,16 +472,56 @@ class Predictor:
 
         sample_obs, _ = self.env.reset()
         node_feature_dim = sample_obs.x.shape[1]  # ty: ignore[unresolved-attribute]
+        num_actions = self.env.action_space.n  # ty: ignore[unresolved-attribute]
 
-        hidden_dim = int(kwargs.get("hidden_dim", 128))  # ty: ignore[invalid-argument-type]
-        num_conv_wo_resnet = int(kwargs.get("num_conv_wo_resnet", 3))  # ty: ignore[invalid-argument-type]
-        num_resnet_layers = int(kwargs.get("num_resnet_layers", 5))  # ty: ignore[invalid-argument-type]
-        dropout_p = float(kwargs.get("dropout_p", 0.2))  # ty: ignore[invalid-argument-type]
-        bidirectional = bool(kwargs.get("bidirectional", True))
+        checkpoint: dict[str, object] = {}
+        checkpoint_config: dict[str, object] = {}
+        training_state: dict[str, object] = {}
+        optimizer_state_dict: dict[str, object] | None = None
+        completed_iterations = 0
+        shuffle_rng_state: dict[str, object] | None = None
+
+        if resume_from is not None:
+            checkpoint = torch.load(resume_from, map_location="cpu", weights_only=False)
+            checkpoint_config = checkpoint.get("config", {}) if isinstance(checkpoint, dict) else {}
+            training_state = checkpoint.get("training_state", {}) if isinstance(checkpoint, dict) else {}
+            optimizer_state_raw = checkpoint.get("optimizer_state_dict") if isinstance(checkpoint, dict) else None
+            optimizer_state_dict = optimizer_state_raw if isinstance(optimizer_state_raw, dict) else None
+            completed_iterations = int(training_state.get("completed_iterations", 0))
+            shuffle_rng_raw = training_state.get("shuffle_rng_state")
+            shuffle_rng_state = shuffle_rng_raw if isinstance(shuffle_rng_raw, dict) else None
+
+        hidden_dim = int(kwargs.get("hidden_dim", checkpoint_config.get("hidden_dim", 128)))  # type: ignore[arg-type]
+        num_conv_wo_resnet = int(  # type: ignore[arg-type]
+            kwargs.get("num_conv_wo_resnet", checkpoint_config.get("num_conv_wo_resnet", 3))
+        )
+        num_resnet_layers = int(  # type: ignore[arg-type]
+            kwargs.get("num_resnet_layers", checkpoint_config.get("num_resnet_layers", 5))
+        )
+        dropout_p = float(kwargs.get("dropout_p", checkpoint_config.get("dropout_p", 0.2)))  # type: ignore[arg-type]
+        bidirectional = bool(kwargs.get("bidirectional", checkpoint_config.get("bidirectional", True)))
+        num_iterations = int(kwargs.get("iterations", training_state.get("num_iterations", 1000)))  # type: ignore[arg-type]
+        steps_per_iteration = int(kwargs.get("steps", training_state.get("steps_per_iteration", 2048)))  # type: ignore[arg-type]
+        num_epochs = int(kwargs.get("num_epochs", training_state.get("num_epochs", 10)))  # type: ignore[arg-type]
+        minibatch_size = int(kwargs.get("minibatch_size", training_state.get("minibatch_size", 64)))  # type: ignore[arg-type]
+        lr = float(kwargs.get("lr", training_state.get("lr", 3e-4)))  # type: ignore[arg-type]
+        gnn_lr = float(kwargs.get("gnn_lr", training_state.get("gnn_lr", 1e-4)))  # type: ignore[arg-type]
+
+        checkpoint_node_feature_dim = checkpoint_config.get("node_feature_dim")
+        if checkpoint_node_feature_dim is not None and int(checkpoint_node_feature_dim) != node_feature_dim:
+            msg = f"node_feature_dim mismatch: checkpoint={checkpoint_node_feature_dim} current={node_feature_dim}"
+            raise RuntimeError(msg)
+        checkpoint_num_actions = checkpoint_config.get("num_actions")
+        if checkpoint_num_actions is not None and int(checkpoint_num_actions) != num_actions:
+            msg = f"num_actions mismatch: checkpoint={checkpoint_num_actions} current={num_actions}"
+            raise RuntimeError(msg)
+
+        if resume_from is None:
+            set_random_seed(0)
 
         policy = create_gnn_policy(
             node_feature_dim=node_feature_dim,
-            num_actions=self.env.action_space.n,  # ty: ignore[unresolved-attribute]
+            num_actions=num_actions,
             hidden_dim=hidden_dim,
             num_conv_wo_resnet=num_conv_wo_resnet,
             num_resnet_layers=num_resnet_layers,
@@ -486,32 +530,108 @@ class Predictor:
             global_feature_dim=GLOBAL_FEATURE_DIM,
         )
 
-        self.gnn_model = train_ppo_with_gnn(
+        state_dict = checkpoint.get("state_dict") if isinstance(checkpoint, dict) else None
+        if isinstance(state_dict, dict):
+            policy.load_state_dict(state_dict, strict=True)
+
+        env_rng_state = training_state.get("env_rng_state")
+        if isinstance(env_rng_state, dict):
+            self.env.rng.bit_generator.state = env_rng_state
+        torch_rng_state = training_state.get("torch_rng_state")
+        if isinstance(torch_rng_state, torch.Tensor):
+            torch.set_rng_state(torch_rng_state)
+        cuda_rng_state_all = training_state.get("torch_cuda_rng_state_all")
+        if torch.cuda.is_available() and isinstance(cuda_rng_state_all, list):
+            torch.cuda.set_rng_state_all(cuda_rng_state_all)
+
+        next_checkpoint_step: int | None = None
+        latest_shuffle_rng_state = shuffle_rng_state
+        if checkpoint_directory is not None and checkpoint_frequency is not None and checkpoint_frequency > 0:
+            checkpoint_directory.mkdir(parents=True, exist_ok=True)
+            completed_steps = completed_iterations * steps_per_iteration
+            next_checkpoint_step = ((completed_steps // checkpoint_frequency) + 1) * checkpoint_frequency
+
+        def _save_gnn_checkpoint(
+            current_policy: SAGEActorCritic,
+            current_optimizer: torch.optim.Optimizer,
+            current_completed_iterations: int,
+            current_shuffle_rng_state: dict[str, object] | None,
+        ) -> None:
+            nonlocal latest_shuffle_rng_state
+            latest_shuffle_rng_state = current_shuffle_rng_state
+            if checkpoint_directory is None or checkpoint_frequency is None or checkpoint_frequency <= 0:
+                return
+
+            nonlocal next_checkpoint_step
+            assert next_checkpoint_step is not None
+            completed_steps = current_completed_iterations * steps_per_iteration
+            if completed_steps < next_checkpoint_step:
+                return
+
+            payload = self._build_gnn_checkpoint_payload(
+                policy=current_policy,
+                hidden_dim=hidden_dim,
+                num_conv_wo_resnet=num_conv_wo_resnet,
+                num_resnet_layers=num_resnet_layers,
+                dropout_p=dropout_p,
+                bidirectional=bidirectional,
+                node_feature_dim=node_feature_dim,
+                num_iterations=num_iterations,
+                steps_per_iteration=steps_per_iteration,
+                num_epochs=num_epochs,
+                minibatch_size=minibatch_size,
+                lr=lr,
+                gnn_lr=gnn_lr,
+                completed_iterations=current_completed_iterations,
+                optimizer=current_optimizer,
+                shuffle_rng_state=current_shuffle_rng_state,
+            )
+            checkpoint_path = checkpoint_directory / f"model_checkpoint_{completed_steps}_steps.pt"
+            torch.save(payload, checkpoint_path)
+            next_checkpoint_step = ((completed_steps // checkpoint_frequency) + 1) * checkpoint_frequency
+
+        self.gnn_model, optimizer, completed_iterations = train_ppo_with_gnn(
             env=self.env,
             policy=policy,
-            num_iterations=int(kwargs.get("iterations", 1000)),  # type: ignore[arg-type]
-            steps_per_iteration=int(kwargs.get("steps", 2048)),  # type: ignore[arg-type]
-            num_epochs=int(kwargs.get("num_epochs", 10)),  # type: ignore[arg-type]
-            minibatch_size=int(kwargs.get("minibatch_size", 64)),  # type: ignore[arg-type]
-            lr=float(kwargs.get("lr", 3e-4)),  # type: ignore[arg-type]
-            gnn_lr=float(kwargs.get("gnn_lr", 1e-4)),  # type: ignore[arg-type]
+            num_iterations=num_iterations,
+            steps_per_iteration=steps_per_iteration,
+            num_epochs=num_epochs,
+            minibatch_size=minibatch_size,
+            lr=lr,
+            gnn_lr=gnn_lr,
+            start_iteration=completed_iterations,
+            optimizer_state_dict=optimizer_state_dict,
+            shuffle_rng_state=shuffle_rng_state,
+            checkpoint_callback=lambda current_policy, current_optimizer, current_completed_iterations, extra: (
+                _save_gnn_checkpoint(
+                    current_policy,
+                    current_optimizer,
+                    current_completed_iterations,
+                    extra.get("shuffle_rng_state") if isinstance(extra.get("shuffle_rng_state"), dict) else None,
+                )
+            ),
         )
 
         model_path = get_path_trained_model() / f"gnn_{self.figure_of_merit}_{self.device_name}.pt"
-        ckpt = {
-            "state_dict": self.gnn_model.state_dict(),
-            "config": {
-                "hidden_dim": hidden_dim,
-                "num_conv_wo_resnet": num_conv_wo_resnet,
-                "num_resnet_layers": num_resnet_layers,
-                "dropout_p": dropout_p,
-                "bidirectional": bidirectional,
-                "node_feature_dim": node_feature_dim,
-                "num_actions": self.env.action_space.n,  # ty: ignore[unresolved-attribute]
-                "global_feature_dim": GLOBAL_FEATURE_DIM,
-            },
-        }
-        torch.save(ckpt, model_path)
+        final_payload = self._build_gnn_checkpoint_payload(
+            policy=self.gnn_model,
+            hidden_dim=hidden_dim,
+            num_conv_wo_resnet=num_conv_wo_resnet,
+            num_resnet_layers=num_resnet_layers,
+            dropout_p=dropout_p,
+            bidirectional=bidirectional,
+            node_feature_dim=node_feature_dim,
+            num_iterations=num_iterations,
+            steps_per_iteration=steps_per_iteration,
+            num_epochs=num_epochs,
+            minibatch_size=minibatch_size,
+            lr=lr,
+            gnn_lr=gnn_lr,
+            completed_iterations=completed_iterations,
+            optimizer=optimizer,
+            shuffle_rng_state=latest_shuffle_rng_state,
+        )
+        torch.save(final_payload, model_path)
 
 
 def load_model(model_name: str) -> MaskablePPO:

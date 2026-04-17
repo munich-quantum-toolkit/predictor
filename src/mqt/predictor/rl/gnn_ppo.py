@@ -10,8 +10,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -253,6 +254,7 @@ def ppo_update(
     epochs: int = 10,
     minibatch_size: int = 64,
     target_kl: float | None = 0.01,
+    rng: np.random.Generator | None = None,
 ) -> dict[str, float]:
     """PPO update with variable-size graph minibatching.
 
@@ -291,7 +293,7 @@ def ppo_update(
     # Clamp minibatch size to the number of samples so we don't get empty batches.
     effective_mb = min(minibatch_size, num_circuits)
     indices = np.arange(num_circuits)
-    rng = np.random.default_rng()
+    shuffle_rng = rng or np.random.default_rng()
 
     all_kl: list[float] = []
     all_policy_loss: list[float] = []
@@ -300,7 +302,7 @@ def ppo_update(
     # train policy for the specified number of epochs, shuffling and creating minibatches each epoch
     policy.train()
     for _epoch in range(epochs):
-        rng.shuffle(indices)
+        shuffle_rng.shuffle(indices)
 
         for start in range(0, num_circuits, effective_mb):
             mb_idx = indices[start : start + effective_mb]
@@ -379,7 +381,11 @@ def train_ppo_with_gnn(
     max_grad_norm: float = 0.5,
     target_kl: float | None = 0.01,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-) -> SAGEActorCritic:
+    start_iteration: int = 0,
+    optimizer_state_dict: dict[str, Any] | None = None,
+    shuffle_rng_state: dict[str, Any] | None = None,
+    checkpoint_callback: Callable[[SAGEActorCritic, torch.optim.Optimizer, int, dict[str, Any]], None] | None = None,
+) -> tuple[SAGEActorCritic, torch.optim.Optimizer, int]:
     """Train a GNN-PPO agent on variable-size circuit graphs.
 
     Args:
@@ -417,8 +423,15 @@ def train_ppo_with_gnn(
         {"params": policy.actor.parameters(), "lr": lr},
         {"params": policy.critic.parameters(), "lr": lr},
     ])
+    if optimizer_state_dict is not None:
+        optimizer.load_state_dict(optimizer_state_dict)
 
-    for _iteration in range(num_iterations):
+    shuffle_rng = np.random.default_rng()
+    if shuffle_rng_state is not None:
+        shuffle_rng.bit_generator.state = shuffle_rng_state
+
+    completed_iterations = start_iteration
+    for iteration in range(start_iteration, num_iterations):
         buffer, last_value, _ep_rewards = collect_rollout(
             env=env,
             policy=policy,
@@ -442,9 +455,18 @@ def train_ppo_with_gnn(
             epochs=num_epochs,
             minibatch_size=minibatch_size,
             target_kl=target_kl,
+            rng=shuffle_rng,
         )
+        completed_iterations = iteration + 1
+        if checkpoint_callback is not None:
+            checkpoint_callback(
+                policy,
+                optimizer,
+                completed_iterations,
+                {"shuffle_rng_state": shuffle_rng.bit_generator.state},
+            )
 
-    return policy
+    return policy, optimizer, completed_iterations
 
 
 def create_gnn_policy(

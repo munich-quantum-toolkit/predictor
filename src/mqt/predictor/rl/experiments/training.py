@@ -39,6 +39,31 @@ class RLTrainingResult:
     resumed_from_checkpoint: Path | None = None
 
 
+def _extract_checkpoint_steps(path: Path) -> int:
+    """Extract the numeric step count from a checkpoint filename."""
+    stem = path.stem
+    if "_steps" not in stem:
+        return -1
+    prefix, _suffix = stem.rsplit("_steps", 1)
+    try:
+        return int(prefix.rsplit("_", 1)[1])
+    except (IndexError, ValueError):
+        return -1
+
+
+def _find_latest_checkpoint(checkpoint_directory: Path, *, graph: bool) -> Path | None:
+    """Return the newest checkpoint in a directory, ordered by encoded step count."""
+    suffix = ".pt" if graph else ".zip"
+    candidates = [
+        path
+        for path in checkpoint_directory.glob(f"model_checkpoint_*_steps{suffix}")
+        if _extract_checkpoint_steps(path) >= 0
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_extract_checkpoint_steps)
+
+
 def _gnn_training_kwargs(
     *,
     iterations: int | None,
@@ -130,7 +155,15 @@ def run_rl_training(
         Path(path_training_circuits) if path_training_circuits is not None else get_path_training_circuits_train()
     )
     resolved_checkpoint_directory = Path(checkpoint_directory) if checkpoint_directory is not None else None
-    resolved_resume_from_checkpoint = Path(resume_from_checkpoint) if resume_from_checkpoint is not None else None
+    resolved_resume_from_checkpoint = (
+        Path(resume_from_checkpoint)
+        if resume_from_checkpoint is not None
+        else (
+            _find_latest_checkpoint(resolved_checkpoint_directory, graph=graph)
+            if resolved_checkpoint_directory is not None
+            else None
+        )
+    )
     gnn_train_kwargs = _gnn_training_kwargs(
         iterations=iterations,
         steps=steps,
@@ -178,7 +211,9 @@ def run_rl_training(
         verbose=verbose,
         test=test,
         callback=CallbackList(callbacks) if callbacks and not graph else None,
-        resume_from=resolved_resume_from_checkpoint if not graph else None,
+        checkpoint_directory=resolved_checkpoint_directory,
+        checkpoint_frequency=checkpoint_frequency,
+        resume_from=resolved_resume_from_checkpoint,
         **gnn_train_kwargs,
     )
 
@@ -263,19 +298,19 @@ def main() -> None:
         "--checkpoint-dir",
         type=Path,
         default=None,
-        help="Optional directory for periodic PPO checkpoints.",
+        help="Optional directory for periodic checkpoints. If present, the newest checkpoint is resumed automatically.",
     )
     parser.add_argument(
         "--checkpoint-frequency",
         type=int,
         default=None,
-        help="Optional PPO checkpoint frequency in timesteps.",
+        help="Optional checkpoint frequency in environment steps.",
     )
     parser.add_argument(
         "--resume-from-checkpoint",
         type=Path,
         default=None,
-        help="Optional PPO checkpoint to resume training from.",
+        help="Optional checkpoint to resume training from. Overrides auto-discovery in --checkpoint-dir.",
     )
     parser.add_argument(
         "--max-episode-steps",
