@@ -24,7 +24,7 @@ authors = [
 ]
 keywords = ["MQT",  "quantum computing", "compilation", "machine learning", "prediction"]
 license = "MIT"
-license-files = ["LICENSE.md"]
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dynamic = ["version"]
 
