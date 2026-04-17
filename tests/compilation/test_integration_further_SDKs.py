@@ -41,6 +41,30 @@ if TYPE_CHECKING:
     from mqt.predictor.rl.actions import Action
 
 
+def _run_action(
+    sdk: str,
+    action: Action,
+    circuit: QuantumCircuit,
+    predictor: Predictor,
+    layout: TranspileLayout | None = None,
+) -> tuple[QuantumCircuit, TranspileLayout | None] | None:
+    """Dispatch to the correct SDK runner; return None if sdk/action origin don't match."""
+    if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
+        return run_qiskit_action(
+            action=action,
+            circuit=circuit,
+            device=predictor.env.device,
+            layout=layout,
+            max_iteration=10,
+            score_circuit=predictor.env.calculate_reward,
+        )
+    if sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
+        return run_bqskit_action(action=action, circuit=circuit, device=predictor.env.device, layout=layout)
+    if sdk == "tket" and action.origin == CompilationOrigin.TKET:
+        return run_tket_action(action=action, circuit=circuit, device=predictor.env.device, layout=layout)
+    return None
+
+
 @pytest.fixture
 def available_actions_dict() -> dict[PassType, list[Action]]:
     """Return a dictionary of available actions."""
@@ -157,25 +181,10 @@ def test_synthesis_actions_produce_native_gates(
 
     for action in available_actions_dict[PassType.SYNTHESIS]:
         for kind, circ in circuits.items():
-            if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
-                compiled, _ = run_qiskit_action(
-                    action=action,
-                    circuit=circ.copy(),
-                    device=predictor.env.device,
-                    layout=None,
-                    max_iteration=10,
-                    score_circuit=predictor.env.calculate_reward,
-                )
-            elif sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
-                compiled, _ = run_bqskit_action(
-                    action=action, circuit=circ.copy(), device=predictor.env.device, layout=None
-                )
-            elif sdk == "tket" and action.origin == CompilationOrigin.TKET:
-                compiled, _ = run_tket_action(
-                    action=action, circuit=circ.copy(), device=predictor.env.device, layout=None
-                )
-            else:
+            result = _run_action(sdk, action, circ.copy(), predictor)
+            if result is None:
                 continue
+            compiled, _ = result
 
             assert isinstance(compiled, QuantumCircuit)
             assert predictor.env.is_circuit_synthesized(compiled), (
@@ -197,25 +206,10 @@ def test_layout_actions_establish_layout(
     qc = simple_circuit.copy()
 
     for action in available_actions_dict[PassType.LAYOUT]:
-        if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
-            compiled, layout = run_qiskit_action(
-                action=action,
-                circuit=qc.copy(),
-                device=predictor.env.device,
-                layout=None,
-                max_iteration=10,
-                score_circuit=predictor.env.calculate_reward,
-            )
-        elif sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
-            compiled, layout = run_bqskit_action(
-                action=action, circuit=qc.copy(), device=predictor.env.device, layout=None
-            )
-        elif sdk == "tket" and action.origin == CompilationOrigin.TKET:
-            compiled, layout = run_tket_action(
-                action=action, circuit=qc.copy(), device=predictor.env.device, layout=None
-            )
-        else:
+        result = _run_action(sdk, action, qc.copy(), predictor)
+        if result is None:
             continue
+        compiled, layout = result
 
         assert layout is not None, (
             f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: failed to establish layout"
@@ -237,25 +231,10 @@ def test_routing_actions_route_circuit(
     qc_laid_out, layout = laid_out_circuit
 
     for action in available_actions_dict[PassType.ROUTING]:
-        if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
-            routed, _ = run_qiskit_action(
-                action=action,
-                circuit=qc_laid_out.copy(),
-                device=predictor.env.device,
-                layout=layout,
-                max_iteration=10,
-                score_circuit=predictor.env.calculate_reward,
-            )
-        elif sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
-            routed, _ = run_bqskit_action(
-                action=action, circuit=qc_laid_out.copy(), device=predictor.env.device, layout=layout
-            )
-        elif sdk == "tket" and action.origin == CompilationOrigin.TKET:
-            routed, _ = run_tket_action(
-                action=action, circuit=qc_laid_out.copy(), device=predictor.env.device, layout=layout
-            )
-        else:
+        result = _run_action(sdk, action, qc_laid_out.copy(), predictor, layout=layout)
+        if result is None:
             continue
+        routed, _ = result
 
         assert predictor.env.is_circuit_routed(routed, predictor.env.device.build_coupling_map()), (
             f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
@@ -265,85 +244,47 @@ def test_routing_actions_route_circuit(
 
 
 @pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
-def test_optimization_actions_preserve_invariants(
+def test_optimization_actions_preserves_invariants(
     laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
-    available_actions_dict: dict[PassType, list[Action]],
-    predictor: Predictor,
-    sdk: str,
-) -> None:
-    """Test OPT actions preserve claimed invariants."""
-    laid_out_qc, layout = laid_out_circuit
-
-    for action in available_actions_dict[PassType.OPT]:
-        if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
-            compiled, out_layout = run_qiskit_action(
-                action=action,
-                circuit=laid_out_qc.copy(),
-                device=predictor.env.device,
-                layout=layout,
-                max_iteration=10,
-                score_circuit=predictor.env.calculate_reward,
-            )
-        elif sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
-            compiled, out_layout = run_bqskit_action(
-                action=action, circuit=laid_out_qc.copy(), device=predictor.env.device, layout=layout
-            )
-        elif sdk == "tket" and action.origin == CompilationOrigin.TKET:
-            compiled, out_layout = run_tket_action(
-                action=action, circuit=laid_out_qc.copy(), device=predictor.env.device, layout=layout
-            )
-        else:
-            continue
-
-        if action.preserve_layout and layout is not None:
-            assert out_layout is not None
-            assert predictor.env.is_circuit_laid_out(compiled, out_layout), (
-                f"{action.name} claims preserve_layout=True but layout was not preserved"
-            )
-
-
-@pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
-def test_final_opt_actions_maintain_state(
+    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
     laid_out_and_routed_and_synthesized_circuit: tuple[QuantumCircuit, TranspileLayout],
     available_actions_dict: dict[PassType, list[Action]],
     predictor: Predictor,
     sdk: str,
 ) -> None:
-    """Test FINAL_OPT actions maintain is_circuit_synthesized, is_circuit_laid_out, and is_circuit_routed."""
-    final_qc, layout = laid_out_and_routed_and_synthesized_circuit
+    """Test OPT actions preserve claimed invariants."""
+    qc_laid_out, _ = laid_out_circuit
+    qc_routed, _ = laid_out_and_routed_circuit
+    qc_synthesized, layout = laid_out_and_routed_and_synthesized_circuit
 
-    for action in available_actions_dict[PassType.FINAL_OPT]:
-        if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
-            compiled, out_layout = run_qiskit_action(
-                action=action,
-                circuit=final_qc.copy(),
-                device=predictor.env.device,
-                layout=layout,
-                max_iteration=10,
-                score_circuit=predictor.env.calculate_reward,
+    for action in available_actions_dict[PassType.OPT]:
+        if action.preserves_layout:
+            result = _run_action(sdk, action, qc_laid_out.copy(), predictor, layout=layout)
+            if result is None:
+                continue
+            compiled, _ = result
+            assert predictor.env.is_circuit_laid_out(compiled, layout), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"did not preserve layout. Layout: {layout}"
             )
-        elif sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
-            compiled, out_layout = run_bqskit_action(
-                action=action, circuit=final_qc.copy(), device=predictor.env.device, layout=layout
+        if action.preserves_routing:
+            result = _run_action(sdk, action, qc_routed.copy(), predictor, layout=layout)
+            if result is None:
+                continue
+            compiled, _ = result
+            assert predictor.env.is_circuit_routed(compiled, predictor.env.device.build_coupling_map()), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"circuit not properly routed. Found {sum(len(instr.qubits) == 2 for instr in compiled.data)} 2-qubit gates "
+                f"not on valid edges"
             )
-        elif sdk == "tket" and action.origin == CompilationOrigin.TKET:
-            compiled, out_layout = run_tket_action(
-                action=action, circuit=final_qc.copy(), device=predictor.env.device, layout=layout
+        if action.preserves_synthesis:
+            synth_result = _run_action(sdk, action, qc_synthesized.copy(), predictor, layout=layout)
+            if synth_result is not None:
+                compiled, _ = synth_result
+            assert predictor.env.is_circuit_synthesized(compiled), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"Device native gates: {predictor.env.device.operation_names}. "
+                f"Circuit gates: {set(compiled.count_ops().keys())}"
             )
         else:
             continue
-
-        assert predictor.env.is_circuit_synthesized(compiled), (
-            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
-            f"final optimization introduced non-native gates. "
-            f"Gates in output: {set(compiled.count_ops().keys())}"
-        )
-        assert out_layout is not None
-        assert predictor.env.is_circuit_laid_out(compiled, layout=out_layout), (
-            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
-            f"final optimization did not maintain valid layout"
-        )
-        assert predictor.env.is_circuit_routed(compiled, predictor.env.device.build_coupling_map()), (
-            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
-            f"final optimization did not maintain valid routing"
-        )

@@ -213,7 +213,7 @@ def run_tket_action(
     Returns:
         Tuple of (compiled circuit, updated layout).
     """
-    tket_qc = qiskit_to_tk(circuit, preserve_param_uuid=True)
+    tket_qc = qiskit_to_tk(circuit, preserves_param_uuid=True)
     transpile_pass = (
         cast("Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]]", action.transpile_pass)(
             device
@@ -292,6 +292,9 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [PeepholeOptimise2Q()],
+        preserves_layout=True,
+        preserves_routing=False,
+        preserves_synthesis=False,
     )
 )
 
@@ -301,6 +304,9 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [CliffordSimp()],
+        preserves_layout=True,
+        preserves_routing=False,
+        preserves_synthesis=False,
     )
 )
 
@@ -310,6 +316,9 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [KAKDecomposition(allow_swaps=False)],
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=False,
     )
 )
 
@@ -319,6 +328,9 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [FullPeepholeOptimise()],
+        preserves_layout=True,
+        preserves_routing=False,
+        preserves_synthesis=False,
     )
 )
 
@@ -328,6 +340,9 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [RemoveRedundancies()],
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 

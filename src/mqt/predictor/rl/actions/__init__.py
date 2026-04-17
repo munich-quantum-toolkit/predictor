@@ -60,7 +60,9 @@ class Action:
     pass_type: PassType
     transpile_pass: TranspilePassSpec
     stochastic: bool | None = False
-    preserve_layout: bool | None = False
+    preserves_layout: bool | None = False
+    preserves_routing: bool | None = False
+    preserves_synthesis: bool | None = False
 
 
 @dataclass

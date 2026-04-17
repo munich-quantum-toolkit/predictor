@@ -344,6 +344,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [Optimize1qGatesDecomposition()],
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=False,
     )
 )
 
@@ -352,7 +355,9 @@ register_action(
         "Optimize1qGatesDecomposition_preserve",
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
         transpile_pass=lambda device: [Optimize1qGatesDecomposition(basis=device.operation_names)],
     )
 )
@@ -363,7 +368,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeCancellation()],
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 
@@ -373,7 +380,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CommutativeInverseCancellation()],
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 
@@ -383,7 +392,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [RemoveDiagonalGatesBeforeMeasure()],
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 
@@ -393,6 +404,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [ElidePermutations()],
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 
@@ -417,7 +431,9 @@ register_action(
                 (SXGate(), SXdgGate()),
             ])
         ],
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 
@@ -427,6 +443,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [CollectCliffords(), OptimizeCliffords()],
+        preserves_layout=True,
+        preserves_routing=False,
+        preserves_synthesis=False,
     )
 )
 
@@ -436,6 +455,9 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=False,
     )
 )
 
@@ -449,7 +471,9 @@ register_action(
             ConsolidateBlocks(basis_gates=native_gate),
             UnitarySynthesis(basis_gates=native_gate, coupling_map=coupling_map),
         ],
-        preserve_layout=True,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
     )
 )
 

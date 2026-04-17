@@ -168,7 +168,11 @@ class PredictorEnv(Env):
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
-            if getattr(elem, "preserve_layout", False):
+            if (
+                getattr(elem, "preserves_layout", False)
+                and getattr(elem, "preserves_routing", False)
+                and getattr(elem, "preserves_synthesis", False)
+            ):
                 self.actions_structure_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.LAYOUT]:
