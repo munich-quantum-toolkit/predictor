@@ -21,7 +21,7 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Target
+from qiskit.transpiler import CouplingMap, InstructionProperties, Target
 from qiskit.transpiler.passes import GatesInBasis
 from torch_geometric.data import Data
 
@@ -74,6 +74,46 @@ def test_predictor_env_hellinger_error() -> None:
         ValueError, match=re.escape("Missing trained model for Hellinger distance estimates on ibm_falcon_27.")
     ):
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
+
+
+def test_qcompile_with_newly_trained_models() -> None:
+    """Test the qcompile function with a newly trained model.
+
+    Important: Those trained models are used in later tests and must not be deleted.
+    To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
+    """
+    figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+
+    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_path = Path(get_path_trained_model() / (model_name + ".zip"))
+    if not model_path.exists():
+        with pytest.raises(
+            FileNotFoundError,
+            match=re.escape(
+                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+            ),
+        ):
+            rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+
+    predictor.train_model(
+        timesteps=1000,
+        test=True,
+    )
+
+    qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
+
+    assert qc_compiled.layout is not None
+    assert compilation_information is not None
+    assert predictor.env.is_circuit_synthesized(qc_compiled), (
+        "Circuit should only contain native gates but was not detected as such."
+    )
+    assert predictor.env.is_circuit_routed(qc_compiled, CouplingMap(device.build_coupling_map())), (
+        "Circuit should be mapped to the device's coupling map."
+    )
 
 
 def test_qcompile_with_false_input() -> None:
@@ -188,13 +228,9 @@ def test_tket_action_layout_failure() -> None:
     predictor.env.state = qc
     result_qc, _ = run_tket_action(
         action=dummy_action,
-        action_index=0,
-        state=predictor.env.state,
+        circuit=predictor.env.state,
         device=predictor.env.device,
         layout=predictor.env.layout,
-        num_qubits_uncompiled_circuit=predictor.env.num_qubits_uncompiled_circuit,
-        actions_layout_indices=predictor.env.actions_layout_indices,
-        actions_routing_indices=predictor.env.actions_routing_indices,
     )
 
     assert isinstance(result_qc, QuantumCircuit)

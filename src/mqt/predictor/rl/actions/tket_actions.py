@@ -36,7 +36,7 @@ from . import CompilationOrigin, DeviceDependentAction, DeviceIndependentAction,
 logger = logging.getLogger("mqt-predictor")
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     from pytket import Circuit as TketCircuit
     from pytket._tket.passes import BasePass as TketBasePass
@@ -198,16 +198,22 @@ def final_layout_pytket_to_qiskit(pytket_circuit: TketCircuit, output_qubits: li
 def run_tket_action(
     *,
     action: Action,
-    action_index: int,
-    state: QuantumCircuit,
+    circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    num_qubits_uncompiled_circuit: int,
-    actions_layout_indices: Sequence[int],
-    actions_routing_indices: Sequence[int],
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
-    """Apply a TKET action and update the layout bookkeeping it owns."""
-    tket_qc = qiskit_to_tk(state, preserve_param_uuid=True)
+    """Apply a TKET action and update the layout bookkeeping it owns.
+
+    Args:
+        action: The TKET action to apply.
+        circuit: The current quantum circuit.
+        device: The target device.
+        layout: The current layout (if any).
+
+    Returns:
+        Tuple of (compiled circuit, updated layout).
+    """
+    tket_qc = qiskit_to_tk(circuit, preserve_param_uuid=True)
     transpile_pass = (
         cast("Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]]", action.transpile_pass)(
             device
@@ -218,7 +224,8 @@ def run_tket_action(
 
     assert isinstance(transpile_pass, list)
 
-    if action_index in actions_layout_indices:
+    # LAYOUT actions need special handling to extract placement
+    if action.pass_type == PassType.LAYOUT:
         if not transpile_pass:
             logger.warning(
                 "Placement failed (%s): no placement pass provided. Falling back to original circuit.", action.name
@@ -260,9 +267,10 @@ def run_tket_action(
             input_qubit_mapping=pm.property_set["original_qubit_indices"],
             final_layout=pm.property_set["final_layout"],
             _output_qubit_list=altered_qc.qubits,
-            _input_qubit_count=num_qubits_uncompiled_circuit,
+            _input_qubit_count=circuit.num_qubits,
         )
 
+    # All other action types (synthesis, routing, optimization)
     for pass_ in cast("list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]", transpile_pass):
         pass_.apply(tket_qc)
 
@@ -270,7 +278,8 @@ def run_tket_action(
     tket_qc.rename_units({qbs[i]: TketQubit("q", i) for i in range(len(qbs))})
     altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
 
-    if action_index in actions_routing_indices:
+    # ROUTING actions update the final layout
+    if action.pass_type == PassType.ROUTING:
         assert layout is not None
         layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, _layout_output_qubits(layout))
 

@@ -621,43 +621,27 @@ class PredictorEnv(Env):
         if action.origin == CompilationOrigin.QISKIT:
             altered_qc, self.layout = run_qiskit_action(
                 action=action,
-                action_index=action_index,
-                state=self.state,
+                circuit=self.state,
                 device=self.device,
                 layout=self.layout,
-                num_qubits_uncompiled_circuit=self.num_qubits_uncompiled_circuit,
                 max_iteration=self.max_iter,
                 score_circuit=self.calculate_reward,
-                actions_layout_indices=self.actions_layout_indices,
-                actions_mapping_indices=self.actions_mapping_indices,
-                actions_final_optimization_indices=self.actions_final_optimization_indices,
-                actions_routing_indices=self.actions_routing_indices,
             )
             return altered_qc
         if action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(
                 action=action,
-                action_index=action_index,
-                state=self.state,
+                circuit=self.state,
                 device=self.device,
                 layout=self.layout,
-                num_qubits_uncompiled_circuit=self.num_qubits_uncompiled_circuit,
-                actions_layout_indices=self.actions_layout_indices,
-                actions_routing_indices=self.actions_routing_indices,
             )
             return altered_qc
         if action.origin == CompilationOrigin.BQSKIT:
             altered_qc, self.layout = run_bqskit_action(
                 action=action,
-                action_index=action_index,
-                state=self.state,
+                circuit=self.state,
                 device=self.device,
                 layout=self.layout,
-                actions_opt_indices=self.actions_opt_indices,
-                actions_synthesis_indices=self.actions_synthesis_indices,
-                actions_layout_indices=self.actions_layout_indices,
-                actions_mapping_indices=self.actions_mapping_indices,
-                actions_routing_indices=self.actions_routing_indices,
             )
             return altered_qc
         msg = f"Origin {action.origin} not supported."

@@ -105,7 +105,7 @@ if not IS_WIN_PY313:
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
 
     from qiskit.circuit import ClassicalRegister, Clbit, Instruction, Qubit
     from qiskit.dagcircuit import DAGCircuit
@@ -187,7 +187,7 @@ def postprocess_qiskit_action_result(
     pm_property_set: dict[str, object] | None,
     altered_qc: QuantumCircuit,
     layout_before: TranspileLayout | None,
-    num_qubits_uncompiled_circuit: int,
+    circuit: QuantumCircuit,
     *,
     updates_layout: bool,
     updates_routing: bool,
@@ -220,7 +220,7 @@ def postprocess_qiskit_action_result(
                 input_qubit_mapping=cast("dict[object, int]", pm_property_set.get("original_qubit_indices")),
                 final_layout=cast("Layout | None", pm_property_set.get("final_layout")),
                 _output_qubit_list=altered_qc.qubits,
-                _input_qubit_count=num_qubits_uncompiled_circuit,
+                _input_qubit_count=circuit.num_qubits,
             )
 
     if layout_after is not None and (updates_layout or updates_routing):
@@ -286,32 +286,38 @@ def fom_aware_compile(
 def run_qiskit_action(
     *,
     action: Action,
-    action_index: int,
-    state: QuantumCircuit,
+    circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    num_qubits_uncompiled_circuit: int,
     max_iteration: int,
     score_circuit: Callable[[QuantumCircuit], tuple[float, str]],
-    actions_layout_indices: Sequence[int],
-    actions_mapping_indices: Sequence[int],
-    actions_final_optimization_indices: Sequence[int],
-    actions_routing_indices: Sequence[int],
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
-    """Apply a Qiskit action and update the layout bookkeeping it owns."""
+    """Apply a Qiskit action and update the layout bookkeeping it owns.
+
+    Args:
+        action: The Qiskit action to apply.
+        circuit: The current quantum circuit.
+        device: The target device.
+        layout: The current layout (if any).
+        max_iteration: Maximum iterations for stochastic actions.
+        score_circuit: Function to score circuits (for figure of merit).
+
+    Returns:
+        Tuple of (compiled circuit, updated layout).
+    """
     pm_property_set: dict[str, Any] | None = None
     if getattr(action, "stochastic", False):
         altered_qc, pm_property_set = fom_aware_compile(
             action,
             device,
-            state,
+            circuit,
             score_circuit,
             max_iteration=max_iteration,
         )
     else:
         transpile_pass = get_qiskit_action_passes(action, device, layout)
         pm = PassManager(transpile_pass)
-        altered_qc = pm.run(state)
+        altered_qc = pm.run(circuit)
         pm_property_set = dict(pm.property_set) if hasattr(pm, "property_set") else None
 
     altered_qc, layout = postprocess_qiskit_action_result(
@@ -319,10 +325,9 @@ def run_qiskit_action(
         pm_property_set,
         altered_qc,
         layout,
-        num_qubits_uncompiled_circuit,
-        updates_layout=action_index
-        in (list(actions_layout_indices) + list(actions_mapping_indices) + list(actions_final_optimization_indices)),
-        updates_routing=action_index in actions_routing_indices,
+        circuit,
+        updates_layout=action.pass_type in (PassType.LAYOUT, PassType.MAPPING, PassType.FINAL_OPT),
+        updates_routing=action.pass_type == PassType.ROUTING,
     )
 
     if altered_qc.count_ops().get("unitary"):

@@ -369,35 +369,44 @@ def final_layout_bqskit_routing_to_qiskit(
 def run_bqskit_action(
     *,
     action: Action,
-    action_index: int,
-    state: QuantumCircuit,
+    circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    actions_opt_indices: Sequence[int],
-    actions_synthesis_indices: Sequence[int],
-    actions_layout_indices: Sequence[int],
-    actions_mapping_indices: Sequence[int],
-    actions_routing_indices: Sequence[int],
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
-    """Apply a BQSKit action and update the layout bookkeeping it owns."""
-    bqskit_qc = qiskit_to_bqskit(state)
-    if action_index in actions_opt_indices:
+    """Apply a BQSKit action and update the layout bookkeeping it owns.
+
+    Args:
+        action: The BQSKit action to apply.
+        circuit: The current quantum circuit.
+        device: The target device.
+        layout: The current layout (if any).
+
+    Returns:
+        Tuple of (compiled circuit, updated layout).
+    """
+    bqskit_qc = qiskit_to_bqskit(circuit)
+
+    # OPT actions don't take a device parameter
+    if action.pass_type == PassType.OPT:
         transpile = cast("Callable[[Circuit], Circuit]", action.transpile_pass)
         compiled_qc = transpile(bqskit_qc)
         return bqskit_to_qiskit(compiled_qc), layout
 
-    if action_index in actions_synthesis_indices:
+    # SYNTHESIS actions use device factory
+    if action.pass_type == PassType.SYNTHESIS:
         factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action.transpile_pass)
         compiled_qc = factory(device)(bqskit_qc)
         return bqskit_to_qiskit(compiled_qc), layout
 
-    if action_index in list(actions_layout_indices) + list(actions_mapping_indices):
+    # LAYOUT and MAPPING actions establish layout
+    if action.pass_type in (PassType.LAYOUT, PassType.MAPPING):
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
-        return compiled_qiskit_qc, final_layout_bqskit_to_qiskit(initial, final, compiled_qiskit_qc, state)
+        return compiled_qiskit_qc, final_layout_bqskit_to_qiskit(initial, final, compiled_qiskit_qc, circuit)
 
-    if action_index in actions_routing_indices:
+    # ROUTING actions require existing layout
+    if action.pass_type == PassType.ROUTING:
         assert layout is not None, "BQSKit routing requires an existing layout."
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
@@ -405,7 +414,7 @@ def run_bqskit_action(
         layout.final_layout = final_layout_bqskit_routing_to_qiskit(final, _layout_output_qubits(layout))
         return compiled_qiskit_qc, layout
 
-    msg = f"Unhandled BQSKit action index: {action_index}"
+    msg = f"Unhandled BQSKit action pass type: {action.pass_type}"
     raise ValueError(msg)
 
 
