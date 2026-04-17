@@ -22,11 +22,10 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 from torch_geometric.data import Batch, Data
 
-from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
+from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type, postprocess_vf2postlayout
 from mqt.predictor.rl.gnn import SAGEActorCritic
 from mqt.predictor.rl.gnn_ppo import create_gnn_policy
 from mqt.predictor.rl.helper import create_dag, create_feature_dict, get_path_trained_model, get_path_training_circuits
-from mqt.predictor.rl.parsing import postprocess_vf2postlayout
 
 if TYPE_CHECKING:
     from collections.abc import Callable

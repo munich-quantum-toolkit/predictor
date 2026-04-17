@@ -31,9 +31,11 @@ from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
     PassType,
+    fom_aware_compile,
     get_actions_by_pass_type,
     register_action,
     remove_action,
+    run_tket_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
@@ -149,7 +151,13 @@ def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         predictor.env, "calculate_reward", lambda _circ: (_ for _ in ()).throw(RuntimeError("fake error"))
     )
-    compiled_qc, prop_set = predictor.env.fom_aware_compile(dummy_action, predictor.env.device, qc, max_iteration=1)
+    compiled_qc, prop_set = fom_aware_compile(
+        dummy_action,
+        predictor.env.device,
+        qc,
+        predictor.env.calculate_reward,
+        max_iteration=1,
+    )
 
     assert isinstance(compiled_qc, QuantumCircuit)
     assert isinstance(prop_set, dict)
@@ -178,8 +186,16 @@ def test_tket_action_layout_failure() -> None:
     predictor = Predictor(figure_of_merit="estimated_success_probability", device=get_device("ibm_eagle_127"))
     predictor.env.actions_layout_indices.append(0)
     predictor.env.state = qc
-    apply_tket = predictor.env._apply_tket_action  # noqa: SLF001
-    result_qc = apply_tket(dummy_action, 0)
+    result_qc, _ = run_tket_action(
+        action=dummy_action,
+        action_index=0,
+        state=predictor.env.state,
+        device=predictor.env.device,
+        layout=predictor.env.layout,
+        num_qubits_uncompiled_circuit=predictor.env.num_qubits_uncompiled_circuit,
+        actions_layout_indices=predictor.env.actions_layout_indices,
+        actions_routing_indices=predictor.env.actions_routing_indices,
+    )
 
     assert isinstance(result_qc, QuantumCircuit)
     assert result_qc.num_qubits == 1
