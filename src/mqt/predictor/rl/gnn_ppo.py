@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +22,8 @@ from torch_geometric.data import Batch
 from mqt.predictor.rl.gnn import SAGEActorCritic
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from torch_geometric.data import Data
 
     from mqt.predictor.rl.predictorenv import PredictorEnv
