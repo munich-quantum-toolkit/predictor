@@ -110,9 +110,7 @@ from mqt.predictor import qcompile
 from mqt.bench import get_benchmark, BenchmarkLevel
 
 uncompiled_qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=5)
-compiled_qc, compilation_info, selected_device = qcompile(
-    uncompiled_qc, figure_of_merit="expected_fidelity"
-)
+compiled_qc, compilation_info, selected_device = qcompile(uncompiled_qc, figure_of_merit="expected_fidelity")
 ```
 
 This returns:
