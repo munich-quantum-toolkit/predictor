@@ -18,8 +18,11 @@ import pybtex.plugin
 from pybtex.style.formatting.unsrt import Style as UnsrtStyle
 from pybtex.style.template import field, href
 
-ROOT = Path(__file__).parent.parent.resolve()
+if TYPE_CHECKING:
+    from pybtex.database import Entry
+    from pybtex.richtext import HRef
 
+ROOT = Path(__file__).parent.parent.resolve()
 
 try:
     version = metadata.version("mqt.predictor")
@@ -29,9 +32,6 @@ except ModuleNotFoundError:
 
 # Filter git details from version
 release = version.split("+")[0]
-if TYPE_CHECKING:
-    from pybtex.database import Entry
-    from pybtex.richtext import HRef
 
 project = "MQT Predictor"
 author = "Chair for Design Automation, TUM & Munich Quantum Software Company"
