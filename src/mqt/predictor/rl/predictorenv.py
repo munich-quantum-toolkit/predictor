@@ -349,7 +349,27 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         # Apply the action and update the circuit state.
-        self._apply_and_update(action)
+        try:
+            self._apply_and_update(action)
+        except (RuntimeError, ValueError, TypeError, AssertionError) as exc:
+            self.error_occurred = True
+            reward_val = self.no_effect_penalty
+            truncated = True
+            info = {
+                "action_error": True,
+                "action_error_message": str(exc),
+                "failed_action": action_name,
+            }
+            logger.warning(
+                "Episode %d step %d: action=%s failed with %s: %s",
+                self.episode_count,
+                step_index,
+                action_name,
+                type(exc).__name__,
+                exc,
+            )
+            self._log_step_reward(step_index, action_name, reward_val, True)
+            return self._create_observation(), reward_val, False, truncated, info
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0

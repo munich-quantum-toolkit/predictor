@@ -202,13 +202,7 @@ def collect_rollout(
             action = dist.sample()
             log_prob = dist.log_prob(action)
 
-            try:
-                next_obs, reward, terminated, truncated, _info = env.step(int(action.item()))
-            except (RuntimeError, ValueError, TypeError, AssertionError) as e:
-                print(f"Error occurred while stepping in environment: {e}")
-                obs, _ = env.reset()
-                episode_return = 0.0
-                continue
+            next_obs, reward, terminated, truncated, _info = env.step(int(action.item()))
             # Consider episode done if either terminated or truncated is True.
             done = terminated or truncated
             # Update episode return and add transition to buffer.
