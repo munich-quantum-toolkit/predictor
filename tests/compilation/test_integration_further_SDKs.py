@@ -10,37 +10,59 @@
 
 from __future__ import annotations
 
-import re
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
-from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
-from bqskit.ir.circuit import Circuit
-from mqt.bench.targets import get_available_device_names, get_device
-from pytket.circuit import Qubit
-from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
+from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
-from qiskit.transpiler import PassManager
-from qiskit.transpiler.layout import TranspileLayout
-from qiskit.transpiler.passes import CheckMap, GatesInBasis
+from qiskit.circuit import StandardEquivalenceLibrary
+from qiskit.transpiler import PassManager, TranspileLayout
+from qiskit.transpiler.passes import (
+    ApplyLayout,
+    BasisTranslator,
+    EnlargeWithAncilla,
+    FullAncillaAllocation,
+    SabreSwap,
+    TrivialLayout,
+)
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType, get_actions_by_pass_type
-from mqt.predictor.rl.parsing import (
-    final_layout_bqskit_to_qiskit,
-    final_layout_pytket_to_qiskit,
+from mqt.predictor.rl import Predictor
+from mqt.predictor.rl.actions import CompilationOrigin, PassType, get_actions_by_pass_type, run_qiskit_action
+from mqt.predictor.rl.actions.bqskit_actions import (
+    run_bqskit_action,
+)
+from mqt.predictor.rl.actions.tket_actions import (
+    run_tket_action,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from pytket._tket.passes import BasePass as TketBasePass
-    from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
     from mqt.predictor.rl.actions import Action
-    from mqt.predictor.rl.parsing import (
-        PreProcessTKETRoutingAfterQiskitLayout,
-    )
+
+
+def _run_action(
+    sdk: str,
+    action: Action,
+    circuit: QuantumCircuit,
+    predictor: Predictor,
+    layout: TranspileLayout | None = None,
+) -> tuple[QuantumCircuit, TranspileLayout | None] | None:
+    """Dispatch to the correct SDK runner; return None if sdk/action origin don't match."""
+    if sdk == "qiskit" and action.origin == CompilationOrigin.QISKIT:
+        return run_qiskit_action(
+            action=action,
+            circuit=circuit,
+            device=predictor.env.device,
+            layout=layout,
+            max_iteration=10,
+            score_circuit=predictor.env.calculate_reward,
+        )
+    if sdk == "bqskit" and action.origin == CompilationOrigin.BQSKIT:
+        return run_bqskit_action(action=action, circuit=circuit, device=predictor.env.device, layout=layout)
+    if sdk == "tket" and action.origin == CompilationOrigin.TKET:
+        return run_tket_action(action=action, circuit=circuit, device=predictor.env.device, layout=layout)
+    return None
 
 
 @pytest.fixture
@@ -49,211 +71,220 @@ def available_actions_dict() -> dict[PassType, list[Action]]:
     return get_actions_by_pass_type()
 
 
-def test_bqskit_o2_action(available_actions_dict: dict[PassType, list[Action]]) -> None:
-    """Test the BQSKitO2 action."""
-    action_bqskit_o2: Action | None = None
-    for action in available_actions_dict[PassType.OPT]:
-        if action.name == "BQSKitO2":
-            action_bqskit_o2 = action
-    assert action_bqskit_o2 is not None
+@pytest.fixture
+def target() -> Target:
+    """Fixture to provide the target device for testing."""
+    return get_device("ibm_falcon_27")
 
-    qc = QuantumCircuit(2)
+
+@pytest.fixture
+def simple_circuit() -> QuantumCircuit:
+    """Return a small circuit used to probe action invariants."""
+    qc = QuantumCircuit(3)
     qc.h(0)
     qc.cx(0, 1)
-
-    bqskit_qc = qiskit_to_bqskit(qc)
-    factory = cast("Callable[[Circuit], Circuit]", action_bqskit_o2.transpile_pass)
-    bqskit_qc_optimized = factory(bqskit_qc)
-    assert isinstance(bqskit_qc_optimized, Circuit)
-    optimized_qc = bqskit_to_qiskit(bqskit_qc_optimized)
-
-    assert optimized_qc != qc
+    qc.cx(1, 2)
+    return qc
 
 
-@pytest.mark.parametrize("device", [get_device(name) for name in get_available_device_names()])
-def test_bqskit_synthesis_action(device: Target, available_actions_dict: dict[PassType, list[Action]]) -> None:
-    """Test the BQSKitSynthesis action for all devices."""
-    action_bqskit_synthesis_action: Action | None = None
-    for action in available_actions_dict[PassType.SYNTHESIS]:
-        if action.name == "BQSKitSynthesis":
-            action_bqskit_synthesis_action = action
-    assert action_bqskit_synthesis_action is not None
+@pytest.fixture
+def laid_out_circuit(
+    simple_circuit: QuantumCircuit,
+    target: Target,
+) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Return the simple circuit together with its layout."""
+    coupling_map = target.build_coupling_map()
 
-    qc = QuantumCircuit(2)
-    qc.h(0)
-    qc.cx(0, 1)
-
-    check_nat_gates = GatesInBasis(target=device)
-    check_nat_gates(qc)
-    assert not check_nat_gates.property_set["all_gates_in_basis"]
-
-    factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action_bqskit_synthesis_action.transpile_pass)
-    lambda_ = factory(device)
-    bqskit_qc = qiskit_to_bqskit(qc)
-    if "rigetti" in device.description or "ionq" in device.description or "iqm" in device.description:
-        with pytest.raises(ValueError, match=re.escape("not supported in BQSKIT")):
-            bqskit_qc_compiled = lambda_(bqskit_qc)
-        return
-    bqskit_qc_compiled = lambda_(bqskit_qc)
-    assert isinstance(bqskit_qc_compiled, Circuit)
-    native_gates_qc = bqskit_to_qiskit(bqskit_qc_compiled)
-
-    check_nat_gates = GatesInBasis(target=device)
-    check_nat_gates(native_gates_qc)
-    only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
-    assert only_nat_gates
-
-
-def test_bqskit_mapping_action_swaps_necessary(available_actions_dict: dict[PassType, list[Action]]) -> None:
-    """Test the BQSKitMapping action for quantum circuit that requires SWAP gates."""
-    bqskit_mapping_action = None
-    for action in available_actions_dict[PassType.MAPPING]:
-        if action.name == "BQSKitMapping":
-            bqskit_mapping_action = action
-
-    assert bqskit_mapping_action is not None
-
-    qc = QuantumCircuit(8)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.cx(0, 2)
-    qc.cx(0, 3)
-    qc.cx(0, 4)
-    qc.cx(0, 5)
-    qc.cx(0, 6)
-    qc.cx(0, 7)
-
-    device = get_device("ibm_falcon_27")
-    bqskit_qc = qiskit_to_bqskit(qc)
-    factory = cast(
-        "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
-        bqskit_mapping_action.transpile_pass,
-    )
-    bqskit_qc_mapped, input_mapping, output_mapping = factory(device)(bqskit_qc)
-    mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
-    layout = final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc)
-
-    assert input_mapping != output_mapping
-    assert layout.final_layout is not None
-    check_mapped_circuit(initial_qc=qc, mapped_qc=mapped_qc, device=device, layout=layout)
-
-
-def check_mapped_circuit(
-    initial_qc: QuantumCircuit, mapped_qc: QuantumCircuit, device: Target, layout: TranspileLayout
-) -> None:
-    """Check if the mapped quantum circuit is correctly mapped to the device."""
-    # check if the altered circuit is correctly mapped to the device
-    check_mapping = CheckMap(coupling_map=device.build_coupling_map())
-    check_mapping(mapped_qc)
-    mapped = check_mapping.property_set["is_swap_mapped"]
-    assert mapped
-    assert mapped_qc != initial_qc
-    assert layout is not None
-    assert len(layout.initial_layout) == device.num_qubits
-    if layout.final_layout is not None:
-        assert len(layout.final_layout) == device.num_qubits
-
-    # each qubit of the initial layout is part of the initial quantum circuit and the register name is correctly set
-    for assigned_physical_qubit in layout.initial_layout._p2v.values():  # noqa: SLF001
-        qreg = assigned_physical_qubit._register  # noqa: SLF001
-        assert qreg.name in {"q", "ancilla"}
-
-        # assigned_physical_qubit is part of the original quantum circuit
-        if qreg.name == "q":
-            assert qreg.size == initial_qc.num_qubits
-            # each qubit is also part of the initial uncompiled quantum circuit
-            assert initial_qc.find_bit(assigned_physical_qubit).registers[0][0].name == "q"
-        # assigned_physical_qubit is an ancilla qubit
-        else:
-            assert qreg.size == device.num_qubits - initial_qc.num_qubits
-    # each qubit of the final layout is part of the mapped quantum circuit and the register name is correctly set
-    if layout.final_layout is not None:
-        for assigned_physical_qubit in layout.final_layout._p2v.values():  # noqa: SLF001
-            assert mapped_qc.find_bit(assigned_physical_qubit).registers[0][0].name == "q"
-    # each virtual qubit of the original quantum circuit is part of the initial layout
-    for virtual_qubit in initial_qc.qubits:
-        assert virtual_qubit in layout.initial_layout._p2v.values()  # noqa: SLF001
-
-
-def test_bqskit_mapping_action_no_swaps_necessary(available_actions_dict: dict[PassType, list[Action]]) -> None:
-    """Test the BQSKitMapping action for a simple quantum circuit that does not require SWAP gates."""
-    bqskit_mapping_action: Action | None = None
-    for action in available_actions_dict[PassType.MAPPING]:
-        if action.name == "BQSKitMapping":
-            bqskit_mapping_action = action
-    assert bqskit_mapping_action is not None
-
-    qc_no_swap_needed = QuantumCircuit(2)
-    qc_no_swap_needed.h(0)
-    qc_no_swap_needed.cx(0, 1)
-
-    device = get_device("quantinuum_h2_56")
-
-    bqskit_qc = qiskit_to_bqskit(qc_no_swap_needed)
-    factory = cast(
-        "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
-        bqskit_mapping_action.transpile_pass,
-    )
-    bqskit_qc_mapped, input_mapping, output_mapping = factory(device)(bqskit_qc)
-    mapped_qc = bqskit_to_qiskit(bqskit_qc_mapped)
-    layout = final_layout_bqskit_to_qiskit(input_mapping, output_mapping, mapped_qc, qc_no_swap_needed)
-    assert layout is not None
-    assert input_mapping == output_mapping
-    assert layout.final_layout is None
-
-    check_mapped_circuit(qc_no_swap_needed, mapped_qc, device, layout)
-
-
-def test_tket_routing(available_actions_dict: dict[PassType, list[Action]]) -> None:
-    """Test the TKETRouting action."""
-    qc = QuantumCircuit(5)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.cx(0, 2)
-    qc.cx(0, 3)
-    qc.cx(0, 4)
-
-    device = get_device("quantinuum_h2_56")
-
-    layout_action = available_actions_dict[PassType.LAYOUT][0]
-    factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
-    passes_ = factory(device)
-    pm = PassManager(passes_)
-    layouted_qc = pm.run(qc)
-    initial_layout = pm.property_set["layout"]
-    input_qubit_mapping = pm.property_set["original_qubit_indices"]
-
-    routing_action: Action | None = None
-    for action in available_actions_dict[PassType.ROUTING]:
-        if action.origin == CompilationOrigin.TKET:
-            routing_action = action
-    assert routing_action is not None
-
-    tket_qc = qiskit_to_tk(layouted_qc, preserve_param_uuid=True)
-    factory = cast(
-        "Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]]", routing_action.transpile_pass
-    )
-    passes = factory(device)
-    for pass_ in passes:
-        pass_.apply(tket_qc)
-
-    qbs = tket_qc.qubits
-    qubit_map = {qbs[i]: Qubit("q", i) for i in range(len(qbs))}
-    tket_qc.rename_units(qubit_map)
-
-    mapped_qc = tk_to_qiskit(tket_qc)
-
-    final_layout = final_layout_pytket_to_qiskit(
-        tket_qc,
-        list(mapped_qc.qubits),
-    )
-
+    pm = PassManager([
+        TrivialLayout(coupling_map),
+        FullAncillaAllocation(coupling_map),
+        EnlargeWithAncilla(),
+        ApplyLayout(),
+    ])
+    laid_out = pm.run(simple_circuit.copy())
     layout = TranspileLayout(
-        initial_layout=initial_layout,
-        input_qubit_mapping=input_qubit_mapping,
-        final_layout=final_layout,
-        _output_qubit_list=mapped_qc.qubits,
-        _input_qubit_count=qc.num_qubits,
+        initial_layout=pm.property_set["layout"],
+        input_qubit_mapping=dict(pm.property_set["original_qubit_indices"]),
+        final_layout=pm.property_set.get("final_layout"),
+        _output_qubit_list=laid_out.qubits,
+        _input_qubit_count=simple_circuit.num_qubits,
     )
+    return laid_out, layout
 
-    check_mapped_circuit(qc, mapped_qc, device, layout)
+
+@pytest.fixture
+def laid_out_and_routed_circuit(
+    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
+    target: Target,
+) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Return the laid-out circuit after routing, together with its layout."""
+    coupling_map = target.build_coupling_map()
+    laid_out, layout_before = laid_out_circuit
+
+    pm = PassManager([
+        SabreSwap(coupling_map=coupling_map),
+    ])
+    routed = pm.run(laid_out.copy())
+    layout_after = TranspileLayout(
+        initial_layout=layout_before.initial_layout,
+        input_qubit_mapping=dict(layout_before.input_qubit_mapping),
+        final_layout=pm.property_set.get("final_layout"),
+        _output_qubit_list=routed.qubits,
+        _input_qubit_count=layout_before._input_qubit_count,  # noqa: SLF001
+    )
+    return routed, layout_after
+
+
+@pytest.fixture
+def laid_out_and_routed_and_synthesized_circuit(
+    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
+    target: Target,
+) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Return the routed circuit translated to the device basis with the same layout."""
+    routed, layout = laid_out_and_routed_circuit
+    pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=target.operation_names)])
+    synthesized = pm.run(routed.copy())
+    synthesized_layout = TranspileLayout(
+        initial_layout=layout.initial_layout,
+        input_qubit_mapping=dict(layout.input_qubit_mapping),
+        final_layout=layout.final_layout,
+        _output_qubit_list=synthesized.qubits,
+        _input_qubit_count=layout._input_qubit_count,  # noqa: SLF001
+    )
+    return synthesized, synthesized_layout
+
+
+@pytest.fixture
+def predictor(target: Target) -> Predictor:
+    """Create a predictor instance for state checking."""
+    return Predictor(figure_of_merit="expected_fidelity", device=target)
+
+
+@pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
+def test_synthesis_actions_produce_native_gates(
+    simple_circuit: QuantumCircuit,
+    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
+    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
+    available_actions_dict: dict[PassType, list[Action]],
+    predictor: Predictor,
+    sdk: str,
+) -> None:
+    """Test all synthesis actions produce native gates."""
+    qc = simple_circuit.copy()
+    qc_laid_out, _ = laid_out_circuit
+    qc_routed, _ = laid_out_and_routed_circuit
+    circuits = {
+        "uncompiled": qc,
+        "laid-out": qc_laid_out.copy(),
+        "routed": qc_routed.copy(),
+    }
+
+    for action in available_actions_dict[PassType.SYNTHESIS]:
+        for kind, circ in circuits.items():
+            result = _run_action(sdk, action, circ.copy(), predictor)
+            if result is None:
+                continue
+            compiled, _ = result
+
+            assert isinstance(compiled, QuantumCircuit)
+            assert predictor.env.is_circuit_synthesized(compiled), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"synthesis produced non-native gates for {kind} circuit. "
+                f"Device native gates: {predictor.env.device.operation_names}. "
+                f"Circuit gates: {set(compiled.count_ops().keys())}"
+            )
+
+
+@pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
+def test_layout_actions_establish_layout(
+    simple_circuit: QuantumCircuit,
+    available_actions_dict: dict[PassType, list[Action]],
+    predictor: Predictor,
+    sdk: str,
+) -> None:
+    """Test all layout actions establish valid layouts."""
+    qc = simple_circuit.copy()
+
+    for action in available_actions_dict[PassType.LAYOUT]:
+        result = _run_action(sdk, action, qc.copy(), predictor)
+        if result is None:
+            continue
+        compiled, layout = result
+
+        assert layout is not None, (
+            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: failed to establish layout"
+        )
+        assert predictor.env.is_circuit_laid_out(compiled, layout), (
+            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+            f"did not establish valid layout. Layout: {layout}"
+        )
+
+
+@pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
+def test_routing_actions_route_circuit(
+    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
+    available_actions_dict: dict[PassType, list[Action]],
+    predictor: Predictor,
+    sdk: str,
+) -> None:
+    """Test all routing actions result in is_circuit_routed returning True."""
+    qc_laid_out, layout = laid_out_circuit
+
+    for action in available_actions_dict[PassType.ROUTING]:
+        result = _run_action(sdk, action, qc_laid_out.copy(), predictor, layout=layout)
+        if result is None:
+            continue
+        routed, _ = result
+
+        assert predictor.env.is_circuit_routed(routed, predictor.env.device.build_coupling_map()), (
+            f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+            f"circuit not properly routed. Found {sum(len(instr.qubits) == 2 for instr in routed.data)} 2-qubit gates "
+            f"not on valid edges"
+        )
+
+
+@pytest.mark.parametrize("sdk", ["qiskit", "bqskit", "tket"])
+def test_optimization_actions_preserves_invariants(
+    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
+    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
+    laid_out_and_routed_and_synthesized_circuit: tuple[QuantumCircuit, TranspileLayout],
+    available_actions_dict: dict[PassType, list[Action]],
+    predictor: Predictor,
+    sdk: str,
+) -> None:
+    """Test OPT actions preserve claimed invariants."""
+    qc_laid_out, _ = laid_out_circuit
+    qc_routed, _ = laid_out_and_routed_circuit
+    qc_synthesized, layout = laid_out_and_routed_and_synthesized_circuit
+
+    for action in available_actions_dict[PassType.OPT]:
+        if action.preserves_layout:
+            result = _run_action(sdk, action, qc_laid_out.copy(), predictor, layout=layout)
+            if result is None:
+                continue
+            compiled, _ = result
+            assert predictor.env.is_circuit_laid_out(compiled, layout), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"did not preserve layout. Layout: {layout}"
+            )
+        if action.preserves_routing:
+            result = _run_action(sdk, action, qc_routed.copy(), predictor, layout=layout)
+            if result is None:
+                continue
+            compiled, _ = result
+            assert predictor.env.is_circuit_routed(compiled, predictor.env.device.build_coupling_map()), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"circuit not properly routed. Found {sum(len(instr.qubits) == 2 for instr in compiled.data)} 2-qubit gates "
+                f"not on valid edges"
+            )
+        if action.preserves_synthesis:
+            synth_result = _run_action(sdk, action, qc_synthesized.copy(), predictor, layout=layout)
+            if synth_result is not None:
+                compiled, _ = synth_result
+            assert predictor.env.is_circuit_synthesized(compiled), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"Device native gates: {predictor.env.device.operation_names}. "
+                f"Circuit gates: {set(compiled.count_ops().keys())}"
+            )
+        else:
+            continue

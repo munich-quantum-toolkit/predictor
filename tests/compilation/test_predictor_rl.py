@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
+import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.transpiler import CouplingMap, InstructionProperties, Target
+from qiskit.transpiler.passes import GatesInBasis
+from torch_geometric.data import Data
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl.actions import (
@@ -28,13 +31,17 @@ from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
     PassType,
+    fom_aware_compile,
     get_actions_by_pass_type,
     register_action,
     remove_action,
+    run_tket_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from _pytest.monkeypatch import MonkeyPatch
 
     from mqt.predictor.reward import figure_of_merit
@@ -118,6 +125,45 @@ def test_qcompile_with_false_input() -> None:
         rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
+@pytest.mark.parametrize(
+    ("graph", "device_name", "train_kwargs"),
+    [
+        pytest.param(False, "ibm_falcon_127", {"timesteps": 10}, id="ppo-ibm_falcon_127"),
+        pytest.param(False, "quantinuum_h2_56", {"timesteps": 10}, id="ppo-quantinuum_h2_56"),
+        pytest.param(
+            True,
+            "ibm_falcon_127",
+            {"iterations": 2, "steps": 5, "num_epochs": 1, "minibatch_size": 4},
+            id="gnn-ibm_falcon_127",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("_cleanup_gnn_model_expected_fidelity_ibm_falcon_127")
+def test_train_and_compile(graph: bool, device_name: str, train_kwargs: dict[str, Any]) -> None:
+    """Test the training and compilation pipeline for both MaskablePPO and GNN approaches.
+
+    Important: The non-GNN trained models are used in later tests and must not be deleted.
+    To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
+    """
+    figure_of_merit = "expected_fidelity"
+    device = get_device(device_name)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device, graph=graph)
+    predictor.train_model(test=True, **train_kwargs)
+
+    qc_compiled, compilation_info = predictor.compile_as_predicted(qc)
+
+    assert isinstance(qc_compiled, QuantumCircuit)
+    assert compilation_info is not None
+    assert len(compilation_info) > 0
+    if not graph:
+        check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
+        check_nat_gates(qc_compiled)
+        assert check_nat_gates.property_set["all_gates_in_basis"], (
+            "Circuit should only contain native gates but was not detected as such"
+        )
+
+
 def test_warning_for_unidirectional_device() -> None:
     """Test the warning for a unidirectional device."""
     target = Target()
@@ -145,7 +191,13 @@ def test_fom_aware_compile_fallback(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         predictor.env, "calculate_reward", lambda _circ: (_ for _ in ()).throw(RuntimeError("fake error"))
     )
-    compiled_qc, prop_set = predictor.env.fom_aware_compile(dummy_action, predictor.env.device, qc, max_iteration=1)
+    compiled_qc, prop_set = fom_aware_compile(
+        dummy_action,
+        predictor.env.device,
+        qc,
+        predictor.env.calculate_reward,
+        max_iteration=1,
+    )
 
     assert isinstance(compiled_qc, QuantumCircuit)
     assert isinstance(prop_set, dict)
@@ -174,8 +226,12 @@ def test_tket_action_layout_failure() -> None:
     predictor = Predictor(figure_of_merit="estimated_success_probability", device=get_device("ibm_eagle_127"))
     predictor.env.actions_layout_indices.append(0)
     predictor.env.state = qc
-    apply_tket = predictor.env._apply_tket_action  # noqa: SLF001
-    result_qc = apply_tket(dummy_action, 0)
+    result_qc, _ = run_tket_action(
+        action=dummy_action,
+        circuit=predictor.env.state,
+        device=predictor.env.device,
+        layout=predictor.env.layout,
+    )
 
     assert isinstance(result_qc, QuantumCircuit)
     assert result_qc.num_qubits == 1
@@ -229,3 +285,87 @@ def test_approx_reward_paths_use_cached_per_gate_maps(fom: figure_of_merit) -> N
         assert len(predictor.env.dur_by_gate) > 0
         # tbar is optional depending on backend calibration; just sanity-check type
         assert predictor.env.tbar is None or predictor.env.tbar > 0.0
+
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_predictor_env_observation_type(graph: bool) -> None:
+    """Test that PredictorEnv returns the correct observation type based on graph mode."""
+    device = get_device("ibm_falcon_127")
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=device, graph=graph)
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    obs, _ = predictor.env.reset(qc=qc)
+
+    if graph:
+        assert isinstance(obs, Data)
+        assert isinstance(obs.x, torch.Tensor)
+        assert isinstance(obs.edge_index, torch.Tensor)
+        assert obs.x.shape[0] > 0
+        assert obs.edge_index.shape[0] == 2
+    else:
+        assert isinstance(obs, dict)
+
+
+@pytest.mark.parametrize(
+    ("graph", "model_file", "error_match"),
+    [
+        pytest.param(
+            False,
+            "model_critical_depth_ibm_falcon_127.zip",
+            "The RL model 'model_critical_depth_ibm_falcon_127' is not trained yet.",
+            id="ppo",
+        ),
+        pytest.param(
+            True,
+            "gnn_critical_depth_ibm_falcon_127.pt",
+            "The GNN RL model 'gnn_critical_depth_ibm_falcon_127' is not trained yet.",
+            id="gnn",
+        ),
+    ],
+)
+def test_model_not_trained_raises(graph: bool, model_file: str, error_match: str) -> None:
+    """Test that compile_as_predicted raises FileNotFoundError when the model is not trained."""
+    device = get_device("ibm_falcon_127")
+    predictor = Predictor(figure_of_merit="critical_depth", device=device, graph=graph)
+    model_path = get_path_trained_model() / model_file
+    if model_path.exists():
+        model_path.unlink()
+
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    with pytest.raises(FileNotFoundError, match=re.escape(error_match)):
+        predictor.compile_as_predicted(qc)
+
+
+@pytest.fixture
+def _cleanup_gnn_model_expected_fidelity_ibm_falcon_127() -> Generator[None, None, None]:
+    """Remove the GNN checkpoint created by GNN training tests."""
+    yield
+    model_path = get_path_trained_model() / "gnn_expected_fidelity_ibm_falcon_127.pt"
+    if model_path.exists():
+        model_path.unlink()
+
+
+@pytest.mark.usefixtures("_cleanup_gnn_model_expected_fidelity_ibm_falcon_127")
+def test_gnn_checkpoint_config_saved_correctly() -> None:
+    """Test that the GNN checkpoint stores config metadata required for model reload."""
+    figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device, graph=True)
+    predictor.train_model(test=True, iterations=2, steps=5, num_epochs=1, minibatch_size=4)
+
+    model_path = get_path_trained_model() / f"gnn_{figure_of_merit}_{device.description}.pt"
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+
+    assert "state_dict" in checkpoint
+    assert "config" in checkpoint
+    cfg = checkpoint["config"]
+    for key in (
+        "hidden_dim",
+        "num_conv_wo_resnet",
+        "num_resnet_layers",
+        "dropout_p",
+        "bidirectional",
+        "node_feature_dim",
+        "num_actions",
+    ):
+        assert key in cfg, f"Missing config key: {key}"

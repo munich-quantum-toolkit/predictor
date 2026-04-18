@@ -17,16 +17,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 from qiskit import QuantumCircuit
 from qiskit.transpiler.exceptions import TranspilerError
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from sklearn.metrics import mutual_info_score
+from torch.distributions import Categorical
+from torch_geometric.data import Batch, Data
 
 from mqt.predictor.reward import esp_data_available, estimated_success_probability, expected_fidelity
 from mqt.predictor.rl.actions import PassType
+from mqt.predictor.rl.gnn_ppo import create_gnn_policy
 from mqt.predictor.rl.helper import (
+    FLAT_RL_FEATURE_NAMES,
     get_path_training_circuits,
     get_path_training_circuits_test,
     get_path_training_circuits_train,
@@ -42,6 +47,7 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.gnn import SAGEActorCritic
 
 
 logger = logging.getLogger("mqt-predictor")
@@ -138,6 +144,16 @@ class PredictorEvaluationResult:
     action_effectiveness: ActionEffectivenessSummary
 
 
+@dataclass(slots=True)
+class LoadedPolicy:
+    """Loaded evaluation policy together with its observation mode."""
+
+    model: MaskablePPO | SAGEActorCritic
+    graph: bool
+    model_path: Path
+    torch_device: str | None = None
+
+
 def get_non_gate_observation_features() -> list[str]:
     """Return RL observation features that are not gate-count features."""
     return NON_GATE_OBSERVATION_FEATURES.copy()
@@ -190,6 +206,7 @@ def evaluate_trained_predictor(
     max_steps: int = 200,
     deterministic: bool = False,
     seed: int = 0,
+    graph: bool | None = None,
 ) -> PredictorEvaluationResult:
     """Evaluate a trained predictor on a held-out test set and compute feature importance.
 
@@ -203,14 +220,16 @@ def evaluate_trained_predictor(
     )
     test_dir = resolve_test_circuit_directory(training_dir, path_test_circuits)
     circuits = load_test_circuits(test_dir)
+    resolved_model_path, resolved_graph = resolve_model_path_and_kind(model_path, graph=graph)
 
     predictor = Predictor(
         figure_of_merit=figure_of_merit,
         device=device,
         mdp=mdp,
         path_training_circuits=training_dir,
+        graph=resolved_graph,
     )
-    model = load_model_from_path(model_path)
+    model = load_model_from_path(resolved_model_path, predictor=predictor, graph=resolved_graph)
 
     evaluation_results = [
         rollout_circuit(
@@ -245,7 +264,7 @@ def evaluate_trained_predictor(
 
 def compute_feature_importance(
     predictor: Predictor,
-    model: MaskablePPO,
+    model: LoadedPolicy,
     circuits: list[QuantumCircuit],
     baseline_results: list[CircuitEvaluationResult] | None = None,
     features: list[str] | None = None,
@@ -293,7 +312,7 @@ def compute_feature_importance(
 
 def rollout_circuit(
     predictor: Predictor,
-    model: MaskablePPO,
+    model: LoadedPolicy,
     qc: QuantumCircuit,
     max_steps: int = 200,
     deterministic: bool = False,
@@ -314,10 +333,12 @@ def rollout_circuit(
     decision_trace: list[DecisionSample] = []
 
     while not (terminated or truncated) and step_count < max_steps:
-        policy_obs = clone_observation(obs)
-        action_masks = get_action_masks(predictor.env)
-        action, _ = model.predict(policy_obs, action_masks=action_masks, deterministic=deterministic)
-        action_index = predicted_action_to_index(action)
+        action_index, decision_features = predict_action_with_features(
+            predictor=predictor,
+            model=model,
+            obs=obs,
+            deterministic=deterministic,
+        )
         action_item = predictor.env.action_set[action_index]
         used_compilation_passes.append(action_item.name)
         previous_state_flags = predictor.env.get_compilation_state_flags()
@@ -330,17 +351,17 @@ def rollout_circuit(
             decision_trace.append(
                 DecisionSample(
                     action_name=action_item.name,
-                    features=flatten_observation(policy_obs),
+                    features=decision_features,
                 )
             )
         step_count += 1
 
-    if not (terminated or truncated) and step_count >= max_steps:
-        hit_step_limit = True
-        if predictor.env.action_terminate_index in predictor.env.valid_actions:
-            terminate_item = predictor.env.action_set[predictor.env.action_terminate_index]
-            used_compilation_passes.append(terminate_item.name)
-            obs, _reward_value, terminated, truncated, _ = predictor.env.step(predictor.env.action_terminate_index)
+        if not (terminated or truncated) and step_count >= max_steps:
+            hit_step_limit = True
+            if predictor.env.action_terminate_index in predictor.env.valid_actions:
+                terminate_item = predictor.env.action_set[predictor.env.action_terminate_index]
+                used_compilation_passes.append(terminate_item.name)
+                obs, _reward_value, terminated, truncated, _ = predictor.env.step(predictor.env.action_terminate_index)
 
     figure_of_merit_value, figure_of_merit_kind = predictor.env.calculate_reward(mode="auto")
 
@@ -358,15 +379,58 @@ def rollout_circuit(
     )
 
 
-def clone_observation(obs: Observation) -> PolicyObservation:
+def predict_action_with_features(
+    predictor: Predictor,
+    model: LoadedPolicy,
+    obs: object,
+    deterministic: bool,
+) -> tuple[int, dict[str, float]]:
+    """Predict the next action and return the flat feature trace used for analysis."""
+    if model.graph:
+        if not isinstance(obs, Data):
+            msg = f"Expected a graph observation for GNN evaluation, received {type(obs).__name__}."
+            raise TypeError(msg)
+        assert model.torch_device is not None
+        batch_obs = Batch.from_data_list([obs]).to(model.torch_device)
+        action_mask = torch.as_tensor(predictor.env.action_masks(), dtype=torch.bool, device=model.torch_device)
+        with torch.no_grad():
+            logits, _value = model.model(batch_obs)
+            logits = logits.masked_fill(~action_mask.unsqueeze(0), float("-inf"))
+            if deterministic:
+                action_index = int(torch.argmax(logits.squeeze(0)).item())
+            else:
+                action_index = int(Categorical(logits=logits.squeeze(0)).sample().item())
+        return action_index, flatten_graph_observation(obs)
+
+    policy_obs = clone_observation(obs)
+    action_masks = get_action_masks(predictor.env)
+    action, _ = model.model.predict(policy_obs, action_masks=action_masks, deterministic=deterministic)
+    action_index = predicted_action_to_index(action)
+    return action_index, flatten_observation(policy_obs)
+
+
+def clone_observation(obs: object) -> PolicyObservation:
     """Return a detached copy of an observation dictionary for policy inference."""
-    return {key: clone_feature_value(value) for key, value in obs.items()}
+    if not isinstance(obs, dict):
+        msg = f"Expected a flat observation dictionary, received {type(obs).__name__}."
+        raise TypeError(msg)
+
+    cloned: PolicyObservation = {}
+    for key, value in obs.items():
+        if not isinstance(key, str):
+            msg = f"Expected string observation keys, received {type(key).__name__}."
+            raise TypeError(msg)
+        cloned[key] = clone_feature_value(value)
+    return cloned
 
 
-def clone_feature_value(value: FeatureValue) -> NDArray[np.float32]:
+def clone_feature_value(value: object) -> NDArray[np.float32]:
     """Clone a feature value into a float32 array for policy inference."""
     if isinstance(value, np.ndarray):
         return np.array(value, copy=True, dtype=np.float32)
+    if not isinstance(value, int):
+        msg = f"Expected int or ndarray observation values, received {type(value).__name__}."
+        raise TypeError(msg)
     return np.array([value], dtype=np.float32)
 
 
@@ -376,6 +440,22 @@ def flatten_observation(obs: PolicyObservation) -> dict[str, float]:
     for key, value in obs.items():
         flattened[key] = float(value[0])
     return flattened
+
+
+def flatten_graph_observation(obs: Data) -> dict[str, float]:
+    """Flatten graph observations to the same feature names used by flat PPO evaluation."""
+    global_features = getattr(obs, "global_features", None)
+    if global_features is None:
+        msg = "Graph observation is missing global_features."
+        raise KeyError(msg)
+    feature_values = torch.as_tensor(global_features, dtype=torch.float32).reshape(-1).cpu().numpy()
+    if feature_values.size != len(FLAT_RL_FEATURE_NAMES):
+        msg = (
+            "Graph observation global_features have unexpected size: "
+            f"{feature_values.size} != {len(FLAT_RL_FEATURE_NAMES)}."
+        )
+        raise ValueError(msg)
+    return {name: float(value) for name, value in zip(FLAT_RL_FEATURE_NAMES, feature_values, strict=True)}
 
 
 def estimate_mutual_information(action_labels: list[str], feature_values: list[float], num_bins: int = 10) -> float:
@@ -510,16 +590,145 @@ def load_qasm_circuit(path: Path) -> QuantumCircuit:
     return qc
 
 
-def load_model_from_path(model_path: str | Path) -> MaskablePPO:
-    """Load a trained maskable PPO model from a path."""
-    resolved_model_path = Path(model_path)
-    if resolved_model_path.suffix != ".zip":
-        resolved_model_path = resolved_model_path.with_suffix(".zip")
+def _extract_checkpoint_steps(path: Path) -> int:
+    """Extract the numeric step count from a checkpoint filename."""
+    stem = path.stem
+    if "_steps" not in stem:
+        return -1
+    prefix, _suffix = stem.rsplit("_steps", 1)
+    try:
+        return int(prefix.rsplit("_", 1)[1])
+    except (IndexError, ValueError):
+        return -1
 
-    if not resolved_model_path.is_file():
-        msg = f"Trained RL model '{resolved_model_path}' does not exist."
-        raise FileNotFoundError(msg)
-    return MaskablePPO.load(resolved_model_path)
+
+def _latest_checkpoint_in_directory(directory: Path, *, suffix: str) -> Path | None:
+    """Return the newest checkpoint matching a suffix inside a directory."""
+    candidates = [
+        path for path in directory.glob(f"model_checkpoint_*_steps{suffix}") if _extract_checkpoint_steps(path) >= 0
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_extract_checkpoint_steps)
+
+
+def resolve_model_path_and_kind(model_path: str | Path, *, graph: bool | None = None) -> tuple[Path, bool]:
+    """Resolve a checkpoint/model path and infer whether it belongs to graph evaluation."""
+    resolved_model_path = Path(model_path)
+    if resolved_model_path.is_dir():
+        if graph is True:
+            graph_checkpoint = _latest_checkpoint_in_directory(resolved_model_path, suffix=".pt")
+            if graph_checkpoint is None:
+                msg = f"No GNN checkpoints found in '{resolved_model_path}'."
+                raise FileNotFoundError(msg)
+            return graph_checkpoint, True
+        if graph is False:
+            ppo_checkpoint = _latest_checkpoint_in_directory(resolved_model_path, suffix=".zip")
+            if ppo_checkpoint is None:
+                msg = f"No PPO checkpoints found in '{resolved_model_path}'."
+                raise FileNotFoundError(msg)
+            return ppo_checkpoint, False
+
+        graph_checkpoint = _latest_checkpoint_in_directory(resolved_model_path, suffix=".pt")
+        ppo_checkpoint = _latest_checkpoint_in_directory(resolved_model_path, suffix=".zip")
+        if graph_checkpoint is not None and ppo_checkpoint is None:
+            return graph_checkpoint, True
+        if ppo_checkpoint is not None and graph_checkpoint is None:
+            return ppo_checkpoint, False
+        if graph_checkpoint is None and ppo_checkpoint is None:
+            msg = f"No supported RL checkpoints found in '{resolved_model_path}'."
+            raise FileNotFoundError(msg)
+        msg = (
+            f"Checkpoint directory '{resolved_model_path}' contains both PPO and GNN checkpoints. "
+            "Specify --graph or --no-graph."
+        )
+        raise ValueError(msg)
+
+    if resolved_model_path.suffix == ".pt":
+        if graph is False:
+            msg = f"Model path '{resolved_model_path}' is a GNN checkpoint, but graph=False was requested."
+            raise ValueError(msg)
+        if not resolved_model_path.is_file():
+            msg = f"Trained RL model '{resolved_model_path}' does not exist."
+            raise FileNotFoundError(msg)
+        return resolved_model_path, True
+
+    if resolved_model_path.suffix == ".zip":
+        if graph is True:
+            msg = f"Model path '{resolved_model_path}' is a PPO checkpoint, but graph=True was requested."
+            raise ValueError(msg)
+        if not resolved_model_path.is_file():
+            msg = f"Trained RL model '{resolved_model_path}' does not exist."
+            raise FileNotFoundError(msg)
+        return resolved_model_path, False
+
+    zip_path = resolved_model_path.with_suffix(".zip")
+    pt_path = resolved_model_path.with_suffix(".pt")
+    if graph is True:
+        if not pt_path.is_file():
+            msg = f"Trained GNN RL model '{pt_path}' does not exist."
+            raise FileNotFoundError(msg)
+        return pt_path, True
+    if graph is False:
+        if not zip_path.is_file():
+            msg = f"Trained PPO RL model '{zip_path}' does not exist."
+            raise FileNotFoundError(msg)
+        return zip_path, False
+    if pt_path.is_file() and not zip_path.is_file():
+        return pt_path, True
+    if zip_path.is_file() and not pt_path.is_file():
+        return zip_path, False
+    if pt_path.is_file() and zip_path.is_file():
+        msg = f"Both '{zip_path}' and '{pt_path}' exist. Specify --graph or --no-graph."
+        raise ValueError(msg)
+    msg = f"Trained RL model '{resolved_model_path}' does not exist."
+    raise FileNotFoundError(msg)
+
+
+def load_model_from_path(model_path: str | Path, *, predictor: Predictor, graph: bool) -> LoadedPolicy:
+    """Load either a PPO or GNN policy from a resolved path."""
+    resolved_model_path = Path(model_path)
+    if graph:
+        checkpoint = torch.load(resolved_model_path, map_location="cpu", weights_only=False)
+        if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+            msg = f"GNN checkpoint '{resolved_model_path}' does not contain a state_dict."
+            raise ValueError(msg)
+        config = checkpoint.get("config", {})
+        if not isinstance(config, dict):
+            msg = f"GNN checkpoint '{resolved_model_path}' does not contain a valid config."
+            raise ValueError(msg)
+
+        node_feature_dim = int(config.get("node_feature_dim", 0))
+        num_actions = predictor.env.action_space.n  # ty: ignore[unresolved-attribute]
+        checkpoint_num_actions = int(config.get("num_actions", num_actions))
+        if checkpoint_num_actions != num_actions:
+            msg = f"num_actions mismatch: checkpoint={checkpoint_num_actions} current={num_actions}"
+            raise RuntimeError(msg)
+        if node_feature_dim <= 0:
+            msg = f"GNN checkpoint '{resolved_model_path}' has invalid node_feature_dim={node_feature_dim}."
+            raise ValueError(msg)
+
+        policy = create_gnn_policy(
+            node_feature_dim=node_feature_dim,
+            num_actions=num_actions,
+            hidden_dim=int(config.get("hidden_dim", 128)),
+            num_conv_wo_resnet=int(config.get("num_conv_wo_resnet", 2)),
+            num_resnet_layers=int(config.get("num_resnet_layers", 5)),
+            dropout_p=float(config.get("dropout_p", 0.2)),
+            bidirectional=bool(config.get("bidirectional", True)),
+            global_feature_dim=int(config.get("global_feature_dim", 0)),
+        )
+        policy.load_state_dict(checkpoint["state_dict"], strict=True)
+        torch_device = "cuda" if torch.cuda.is_available() else "cpu"
+        policy = policy.to(torch_device)
+        policy.eval()
+        return LoadedPolicy(model=policy, graph=True, model_path=resolved_model_path, torch_device=torch_device)
+
+    return LoadedPolicy(
+        model=MaskablePPO.load(resolved_model_path),
+        graph=False,
+        model_path=resolved_model_path,
+    )
 
 
 def safe_metric(metric_fn: Callable[[], float]) -> float | None:

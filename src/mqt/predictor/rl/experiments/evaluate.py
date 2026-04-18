@@ -15,7 +15,7 @@ from pathlib import Path
 
 from mqt.bench.targets import get_device
 
-from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor
+from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor, resolve_model_path_and_kind
 from mqt.predictor.rl.helper import (
     get_path_trained_model,
     get_path_training_circuits_test,
@@ -45,10 +45,23 @@ def main() -> None:
         help="MDP transition policy used by the RL environment.",
     )
     parser.add_argument(
+        "--graph",
+        dest="graph",
+        action="store_true",
+        default=None,
+        help="Evaluate a GNN-based policy. When omitted, the evaluator infers the mode from --model-path if possible.",
+    )
+    parser.add_argument(
+        "--no-graph",
+        dest="graph",
+        action="store_false",
+        help="Evaluate a flat PPO policy explicitly.",
+    )
+    parser.add_argument(
         "--model-path",
         type=Path,
         default=None,
-        help="Optional path to the trained model. Defaults to the standard RL model location.",
+        help="Optional path to a trained model or checkpoint file, or to a checkpoint directory.",
     )
     parser.add_argument(
         "--train-dir",
@@ -72,14 +85,18 @@ def main() -> None:
     args = parser.parse_args()
 
     device = get_device(args.device)
-    model_path = args.model_path or (
-        get_path_trained_model() / f"model_{args.figure_of_merit}_{device.description}.zip"
-    )
+    if args.model_path is not None:
+        model_path = args.model_path
+    elif args.graph:
+        model_path = get_path_trained_model() / f"gnn_{args.figure_of_merit}_{device.description}.pt"
+    else:
+        model_path = get_path_trained_model() / f"model_{args.figure_of_merit}_{device.description}.zip"
+    resolved_model_path, resolved_graph = resolve_model_path_and_kind(model_path, graph=args.graph)
     train_dir = args.train_dir or get_path_training_circuits_train()
     test_dir = args.test_dir or get_path_training_circuits_test()
 
     result = evaluate_trained_predictor(
-        model_path=model_path,
+        model_path=resolved_model_path,
         device=device,
         figure_of_merit=args.figure_of_merit,
         mdp=args.mdp,
@@ -88,9 +105,10 @@ def main() -> None:
         max_steps=args.max_steps,
         deterministic=args.deterministic,
         seed=args.seed,
+        graph=resolved_graph,
     )
 
-    print(f"Model: {model_path}")
+    print(f"Model: {resolved_model_path}")
     print(f"Test directory: {result.test_directory}")
     print(f"Evaluated circuits: {len(result.circuits)}")
     print(f"Average metrics: {result.average_metrics}")
