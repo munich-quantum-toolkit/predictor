@@ -454,7 +454,6 @@ class PredictorEnv(Env):
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self.state._layout = self.layout  # noqa: SLF001
             obs = self._create_observation()
             self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=reward_val, done=done)
             self._collect_tracer_data(
