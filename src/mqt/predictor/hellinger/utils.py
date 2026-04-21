@@ -42,7 +42,7 @@ def calc_device_specific_features(
     Arguments:
         qc: The quantum circuit for which the features are calculated.
         device: The device for which the features are calculated.
-        ignore_gates: A list of gates to be ignored when calculating the features. Defaults to ["barrier", "id"].
+        ignore_gates: A list of gates to be ignored when calculating the features. Defaults to ["barrier", "id", "measure", "if_else"].
 
     Returns:
         The device-specific feature vector of the given quantum circuit consisting of:
@@ -55,7 +55,7 @@ def calc_device_specific_features(
         - The single and multi qubit gate ratio
     """
     if ignore_gates is None:
-        ignore_gates = ["barrier", "id", "measure"]
+        ignore_gates = ["barrier", "id", "measure", "if_else"]
 
     # Create a dictionary with all native gates
     native_gate_dict = {gate: 0.0 for gate in device.operation_names if gate not in ignore_gates}
