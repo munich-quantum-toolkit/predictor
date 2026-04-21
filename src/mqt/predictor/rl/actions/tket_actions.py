@@ -213,7 +213,7 @@ def run_tket_action(
     Returns:
         Tuple of (compiled circuit, updated layout).
     """
-    tket_qc = qiskit_to_tk(circuit, preserves_param_uuid=True)
+    tket_qc = qiskit_to_tk(circuit, preserve_param_uuid=True)
     transpile_pass = (
         cast("Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]]", action.transpile_pass)(
             device
