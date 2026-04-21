@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import warnings
 from collections import defaultdict
@@ -18,8 +17,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from bqskit import MachineModel
-from bqskit import compile as bqskit_compile
 from pytket.architecture import Architecture
 from pytket.passes import (
     CliffordSimp,
@@ -78,7 +75,6 @@ from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
-    get_bqskit_native_gates,
 )
 
 IS_WIN_PY313 = sys.platform == "win32" and sys.version_info[:2] == (3, 13)
@@ -366,7 +362,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitO2",
 #        CompilationOrigin.BQSKIT,
@@ -380,7 +376,7 @@ register_action(
 #            num_workers=-1,
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceDependentAction(
@@ -526,7 +522,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitMapping",
 #        CompilationOrigin.BQSKIT,
@@ -548,7 +544,7 @@ register_action(
 #            )
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceDependentAction(
@@ -561,7 +557,7 @@ register_action(
     )
 )
 
-#register_action(
+# register_action(
 #    DeviceDependentAction(
 #        "BQSKitSynthesis",
 #        CompilationOrigin.BQSKIT,
@@ -578,7 +574,7 @@ register_action(
 #            )
 #        ),
 #    )
-#)
+# )
 
 register_action(
     DeviceIndependentAction(

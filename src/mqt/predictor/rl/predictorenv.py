@@ -14,10 +14,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from bqskit import Circuit
+    from numpy.typing import NDArray
     from pytket._tket.passes import BasePass as TketBasePass
     from pytket.circuit import Node
     from qiskit.passmanager.base_tasks import Task
@@ -34,7 +37,6 @@ import warnings
 from math import isclose
 from typing import cast
 
-import numpy as np
 from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
@@ -86,6 +88,11 @@ from mqt.predictor.rl.parsing import (
     postprocess_vf2postlayout,
     prepare_noise_data,
 )
+from mqt.predictor.rl.tracer import (
+    CompilationTracer,
+    FigureOfMeritMetrics,
+    FOMMetric,
+)
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
@@ -131,6 +138,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         reward_scale: float = 1.0,
         no_effect_penalty: float = -0.001,
+        tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -145,6 +153,7 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             reward_scale: Scaling factor for rewards/penalties proportional to fidelity changes.
             no_effect_penalty: Step penalty applied when an action does not change the circuit (no-op).
+            tracer_output_path: Whether to enable compilation tracing. If provided, this will export a JSON file at the end of the compilation process. Defaults to None.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
@@ -163,6 +172,9 @@ class PredictorEnv(Env):
         self.actions_structure_preserving_indices = []  # Actions that preserves the mapping and native gates
         self.used_actions: list[str] = []
         self.device = device
+        self.tracer_output_path = tracer_output_path
+        self.hellinger_model = None
+        self.tracer = None
 
         logger.info("MDP: " + mdp)
         self.mdp = mdp
@@ -245,8 +257,8 @@ class PredictorEnv(Env):
         self.readout_err: dict[Node, float] | None = None
         self.reward_scale = reward_scale
         self.no_effect_penalty = no_effect_penalty
-        self.prev_reward: float | None = None
-        self.prev_reward_kind: str | None = None
+        self.prev_reward: float = 0.0
+        self.prev_reward_kind: str = "unknown"
         self.episode_count = 0
         self.current_circuit_name = "<unknown>"
         self.err_by_gate: dict[str, float] = {}
@@ -289,7 +301,86 @@ class PredictorEnv(Env):
         exported._layout = self.layout  # noqa: SLF001
         return exported
 
-    def _log_step_reward(self, step_index: int, action_name: str, reward_val: float, done: bool) -> None:
+    def _collect_tracer_data(
+        self,
+        step_index: int,
+        action_name: str,
+        reward_val: float,
+        fom_value: float,
+        fom_kind: str,
+        feature_vector: dict[str, int | NDArray[np.float32]],
+        done: bool,
+    ) -> None:
+        """Collects the current compilation state and sends it to the tracer."""
+        if self.tracer is not None and self.tracer_output_path is not None:
+            synthesized, laid_out, routed = self._get_compilation_state_flags()
+
+            # Collect figures of merit
+            hd_metric: FOMMetric | None = None
+            cd_metric: FOMMetric
+            ef_metric: FOMMetric
+            esp_metric: FOMMetric | None = None
+
+            if self.reward_function == "expected_fidelity":
+                ef_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            else:
+                val, kind = self.calculate_expected_fidelity(qc=self.state, mode="auto")
+                ef_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "estimated_success_probability":
+                esp_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            elif esp_data_available(self.device):
+                val, kind = self.calculate_estimated_success_probability(qc=self.state, mode="auto")
+                esp_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "critical_depth":
+                cd_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            else:
+                val, kind = self.calculate_critical_depth(qc=self.state)
+                cd_metric = FOMMetric(value=val, kind=kind)
+
+            if self.reward_function == "estimated_hellinger_distance":
+                hd_metric = FOMMetric(value=fom_value, kind=fom_kind)
+            elif self.hellinger_model is not None:
+                val, kind = self.calculate_estimated_hellinger_distance(qc=self.state)
+                hd_metric = FOMMetric(value=val, kind=kind)
+
+            metrics = FigureOfMeritMetrics(
+                expected_fidelity=ef_metric,
+                success_probability=esp_metric,
+                critical_depth=cd_metric,
+                hellinger_distance=hd_metric,
+            )
+
+            self.tracer.record_step(
+                step_index=step_index,
+                action=action_name,
+                reward=reward_val,
+                current_qc=self.state,
+                figures_of_merit=metrics,
+                features=feature_vector,
+                synthesized=synthesized,
+                laid_out=laid_out,
+                routed=routed,
+                done=done,
+            )
+
+            if done:
+                out_path = Path(self.tracer_output_path)
+
+                if out_path.is_dir() or not out_path.suffix:
+                    out_path = out_path / f"visualization_{self.current_circuit_name}.json"
+
+                self.tracer.save_to_json(out_path)
+                logger.info("✅TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
+
+    def _log_step_reward(
+        self,
+        step_index: int,
+        action_name: str,
+        reward_val: float,
+        done: bool,
+    ) -> None:
         """Log the chosen action and resulting reward for the current episode step."""
         logger.info(
             "Episode %d step %d: action=%s reward=%.6f",
@@ -346,19 +437,35 @@ class PredictorEnv(Env):
 
         altered_qc = self._apply_and_update(action)
         if altered_qc is None:
-            self._log_step_reward(step_index, action_name, 0.0, done=True)
-            return self._create_observation(), 0.0, True, False, {}
+            obs = self._create_observation()
+            self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=0.0, done=True)
+            self._collect_tracer_data(
+                step_index=step_index,
+                action_name=action_name,
+                reward_val=0.0,
+                fom_value=0.0,
+                fom_kind="exact",
+                feature_vector=obs,
+                done=True,
+            )
+            return obs, 0.0, True, False, {}
 
         done = action == self.action_terminate_index
 
         if self.reward_function == "estimated_hellinger_distance":
             reward_val = self.calculate_reward(mode="exact")[0] if done else 0.0
-            self._log_step_reward(step_index, action_name, reward_val, done)
-            return self._create_observation(), reward_val, done, False, {}
-
-        # Lazy init: compute prev_reward only once per episode (or if missing)
-        if self.prev_reward is None:
-            self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
+            obs = self._create_observation()
+            self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=reward_val, done=done)
+            self._collect_tracer_data(
+                step_index=step_index,
+                action_name=action_name,
+                reward_val=reward_val,
+                fom_value=reward_val,
+                fom_kind="exact",
+                feature_vector=obs,
+                done=done,
+            )
+            return obs, reward_val, done, False, {}
 
         if done:
             assert action in self.valid_actions, "Terminate action is not valid but was chosen."
@@ -385,8 +492,156 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = new_val, new_kind
 
         obs = self._create_observation()
-        self._log_step_reward(step_index, action_name, reward_val, done)
+        self._log_step_reward(step_index=step_index, action_name=action_name, reward_val=reward_val, done=done)
+        self._collect_tracer_data(
+            step_index=step_index,
+            action_name=action_name,
+            reward_val=reward_val,
+            fom_value=self.prev_reward,
+            fom_kind=self.prev_reward_kind,
+            feature_vector=obs,
+            done=done,
+        )
+
         return obs, reward_val, done, False, {}
+
+    def _resolve_evaluation_kind(self, qc: QuantumCircuit, mode: str) -> tuple[str, Any]:
+        """Resolves whether to use 'exact' or 'approx' evaluation based on the circuit state."""
+        reward_layout = getattr(qc, "_layout", None)
+        if reward_layout is None:
+            reward_layout = self.layout
+
+        if mode == "exact":
+            return "exact", reward_layout
+        if mode == "approx":
+            return "approx", reward_layout
+
+        # "auto" resolution
+        only_native = self.is_circuit_synthesized(qc)
+        laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
+        mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+
+        kind = "exact" if (only_native and laid_out and mapped) else "approx"
+        return kind, reward_layout
+
+    def _prepare_exact_qc(self, qc: QuantumCircuit, reward_layout: TranspileLayout | Layout | None) -> QuantumCircuit:
+        """Prepares the circuit for exact evaluation by exporting it if necessary."""
+        if reward_layout is None or getattr(qc, "_layout", None) is not None:
+            return qc
+        return self.export_circuit(qc)
+
+    def calculate_expected_fidelity(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
+        """Calculates the expected fidelity for the given quantum circuit.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+            mode:
+                Selects how the method chooses between exact and approximate evaluation:
+
+                - ``"auto"`` (default): determines computation automatically.
+                - ``"exact"``: always compute the exact, calibration-aware metric.
+                - ``"approx"``: always compute the approximate, transpile-based proxy.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the expected fidelity (float).
+            - ``kind`` is ``"exact"`` or ``"approx"`` indicating which regime was used.
+        """
+        if qc is None:
+            qc = self.state
+
+        kind, reward_layout = self._resolve_evaluation_kind(qc, mode)
+
+        if kind == "exact":
+            exact_qc = self._prepare_exact_qc(qc, reward_layout)
+            return expected_fidelity(exact_qc, self.device), "exact"
+
+        self._ensure_device_averages_cached()
+        val = approx_expected_fidelity(qc, device=self.device, error_rates=self.err_by_gate)
+        return val, "approx"
+
+    def calculate_estimated_success_probability(
+        self, qc: QuantumCircuit | None = None, mode: str = "auto"
+    ) -> tuple[float, str]:
+        """Calculates the estimated success probability (ESP) for the given quantum circuit.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+            mode:
+                Selects how the method chooses between exact and approximate evaluation:
+
+                - ``"auto"`` (default): determines computation automatically.
+                - ``"exact"``: always compute the exact, calibration-aware metric.
+                - ``"approx"``: always compute the approximate, transpile-based proxy.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the estimated success probability (float).
+            - ``kind`` is ``"exact"`` or ``"approx"`` indicating which regime was used.
+        """
+        if qc is None:
+            qc = self.state
+
+        kind, reward_layout = self._resolve_evaluation_kind(qc, mode)
+
+        if kind == "exact":
+            exact_qc = self._prepare_exact_qc(qc, reward_layout)
+            return estimated_success_probability(exact_qc, self.device), "exact"
+
+        self._ensure_device_averages_cached()
+        feats = calc_supermarq_features(qc)
+        val = approx_estimated_success_probability(
+            qc,
+            device=self.device,
+            error_rates=self.err_by_gate,
+            gate_durations=self.dur_by_gate,
+            tbar=self.tbar,
+            par_feature=float(feats.parallelism),
+            liv_feature=float(feats.liveness),
+            n_qubits=int(qc.num_qubits),
+        )
+        return val, "approx"
+
+    def calculate_critical_depth(self, qc: QuantumCircuit | None = None) -> tuple[float, str]:
+        """Calculates the critical depth for the given quantum circuit.
+
+        Note:
+            Critical depth is always computed exactly.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the critical depth (float).
+            - ``kind`` is always ``"exact"``.
+        """
+        if qc is None:
+            qc = self.state
+        return crit_depth(qc), "exact"
+
+    def calculate_estimated_hellinger_distance(self, qc: QuantumCircuit | None = None) -> tuple[float, str]:
+        """Calculates the estimated Hellinger distance for the given quantum circuit.
+
+        Note:
+            Hellinger distance is always computed exactly using the environment's
+            pretrained machine learning model.
+
+        Args:
+            qc:
+                Circuit to evaluate. If ``None``, evaluates the environment's current state.
+
+        Returns:
+            A tuple ``(value, kind)`` where:
+            - ``value`` is the estimated Hellinger distance (float).
+            - ``kind`` is always ``"exact"``.
+        """
+        if qc is None:
+            qc = self.state
+        return estimated_hellinger_distance(qc, self.device, self.hellinger_model), "exact"
 
     def calculate_reward(self, qc: QuantumCircuit | None = None, mode: str = "auto") -> tuple[float, str]:
         """Compute the reward for a circuit and report whether it was computed exactly or approximately.
@@ -422,70 +677,24 @@ class PredictorEnv(Env):
         if qc is None:
             qc = self.state
 
-        # Reward functions that are always computed exactly.
-        if self.reward_function not in {"expected_fidelity", "estimated_success_probability"}:
-            if self.reward_function == "critical_depth":
-                return crit_depth(qc), "exact"
-            if self.reward_function == "estimated_hellinger_distance":
-                return estimated_hellinger_distance(qc, self.device, self.hellinger_model), "exact"
-            # Fallback for other unknown / not-yet-implemented reward functions:
-            logger.warning(
-                "Reward function '%s' is not supported in PredictorEnv. Returning 0.0 as a fallback reward.",
-                self.reward_function,
-            )
-            return 0.0, "exact"
-
-        reward_layout = cast("TranspileLayout | Layout | None", getattr(qc, "_layout", None))
-        if reward_layout is None:
-            # use the env layout if the circuit has no attached layout
-            # (e.g., if it's an intermediate state or a newly exported copy)
-            reward_layout = self.layout
-
-        # Dual-path evaluation (exact vs. approximate) for EF / ESP.
-        if mode == "exact":
-            kind = "exact"
-        elif mode == "approx":
-            kind = "approx"
-        else:  # "auto"
-            only_native = self.is_circuit_synthesized(qc)
-            laid_out = self.is_circuit_laid_out(qc, reward_layout) if reward_layout is not None else False
-            mapped = self.is_circuit_routed(qc, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-
-            kind = "exact" if (only_native and laid_out and mapped) else "approx"
-
-        if kind == "exact":
-            exact_qc = (
-                qc if reward_layout is None or getattr(qc, "_layout", None) is not None else self.export_circuit(qc)
-            )
-            if self.reward_function == "expected_fidelity":
-                return expected_fidelity(exact_qc, self.device), "exact"
-
-            return estimated_success_probability(exact_qc, self.device), "exact"
-
-        # Approximate metrics use per-basis-gate averages cached from device calibration
-        self._ensure_device_averages_cached()
-
         if self.reward_function == "expected_fidelity":
-            val = approx_expected_fidelity(
-                qc,
-                device=self.device,
-                error_rates=self.err_by_gate,
-            )
-            return val, "approx"
+            return self.calculate_expected_fidelity(qc, mode)
 
-        feats = calc_supermarq_features(qc)
+        if self.reward_function == "estimated_success_probability":
+            return self.calculate_estimated_success_probability(qc, mode)
 
-        val = approx_estimated_success_probability(
-            qc,
-            device=self.device,
-            error_rates=self.err_by_gate,
-            gate_durations=self.dur_by_gate,
-            tbar=self.tbar,
-            par_feature=float(feats.parallelism),
-            liv_feature=float(feats.liveness),
-            n_qubits=int(qc.num_qubits),
+        if self.reward_function == "critical_depth":
+            return self.calculate_critical_depth(qc)
+
+        if self.reward_function == "estimated_hellinger_distance":
+            return self.calculate_estimated_hellinger_distance(qc)
+
+        # Fallback for other unknown / not-yet-implemented reward functions:
+        logger.warning(
+            "Reward function '%s' is not supported in PredictorEnv. Returning 0.0 as a fallback reward.",
+            self.reward_function,
         )
-        return val, "approx"
+        return 0.0, "exact"
 
     def render(self) -> None:
         """Renders the current state."""
@@ -534,15 +743,45 @@ class PredictorEnv(Env):
         self.valid_actions = self.determine_valid_actions_for_state()
 
         self.error_occurred = False
-
-        self.prev_reward = None
-        self.prev_reward_kind = None
+        self.tracer = None
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
+
+        # create baseline values
+        obs = self._create_observation()
+        self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
+
         logger.info("Starting episode %d with circuit=%s", self.episode_count, self.current_circuit_name)
 
-        return self._create_observation(), {}
+        if self.tracer_output_path is not None:
+            logger.info("Tracing enabled for compilation...")
+
+            if self.reward_function != "estimated_hellinger_distance":
+                self.hellinger_model = None
+                hellinger_model_path = get_hellinger_model_path(self.device)
+                if hellinger_model_path.is_file():
+                    # load the model so it can be used in _collect_tracer_data
+                    self.hellinger_model = load(hellinger_model_path)
+
+            self.tracer = CompilationTracer.from_initial_state(
+                device=self.device,
+                circuit_name=self.current_circuit_name,
+                figure_of_merit=self.reward_function,
+                mdp_policy=self.mdp,
+            )
+
+            self._collect_tracer_data(
+                step_index=0,
+                action_name="Baseline",
+                reward_val=0.0,
+                fom_value=self.prev_reward,
+                fom_kind=self.prev_reward_kind,
+                feature_vector=obs,
+                done=False,
+            )
+
+        return obs, {}
 
     def action_masks(self) -> list[bool]:
         """Returns a list of valid actions for the current state."""
@@ -1035,7 +1274,6 @@ class PredictorEnv(Env):
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         synthesized, laid_out, routed = self._get_compilation_state_flags()
-
         actions = []
         # Initial state
         if not synthesized and not laid_out and not routed:

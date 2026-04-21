@@ -14,6 +14,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Improved the MDP and extended the RL predictor's action/state space (expanded observation vector, support for stochastic passes, wrapped stochastic actions) ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Added AIRouting and new optimization actions (KAKDecomposition, ElidePermutations) to the RL action set ([#449]) ([**@Shaobo-Zhou**])
 - ✨ Improve RL reward design by adding intermediate rewards ([#526]) ([**@Shaobo-Zhou**])
+- ✨ Added CompilationTracer that collects compilation information and exports it to a JSON file ([#641]) ([**@linus-hologram**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 
@@ -65,6 +66,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#393]: https://github.com/munich-quantum-toolkit/predictor/pull/393
 [#385]: https://github.com/munich-quantum-toolkit/predictor/pull/385
 [#360]: https://github.com/munich-quantum-toolkit/predictor/pull/360
+[#641]: https://github.com/munich-quantum-toolkit/predictor/pull/641
 
 <!-- Contributor -->
 
@@ -74,6 +76,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@denialhaag**]: https://github.com/denialhaag
 [**@bachase**]: https://github.com/bachase
 [**@Shaobo-Zhou**]: https://github.com/Shaobo-Zhou
+[**@linus-hologram**]: https://github.com/linus-hologram
 
 <!-- General links -->
 
