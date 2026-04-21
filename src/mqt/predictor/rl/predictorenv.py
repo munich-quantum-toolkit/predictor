@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import logging
+import signal
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -63,6 +65,13 @@ from mqt.predictor.rl.helper import (
 from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
+
+PASS_TIMEOUT_SECONDS = 600  # 10 minutes
+
+
+def _raise_timeout(signum: int, frame: object) -> None:
+    msg = "Pass execution timed out after 10 minutes"
+    raise TimeoutError(msg)
 
 
 FeatureValue = int | NDArray[np.float32]
@@ -214,7 +223,7 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = 0
 
         self.has_parameterized_gates = False
-        self.rng = np.random.default_rng(10)
+        self.rng = np.random.default_rng()
 
         gate_spaces = {g: Box(low=0, high=1, shape=(1,), dtype=np.float32) for g in get_openqasm_gates_for_rl()}
 
@@ -349,9 +358,20 @@ class PredictorEnv(Env):
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
         # Apply the action and update the circuit state.
+        # Use SIGALRM-based timeout when running on the main thread (works in
+        # subprocess workers too, since each worker IS its own main thread).
+        _in_main_thread = threading.current_thread() is threading.main_thread()
         try:
-            self._apply_and_update(action)
-        except (RuntimeError, ValueError, TypeError, AssertionError) as exc:
+            if _in_main_thread:
+                _old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+                signal.alarm(PASS_TIMEOUT_SECONDS)
+            try:
+                self._apply_and_update(action)
+            finally:
+                if _in_main_thread:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, _old_handler)
+        except (RuntimeError, ValueError, TypeError, AssertionError, TimeoutError) as exc:
             self.error_occurred = True
             reward_val = self.no_effect_penalty
             truncated = True
@@ -544,6 +564,8 @@ class PredictorEnv(Env):
             The initial state and additional information.
         """
         super().reset(seed=seed)
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
 
         if isinstance(qc, QuantumCircuit):
             self.state = qc
