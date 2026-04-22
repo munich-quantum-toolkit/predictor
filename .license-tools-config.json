@@ -29,6 +29,6 @@
     ".*\\.rst",
     "py\\.typed",
     ".*build.*",
-    "LICENSE"
+    "(^|/)LICENSE$"
   ]
 }
