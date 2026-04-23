@@ -371,7 +371,7 @@ class PredictorEnv(Env):
                 if _in_main_thread:
                     signal.alarm(0)
                     signal.signal(signal.SIGALRM, _old_handler)
-        except (RuntimeError, ValueError, TypeError, AssertionError, TimeoutError) as exc:
+        except (RuntimeError, ValueError, TypeError, AssertionError, TimeoutError, AttributeError) as exc:
             self.error_occurred = True
             reward_val = self.no_effect_penalty
             truncated = True
