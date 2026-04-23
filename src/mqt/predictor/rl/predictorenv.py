@@ -418,8 +418,11 @@ class PredictorEnv(Env):
                 # Switching estimator kind breaks direct comparability of the figure of merit values.
                 reward_val = 0.0
             elif isclose(delta_reward, 0.0, abs_tol=1e-12):
-                # No change in the figure of merit after applying the action -> penalty to discourage no-ops.
-                reward_val = self.no_effect_penalty
+                # Penalise only optimisation passes that genuinely changed nothing;
+                # structural passes (synthesis, layout, routing, mapping) get a neutral
+                # 0.0 because their purpose is compilation-state progress, not FoM improvement.
+                _opt_types = {PassType.OPT, PassType.FINAL_OPT}
+                reward_val = self.no_effect_penalty if self.action_set[action].pass_type in _opt_types else 0.0
             else:
                 # Positive or negative change in the figure of merit compared to the previous step, scaled by the reward factor.
                 reward_val = self.reward_scale * delta_reward
