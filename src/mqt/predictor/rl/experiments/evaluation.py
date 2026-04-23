@@ -180,6 +180,8 @@ def is_effective_action(
     current_state_flags: CompilationStateFlags,
 ) -> bool:
     """Return whether a step should count as effective for evaluation."""
+    if action.pass_type == PassType.TERMINATE:
+        return False
     previous_synthesized, previous_laid_out, previous_routed = previous_state_flags
     current_synthesized, current_laid_out, current_routed = current_state_flags
 
@@ -193,7 +195,7 @@ def is_effective_action(
         return any(
             not before and after for before, after in zip(previous_state_flags, current_state_flags, strict=True)
         )
-    return action.pass_type != PassType.TERMINATE and reward_value > 0.0
+    return reward_value > 0.0
 
 
 def evaluate_trained_predictor(
@@ -204,16 +206,15 @@ def evaluate_trained_predictor(
     path_training_circuits: str | Path | None = None,
     path_test_circuits: str | Path | None = None,
     max_steps: int = 200,
-    deterministic: bool = False,
-    seed: int = 0,
+    num_seeds: int = 1,
     graph: bool | None = None,
 ) -> PredictorEvaluationResult:
     """Evaluate a trained predictor on a held-out test set and compute feature importance.
 
     The default test-set lookup assumes the split layout:
     ``training_circuits/test/*.qasm``.
-    By default, evaluation uses stochastic policy inference to match the
-    original predictor behavior.
+    Each circuit is rolled out ``num_seeds`` times with different random seeds and
+    the results are averaged, which gives a more reliable estimate for stochastic policies.
     """
     training_dir = (
         Path(path_training_circuits) if path_training_circuits is not None else get_path_training_circuits_train()
@@ -237,8 +238,7 @@ def evaluate_trained_predictor(
             model=model,
             qc=qc,
             max_steps=max_steps,
-            deterministic=deterministic,
-            seed=seed,
+            num_seeds=num_seeds,
         )
         for qc in circuits
     ]
@@ -249,8 +249,7 @@ def evaluate_trained_predictor(
         circuits=circuits,
         baseline_results=evaluation_results,
         max_steps=max_steps,
-        deterministic=deterministic,
-        seed=seed,
+        num_seeds=num_seeds,
     )
 
     return PredictorEvaluationResult(
@@ -269,8 +268,7 @@ def compute_feature_importance(
     baseline_results: list[CircuitEvaluationResult] | None = None,
     features: list[str] | None = None,
     max_steps: int = 200,
-    deterministic: bool = False,
-    seed: int = 0,
+    num_seeds: int = 1,
 ) -> FeatureImportanceResult:
     """Compute feature importance as mutual information with the chosen action."""
     feature_names = features or get_all_observation_features()
@@ -281,8 +279,7 @@ def compute_feature_importance(
                 model=model,
                 qc=qc,
                 max_steps=max_steps,
-                deterministic=deterministic,
-                seed=seed,
+                num_seeds=num_seeds,
             )
             for qc in circuits
         ]
@@ -310,16 +307,14 @@ def compute_feature_importance(
     )
 
 
-def rollout_circuit(
+def _single_rollout(
     predictor: Predictor,
     model: LoadedPolicy,
     qc: QuantumCircuit,
-    max_steps: int = 200,
-    deterministic: bool = False,
-    seed: int = 0,
+    max_steps: int,
+    seed: int,
 ) -> CircuitEvaluationResult:
-    """Run the trained policy on a circuit and collect final metrics."""
-    logger.info("Evaluating circuit=%s", qc.name or "<unnamed>")
+    """Run one stochastic rollout of the policy on a circuit with the given seed."""
     predictor.env.episode_count = 0
     obs, _ = predictor.env.reset(qc, seed=seed)
 
@@ -337,7 +332,6 @@ def rollout_circuit(
             predictor=predictor,
             model=model,
             obs=obs,
-            deterministic=deterministic,
         )
         action_item = predictor.env.action_set[action_index]
         used_compilation_passes.append(action_item.name)
@@ -359,9 +353,9 @@ def rollout_circuit(
         if not (terminated or truncated) and step_count >= max_steps:
             hit_step_limit = True
             if predictor.env.action_terminate_index in predictor.env.valid_actions:
-                terminate_item = predictor.env.action_set[predictor.env.action_terminate_index]
-                used_compilation_passes.append(terminate_item.name)
-                obs, _reward_value, terminated, truncated, _ = predictor.env.step(predictor.env.action_terminate_index)
+                _obs, _reward_value, terminated, truncated, _ = predictor.env.step(
+                    predictor.env.action_terminate_index
+                )
 
     figure_of_merit_value, figure_of_merit_kind = predictor.env.calculate_reward(mode="auto")
 
@@ -379,13 +373,55 @@ def rollout_circuit(
     )
 
 
+def _average_rollout_results(results: list[CircuitEvaluationResult]) -> CircuitEvaluationResult:
+    """Merge multiple same-circuit rollout results by averaging numeric fields."""
+    if len(results) == 1:
+        return results[0]
+    return CircuitEvaluationResult(
+        circuit_name=results[0].circuit_name,
+        figure_of_merit_value=float(np.nanmean([r.figure_of_merit_value for r in results])),
+        figure_of_merit_kind=results[0].figure_of_merit_kind,
+        metrics=FinalCircuitMetrics(
+            expected_fidelity=optional_nanmean([r.metrics.expected_fidelity for r in results]),
+            estimated_success_probability=optional_nanmean([
+                r.metrics.estimated_success_probability for r in results
+            ]),
+            depth=round(nanmean_or_nan([r.metrics.depth for r in results])),
+            size=round(nanmean_or_nan([r.metrics.size for r in results])),
+        ),
+        used_compilation_passes=[p for r in results for p in r.used_compilation_passes],
+        effective_compilation_passes=[p for r in results for p in r.effective_compilation_passes],
+        effective_steps=round(nanmean_or_nan([r.effective_steps for r in results])),
+        terminated=any(r.terminated for r in results),
+        hit_step_limit=any(r.hit_step_limit for r in results),
+        decision_trace=[s for r in results for s in r.decision_trace],
+    )
+
+
+def rollout_circuit(
+    predictor: Predictor,
+    model: LoadedPolicy,
+    qc: QuantumCircuit,
+    max_steps: int = 200,
+    num_seeds: int = 1,
+) -> CircuitEvaluationResult:
+    """Run the trained policy on a circuit and collect final metrics.
+
+    When ``num_seeds > 1``, the circuit is rolled out that many times with seeds
+    ``0 … num_seeds-1`` and numeric results are averaged, giving a lower-variance
+    estimate for stochastic policies.
+    """
+    logger.info("Evaluating circuit=%s (num_seeds=%d)", qc.name or "<unnamed>", num_seeds)
+    results = [_single_rollout(predictor, model, qc, max_steps, seed=seed) for seed in range(num_seeds)]
+    return _average_rollout_results(results)
+
+
 def predict_action_with_features(
     predictor: Predictor,
     model: LoadedPolicy,
     obs: object,
-    deterministic: bool,
 ) -> tuple[int, dict[str, float]]:
-    """Predict the next action and return the flat feature trace used for analysis."""
+    """Predict the next action stochastically and return the flat feature trace used for analysis."""
     if model.graph:
         if not isinstance(obs, Data):
             msg = f"Expected a graph observation for GNN evaluation, received {type(obs).__name__}."
@@ -396,15 +432,12 @@ def predict_action_with_features(
         with torch.no_grad():
             logits, _value = model.model(batch_obs)
             logits = logits.masked_fill(~action_mask.unsqueeze(0), float("-inf"))
-            if deterministic:
-                action_index = int(torch.argmax(logits.squeeze(0)).item())
-            else:
-                action_index = int(Categorical(logits=logits.squeeze(0)).sample().item())
+            action_index = int(Categorical(logits=logits.squeeze(0)).sample().item())
         return action_index, flatten_graph_observation(obs)
 
     policy_obs = clone_observation(obs)
     action_masks = get_action_masks(predictor.env)
-    action, _ = model.model.predict(policy_obs, action_masks=action_masks, deterministic=deterministic)
+    action, _ = model.model.predict(policy_obs, action_masks=action_masks, deterministic=False)
     action_index = predicted_action_to_index(action)
     return action_index, flatten_observation(policy_obs)
 
@@ -520,7 +553,7 @@ def compute_action_effectiveness_summary(results: list[CircuitEvaluationResult])
     effective_counter: Counter[str] = Counter()
 
     for result in results:
-        total_counter.update(result.used_compilation_passes)
+        total_counter.update(p for p in result.used_compilation_passes if p != "terminate")
         effective_counter.update(result.effective_compilation_passes)
 
     action_names = sorted(total_counter, key=lambda name: (-total_counter[name], name))

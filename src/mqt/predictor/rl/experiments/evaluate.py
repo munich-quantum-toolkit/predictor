@@ -76,11 +76,11 @@ def main() -> None:
         help="Optional path to the test circuits directory.",
     )
     parser.add_argument("--max-steps", type=int, default=200, help="Maximum steps during evaluation rollout.")
-    parser.add_argument("--seed", type=int, default=0, help="Evaluation seed.")
     parser.add_argument(
-        "--deterministic",
-        action="store_true",
-        help="Use deterministic policy inference during evaluation.",
+        "--num-seeds",
+        type=int,
+        default=1,
+        help="Number of stochastic rollouts per circuit. Results are averaged across seeds.",
     )
     args = parser.parse_args()
 
@@ -103,8 +103,7 @@ def main() -> None:
         path_training_circuits=train_dir,
         path_test_circuits=test_dir,
         max_steps=args.max_steps,
-        deterministic=args.deterministic,
-        seed=args.seed,
+        num_seeds=args.num_seeds,
         graph=resolved_graph,
     )
 
