@@ -11,16 +11,24 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mqt.bench.targets import get_device
 
-from mqt.predictor.rl.experiments.evaluation import evaluate_trained_predictor, resolve_model_path_and_kind
+from mqt.predictor.rl.experiments.evaluation import (
+    evaluate_trained_predictor,
+    json_default,
+    resolve_model_path_and_kind,
+)
 from mqt.predictor.rl.helper import (
     get_path_trained_model,
     get_path_training_circuits_test,
     get_path_training_circuits_train,
 )
+
 
 
 def main() -> None:
@@ -82,6 +90,12 @@ def main() -> None:
         default=1,
         help="Number of stochastic rollouts per circuit. Results are averaged across seeds.",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional path to write evaluation results as a JSON file.",
+    )
     args = parser.parse_args()
 
     device = get_device(args.device)
@@ -124,6 +138,29 @@ def main() -> None:
     print("Per-action effectiveness:")
     for stats in result.action_effectiveness.per_action:
         print(f"  {stats.action_name}: {stats.effective_uses}/{stats.total_uses} ({stats.effectiveness_ratio:.1%})")
+
+    if args.output is not None:
+        output_data = {
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "model_path": str(resolved_model_path),
+            "model_kind": "gnn" if resolved_graph else "ppo",
+            "device": args.device,
+            "figure_of_merit": args.figure_of_merit,
+            "mdp": args.mdp,
+            "max_steps": args.max_steps,
+            "num_seeds": args.num_seeds,
+            "train_directory": str(train_dir),
+            "test_directory": str(result.test_directory),
+            "num_circuits": len(result.circuits),
+            "average_metrics": dataclasses.asdict(result.average_metrics),
+            "feature_importance": dataclasses.asdict(result.feature_importance),
+            "action_effectiveness": dataclasses.asdict(result.action_effectiveness),
+            "circuits": [dataclasses.asdict(c) for c in result.circuits],
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with args.output.open("w") as f:
+            json.dump(output_data, f, indent=2, default=json_default)
+        print(f"Results written to {args.output}")
 
 
 if __name__ == "__main__":

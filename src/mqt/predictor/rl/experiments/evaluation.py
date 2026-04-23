@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -786,3 +787,13 @@ def nanmean_or_nan(values: list[float] | NDArray[np.float64] | NDArray[np.float3
     if array.size == 0 or np.isnan(array).all():
         return float("nan")
     return float(np.nanmean(array))
+
+
+def json_default(obj: object) -> object:
+    """JSON serialization fallback: Path → str, NaN/Inf → null."""
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    msg = f"Object of type {type(obj).__name__} is not JSON serializable"
+    raise TypeError(msg)

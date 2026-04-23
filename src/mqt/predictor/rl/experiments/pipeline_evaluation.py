@@ -15,6 +15,7 @@ import copy
 import json
 import math
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -48,6 +49,7 @@ from mqt.predictor.rl.experiments.evaluation import (
     collect_final_metrics,
     compute_action_effectiveness_summary,
     compute_average_metrics,
+    json_default,
     load_test_circuits,
     resolve_test_circuit_directory,
 )
@@ -140,9 +142,7 @@ class PipelineEvaluationResult:
 
     def to_dict(self) -> dict[str, object]:
         """Serialize the report into JSON-compatible data."""
-        data = asdict(self)
-        data["test_directory"] = str(self.test_directory)
-        return data
+        return asdict(self)
 
 
 def evaluate_qiskit_o3_pipeline(
@@ -601,8 +601,16 @@ def main() -> None:
         print_summary(result)
 
     if args.output is not None:
+        output_data = {
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "device": args.device,
+            "figure_of_merit": args.figure_of_merit,
+            "pipelines": args.pipelines,
+            "train_directory": str(args.train_dir or get_path_training_circuits_train()),
+            "results": [result.to_dict() for result in results],
+        }
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps([result.to_dict() for result in results], indent=2), encoding="utf-8")
+        args.output.write_text(json.dumps(output_data, indent=2, default=json_default), encoding="utf-8")
         print(f"Wrote JSON report to {args.output}")
 
 
