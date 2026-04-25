@@ -357,6 +357,8 @@ class PredictorEnv(Env):
         if self.reward_function != "estimated_hellinger_distance" and self.prev_reward is None:
             self.prev_reward, self.prev_reward_kind = self.calculate_reward(mode="auto")
 
+        pre_flags = self._get_compilation_state_flags()
+
         # Apply the action and update the circuit state.
         # Use SIGALRM-based timeout when running on the main thread (works in
         # subprocess workers too, since each worker IS its own main thread).
@@ -414,8 +416,16 @@ class PredictorEnv(Env):
             new_val, new_kind = self.calculate_reward(mode="auto")
             delta_reward = new_val - self.prev_reward
 
-            if self.prev_reward_kind != new_kind:
+            post_flags = self._get_compilation_state_flags()
+            is_structural = self.action_set[action].pass_type in {
+                PassType.SYNTHESIS, PassType.LAYOUT, PassType.ROUTING, PassType.MAPPING
+            }
+            structural_progress = any((not p) and q for p, q in zip(pre_flags, post_flags, strict=False))
+
+            if self.prev_reward_kind != new_kind or (is_structural and structural_progress):
                 # Switching estimator kind breaks direct comparability of the figure of merit values.
+                # Structural passes that advance compilation state (flags False→True) also get neutral
+                # reward regardless of kind, since the reward scales are not comparable across phases.
                 reward_val = 0.0
             elif isclose(delta_reward, 0.0, abs_tol=1e-12):
                 # Penalise only optimisation passes that genuinely changed nothing;
