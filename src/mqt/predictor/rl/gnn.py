@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
-from torch_geometric.nn import GraphNorm, SAGEConv, global_mean_pool
+from torch_geometric.nn import GlobalAttention, GraphNorm, SAGEConv
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,8 +24,16 @@ if TYPE_CHECKING:
     from torch_geometric.data import Data
 
 
+def _orthogonal_init(module: nn.Module, gain: float = math.sqrt(2)) -> None:
+    """Apply orthogonal initialization to nn.Linear layers."""
+    if isinstance(module, nn.Linear):
+        nn.init.orthogonal_(module.weight, gain=gain)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+
+
 class GraphConvolutionSageEncoder(nn.Module):
-    """SAGEConv + GraphNorm encoder producing a graph embedding via global pooling."""
+    """SAGEConv + GraphNorm encoder producing a graph embedding via attention pooling."""
 
     def __init__(
         self,
@@ -82,6 +91,14 @@ class GraphConvolutionSageEncoder(nn.Module):
         self.out_dim = hidden_dim
         self.graph_emb_dim = hidden_dim
 
+        # Attention pooling: learns to weight nodes by importance rather than averaging all equally.
+        # Critical-path gates get higher weight; idle nodes are down-weighted automatically.
+        self.pool = GlobalAttention(gate_nn=nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Tanh(),
+            nn.Linear(hidden_dim // 2, 1),
+        ))
+
     def _apply_conv_bidir(
         self,
         conv: SAGEConv,
@@ -126,8 +143,7 @@ class GraphConvolutionSageEncoder(nn.Module):
             # residual only after the initial stack
             x = x_new if i < self._residual_start else (x + x_new)
 
-        # graph readout
-        return global_mean_pool(x, batch)  # [num_graphs, hidden_dim]
+        return self.pool(x, batch)  # [num_graphs, hidden_dim]
 
 
 class SAGEActorCritic(nn.Module):
@@ -178,24 +194,40 @@ class SAGEActorCritic(nn.Module):
         emb_dim = self.encoder.graph_emb_dim
         # Input to trunk combines graph embedding with optional global features.
         trunk_in_dim = emb_dim + global_feature_dim
-        # 1 Layer of FFNN after the encoder before actor and critic heads, to allow them to diverge more.
+
+        # 2-layer trunk with LayerNorm lets actor and critic heads diverge from a well-conditioned shared base.
         self.trunk = nn.Sequential(
             nn.Linear(trunk_in_dim, emb_dim),
-            nn.LeakyReLU(),
+            nn.LayerNorm(emb_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_p),
+            nn.Linear(emb_dim, emb_dim),
+            nn.LayerNorm(emb_dim),
+            nn.GELU(),
             nn.Dropout(dropout_p),
         )
-        # 2-layer MLP actor and critic heads with shared embedding dimension, no activation on output layer.
+
+        # 2-layer MLP actor and critic heads; no activation on the output layer.
         self.actor = nn.Sequential(
             nn.Linear(emb_dim, emb_dim),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Linear(emb_dim, num_actions),
         )
 
         self.critic = nn.Sequential(
             nn.Linear(emb_dim, emb_dim),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Linear(emb_dim, 1),
         )
+
+        # Orthogonal init for all nn.Linear layers (trunk, heads, attention pool gate).
+        self.apply(_orthogonal_init)
+        # Near-zero output weights → near-uniform initial policy; avoids premature commitment.
+        nn.init.orthogonal_(self.actor[-1].weight, gain=0.01)
+        nn.init.zeros_(self.actor[-1].bias)
+        # Standard scale for critic output.
+        nn.init.orthogonal_(self.critic[-1].weight, gain=1.0)
+        nn.init.zeros_(self.critic[-1].bias)
 
     def forward(self, data: Data) -> tuple[torch.Tensor, torch.Tensor]:
         """Returns action logits and values.

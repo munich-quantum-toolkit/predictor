@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -134,18 +135,18 @@ def compute_gae(
         returns: shape (T,)
         advantages: shape (T,)
     """
-    # Takes the number of timesteps
     timesteps = rewards.size(0)
-    # Initialize tensors for advantages and returns
-    advantages = torch.zeros(timesteps, device=rewards.device, dtype=torch.float32)
+    not_dones = 1.0 - dones
 
+    # Vectorise the next-value lookup: values[t+1] for t < T-1, last_value for t = T-1.
+    next_values = torch.cat([values[1:], last_value.unsqueeze(0)])
+    # TD residuals; episode boundaries zeroed by not_dones.
+    deltas = rewards + gamma * next_values * not_dones - values
+
+    advantages = torch.zeros(timesteps, device=rewards.device, dtype=torch.float32)
     gae = 0.0
-    # for each timestep t, starting from the end of the trajectory and moving backwards
     for t in reversed(range(timesteps)):
-        next_value = last_value if t == timesteps - 1 else values[t + 1]
-        not_done = 1.0 - dones[t]
-        delta = rewards[t] + gamma * next_value * not_done - values[t]
-        gae = delta + gamma * lam * not_done * gae
+        gae = float(deltas[t]) + gamma * lam * float(not_dones[t]) * gae
         advantages[t] = gae
 
     returns = advantages + values
@@ -250,10 +251,16 @@ def ppo_update(
     minibatch_size: int = 64,
     target_kl: float | None = 0.01,
     rng: np.random.Generator | None = None,
+    normalize_adv_per_mb: bool = False,
 ) -> dict[str, float]:
     """PPO update with variable-size graph minibatching.
 
     Uses value clipping, KL early stopping, and clipped surrogate objective.
+
+    Args:
+        normalize_adv_per_mb: If True, re-normalize advantages within each minibatch
+            in addition to the global normalization. Helps when advantage variance
+            differs significantly across the rollout.
 
     Returns:
         metrics: dict with keys 'mean_kl', 'policy_loss', 'value_loss', 'entropy'
@@ -298,6 +305,9 @@ def ppo_update(
     policy.train()
     for _epoch in range(epochs):
         shuffle_rng.shuffle(indices)
+        # Track KL per epoch so early stopping uses the current epoch's divergence,
+        # not a diluted mean that accumulates across all previous epochs.
+        epoch_kl: list[float] = []
 
         for start in range(0, num_circuits, effective_mb):
             mb_idx = indices[start : start + effective_mb]
@@ -310,6 +320,11 @@ def ppo_update(
             mb_old_values = old_values[mb_idx]
             mb_returns = returns[mb_idx]
             mb_adv = advantages[mb_idx]
+
+            if normalize_adv_per_mb:
+                mb_adv_std = mb_adv.std(unbiased=False)
+                if torch.isfinite(mb_adv_std) and mb_adv_std > 1e-8:
+                    mb_adv = (mb_adv - mb_adv.mean()) / mb_adv_std
 
             logits, new_values = policy(mb_batch)
             mb_masks = buffer.masks[mb_idx]
@@ -341,13 +356,13 @@ def ppo_update(
 
             with torch.no_grad():
                 kl = (mb_old_logp - new_logp).mean().item()
+                epoch_kl.append(kl)
                 all_kl.append(kl)
                 all_policy_loss.append(policy_loss.item())
                 all_value_loss.append(value_loss.item())
                 all_entropy.append(entropy.item())
 
-        mean_kl = float(np.mean(all_kl)) if all_kl else 0.0
-        if target_kl is not None and mean_kl > target_kl:
+        if target_kl is not None and float(np.mean(epoch_kl)) > target_kl:
             break
 
     return {
@@ -380,6 +395,7 @@ def train_ppo_with_gnn(
     optimizer_state_dict: dict[str, Any] | None = None,
     shuffle_rng_state: dict[str, Any] | None = None,
     checkpoint_callback: Callable[[SAGEActorCritic, torch.optim.Optimizer, int, dict[str, Any]], None] | None = None,
+    lr_min_factor: float = 0.1,
 ) -> tuple[SAGEActorCritic, torch.optim.Optimizer, int]:
     """Train a GNN-PPO agent on variable-size circuit graphs.
 
@@ -401,25 +417,40 @@ def train_ppo_with_gnn(
         max_grad_norm: Gradient clipping norm.
         target_kl: KL early stopping threshold (None to disable).
         device: Torch device.
-        verbose: Print progress every 10 iterations.
-        log_file: Optional path to a CSV file where per-iteration training metrics
-                  are appended. Each row contains: iteration, mean_ep_reward,
-                  std_ep_reward, num_episodes, policy_loss, value_loss, entropy, mean_kl.
+        lr_min_factor: Cosine LR schedule decays each learning rate to
+            ``lr * lr_min_factor`` by the final iteration. Set to 1.0 to disable decay.
 
     Returns:
-        Trained policy.
+        Trained policy, optimizer, and number of completed iterations.
     """
     policy = policy.to(device)
 
-    optimizer = torch.optim.Adam([
+    # AdamW with eps=1e-5 is more numerically stable than Adam for RL (avoids
+    # division by very small gradient norms in the early training phase).
+    optimizer = torch.optim.AdamW([
         {"params": policy.encoder.convs.parameters(), "lr": gnn_lr},
         {"params": policy.encoder.norms.parameters(), "lr": gnn_lr},
+        {"params": policy.encoder.pool.parameters(), "lr": gnn_lr},
         {"params": policy.trunk.parameters(), "lr": lr},
         {"params": policy.actor.parameters(), "lr": lr},
         {"params": policy.critic.parameters(), "lr": lr},
-    ])
+    ], eps=1e-5)
     if optimizer_state_dict is not None:
         optimizer.load_state_dict(optimizer_state_dict)
+
+    # Cosine LR schedule: multiplies each param group's initial LR by the same factor,
+    # preserving the relative GNN/head rate difference throughout training.
+    total_iters = num_iterations - start_iteration
+
+    def _cosine_factor(step: int) -> float:
+        progress = step / max(total_iters, 1)
+        return lr_min_factor + (1.0 - lr_min_factor) * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_cosine_factor)
+    # If resuming, fast-forward the scheduler to match start_iteration without affecting LR.
+    if start_iteration > 0:
+        for _ in range(start_iteration):
+            scheduler.step()
 
     shuffle_rng = np.random.default_rng()
     if shuffle_rng_state is not None:
@@ -452,13 +483,17 @@ def train_ppo_with_gnn(
             target_kl=target_kl,
             rng=shuffle_rng,
         )
+        scheduler.step()
         completed_iterations = iteration + 1
         if checkpoint_callback is not None:
             checkpoint_callback(
                 policy,
                 optimizer,
                 completed_iterations,
-                {"shuffle_rng_state": shuffle_rng.bit_generator.state},
+                {
+                    "shuffle_rng_state": shuffle_rng.bit_generator.state,
+                    "scheduler_state_dict": scheduler.state_dict(),
+                },
             )
 
     return policy, optimizer, completed_iterations
