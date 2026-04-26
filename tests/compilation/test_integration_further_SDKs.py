@@ -79,10 +79,16 @@ def target() -> Target:
 
 @pytest.fixture
 def simple_circuit() -> QuantumCircuit:
-    """Return a small circuit used to probe action invariants."""
+    """Return a small circuit used to probe action invariants.
+
+    CX(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
+    (qubit 0 only connects to 1), so SabreSwap inserts at least one SWAP.
+    This ensures the routed fixture has a real SWAP that passes like
+    ElidePermutations would actually remove.
+    """
     qc = QuantumCircuit(3)
     qc.h(0)
-    qc.cx(0, 1)
+    qc.cx(0, 2)
     qc.cx(1, 2)
     return qc
 
@@ -259,14 +265,29 @@ def test_optimization_actions_preserves_invariants(
 
     for action in available_actions_dict[PassType.OPT]:
         if action.preserves_layout:
-            result = _run_action(sdk, action, qc_laid_out.copy(), predictor, layout=layout)
+            # Use the routed circuit (which contains real SWAP gates) so that
+            # passes like ElidePermutations — which remove SWAPs and invalidate
+            # routing — are detectable. A SWAP-free circuit makes such passes a
+            # no-op and hides the violation.
+            pre_v2p = dict(layout.initial_layout.get_virtual_bits())
+            result = _run_action(sdk, action, qc_routed.copy(), predictor, layout=layout)
             if result is None:
                 continue
-            compiled, _ = result
+            compiled, returned_layout = result
             assert predictor.env.is_circuit_laid_out(compiled, layout), (
                 f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
                 f"did not preserve layout. Layout: {layout}"
             )
+            assert predictor.env.is_circuit_routed(compiled, predictor.env.device.build_coupling_map()), (
+                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                f"produced gates on non-adjacent qubits, breaking the established routing"
+            )
+            if returned_layout is not None:
+                post_v2p = dict(returned_layout.initial_layout.get_virtual_bits())
+                assert post_v2p == pre_v2p, (
+                    f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                    f"changed the initial qubit assignment. Before: {pre_v2p}, After: {post_v2p}"
+                )
         if action.preserves_routing:
             result = _run_action(sdk, action, qc_routed.copy(), predictor, layout=layout)
             if result is None:
@@ -281,10 +302,10 @@ def test_optimization_actions_preserves_invariants(
             synth_result = _run_action(sdk, action, qc_synthesized.copy(), predictor, layout=layout)
             if synth_result is not None:
                 compiled, _ = synth_result
-            assert predictor.env.is_circuit_synthesized(compiled), (
-                f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
-                f"Device native gates: {predictor.env.device.operation_names}. "
-                f"Circuit gates: {set(compiled.count_ops().keys())}"
-            )
+                assert predictor.env.is_circuit_synthesized(compiled), (
+                    f"{action.name} on {predictor.env.device.description} VIOLATED INVARIANT: "
+                    f"Device native gates: {predictor.env.device.operation_names}. "
+                    f"Circuit gates: {set(compiled.count_ops().keys())}"
+                )
         else:
             continue

@@ -292,7 +292,7 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [PeepholeOptimise2Q()],
-        preserves_layout=True,
+        preserves_layout=False,  # can produce gates on non-adjacent qubits, breaking established routing
         preserves_routing=False,
         preserves_synthesis=False,
     )
@@ -304,7 +304,7 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [CliffordSimp()],
-        preserves_layout=True,
+        preserves_layout=False,  # can produce gates on non-adjacent qubits, breaking established routing
         preserves_routing=False,
         preserves_synthesis=False,
     )
@@ -328,7 +328,7 @@ register_action(
         CompilationOrigin.TKET,
         PassType.OPT,
         [FullPeepholeOptimise()],
-        preserves_layout=True,
+        preserves_layout=False,  # can produce gates on non-adjacent qubits, breaking established routing
         preserves_routing=False,
         preserves_synthesis=False,
     )

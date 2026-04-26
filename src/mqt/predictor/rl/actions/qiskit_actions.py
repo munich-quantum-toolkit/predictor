@@ -404,7 +404,7 @@ register_action(
         CompilationOrigin.QISKIT,
         PassType.OPT,
         [ElidePermutations()],
-        preserves_layout=True,
+        preserves_layout=False,  # folds SWAPs into the layout's final_layout, changing the qubit mapping
         preserves_routing=False,
         preserves_synthesis=True,
     )
