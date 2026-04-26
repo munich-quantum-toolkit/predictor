@@ -405,7 +405,7 @@ register_action(
         PassType.OPT,
         [ElidePermutations()],
         preserves_layout=True,
-        preserves_routing=True,
+        preserves_routing=False,
         preserves_synthesis=True,
     )
 )
