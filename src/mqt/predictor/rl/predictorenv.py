@@ -513,32 +513,32 @@ class PredictorEnv(Env):
 
         # Initial state
         if not synthesized and not laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_opt_indices)
 
         if synthesized and not laid_out and not routed:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
+            actions.extend(self.actions_mapping_indices)
+            actions.extend(self.actions_layout_indices)
+            actions.extend(self.actions_opt_indices)
 
         # Not *depicted* in paper; necessary because optimization can destroy the native gate set
         if not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_routing_indices)
+            actions.extend(self.actions_opt_indices)
 
         # Not *depicted* in paper; necessary because of layout-only passes
         if synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
+            actions.extend(self.actions_routing_indices)
 
         # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
         if not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
+            actions.extend(self.actions_synthesis_indices)
+            actions.extend(self.actions_opt_indices)
 
         # Final state
         if synthesized and laid_out and routed:
-                actions.extend([self.action_terminate_index])
-                actions.extend(self.actions_opt_indices)
+            actions.extend([self.action_terminate_index])
+            actions.extend(self.actions_opt_indices)
 
         return actions
