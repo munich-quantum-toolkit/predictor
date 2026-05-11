@@ -99,9 +99,9 @@ class Predictor:
         """
         set_random_seed(0)  # for reproducibility
         if test:
-            n_steps = 1000
+            n_steps = 512
             n_epochs = 1
-            batch_size = 32
+            batch_size = 16
             progress_bar = False
         else:
             # default PPO values

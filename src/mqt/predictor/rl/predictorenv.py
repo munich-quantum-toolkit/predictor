@@ -369,7 +369,7 @@ class PredictorEnv(Env):
 
         # BasisTranslator errors on unitary gates; decompose them immediately so
         # the circuit is always in a consistent state after a Qiskit action.
-        if altered_qc.count_ops().get("unitary"):  # ty: ignore[invalid-argument-type]
+        if altered_qc.count_ops().get("unitary"):
             altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
 
         return altered_qc
