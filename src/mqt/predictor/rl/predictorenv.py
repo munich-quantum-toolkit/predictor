@@ -145,8 +145,12 @@ class PredictorEnv(Env):
         self.reward_function = reward_function
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
-        self.layout: TranspileLayout | None = None
         self.num_qubits_uncompiled_circuit = 0
+
+        # Canonical layout state for the current circuit. It is mirrored to
+        # QuantumCircuit.layout for callers, but kept here because TKET and
+        # BQSKit conversions do not preserve Qiskit's layout metadata.
+        self.layout: TranspileLayout | None = None
 
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
@@ -204,11 +208,10 @@ class PredictorEnv(Env):
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
+        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying BasisTranslator
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
-        self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
@@ -271,19 +274,21 @@ class PredictorEnv(Env):
         """Returns a list of valid actions for the current state."""
         action_mask = [action in self.valid_actions for action in self.action_set]
 
-        # TKET layout/optimization actions must not run after a Qiskit layout has been set
-        # (it is not clear how tket will handle the layout). TKET routing actions are
-        #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
-        if self.layout is not None:
+        has_layout = self.layout is not None
+
+        if has_layout:
+            # TKET layout/optimization actions must not run after a Qiskit layout has been set
+            # (it is not clear how tket will handle the layout). TKET routing actions are
+            #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
             action_mask = [
                 action_mask[i]
                 and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
                 for i in range(len(action_mask))
             ]
 
-        if self.has_parameterized_gates or self.layout is not None:
+        if self.has_parameterized_gates or has_layout:
             # remove all actions that are from "origin"=="bqskit" because they are not supported for parameterized gates
-            # or after layout since using BQSKit after a layout is set may result in an error
+            # or after layout since using BQSKit after a layout is set can result in an error
             action_mask = [
                 action_mask[i] and self.action_set[i].origin != CompilationOrigin.BQSKIT
                 for i in range(len(action_mask))
@@ -382,6 +387,8 @@ class PredictorEnv(Env):
             assert pm.property_set["layout"]
 
         if pm.property_set["layout"]:
+            # Layout/mapping passes create the base logical-to-physical mapping;
+            # later routing actions only update final_layout.
             self.layout = TranspileLayout(
                 initial_layout=pm.property_set["layout"],
                 input_qubit_mapping=pm.property_set["original_qubit_indices"],
