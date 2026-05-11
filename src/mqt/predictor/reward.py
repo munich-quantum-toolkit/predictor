@@ -23,7 +23,6 @@ from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
-    from qiskit.circuit import QuantumRegister, Qubit
     from qiskit.transpiler import Target
     from sklearn.ensemble import RandomForestRegressor
 
@@ -62,42 +61,20 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
 
         if gate_type != "barrier":
             assert len(qargs) in [1, 2]
-            first_qubit_idx = calc_qubit_index(qargs, qc.qregs, 0)
+            first_qubit_idx = qc.find_bit(qargs[0]).index
 
             if len(qargs) == 1:
                 specific_fidelity = 1 - device[gate_type][first_qubit_idx,].error
             else:
-                second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
-                specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
-
+                second_qubit_idx = qc.find_bit(qargs[1]).index
+                try:
+                    specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+                except KeyError:
+                    msg = f"Error rate for gate {gate_type} on qubits {first_qubit_idx} and {second_qubit_idx} not found in device properties."
+                    raise KeyError(msg) from None
             res *= specific_fidelity
 
     return float(np.round(res, precision).item())
-
-
-def calc_qubit_index(qargs: list[Qubit], qregs: list[QuantumRegister], index: int) -> int:
-    """Calculates the global qubit index for a given quantum circuit and qubit index.
-
-    Arguments:
-        qargs: The qubits of the quantum circuit.
-        qregs: The quantum registers of the quantum circuit.
-        index: The index of the qubit in the qargs list.
-
-    Returns:
-        The global qubit index of the given qubit in the quantum circuit.
-
-    Raises:
-        ValueError: If the qubit index is not found in the quantum registers.
-    """
-    offset = 0
-    for reg in qregs:
-        if qargs[index] not in reg:
-            offset += reg.size
-        else:
-            qubit_index: int = offset + reg.index(qargs[index])
-            return qubit_index
-    error_msg = f"Global qubit index for local qubit {index} index not found."
-    raise ValueError(error_msg)
 
 
 def estimated_success_probability(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:
@@ -125,7 +102,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
         if gate_type == "barrier" or gate_type == "id":
             continue
         assert len(qargs) in (1, 2)
-        first_qubit_idx = calc_qubit_index(qargs, qc.qregs, 0)
+        first_qubit_idx = qc.find_bit(qargs[0]).index
         active_qubits.add(first_qubit_idx)
 
         if len(qargs) == 1:  # single-qubit gate
@@ -140,7 +117,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             ))
             exec_time_per_qubit[first_qubit_idx] += duration
         else:  # multi-qubit gate
-            second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
+            second_qubit_idx = qc.find_bit(qargs[1]).index
             active_qubits.add(second_qubit_idx)
             duration = device[gate_type][first_qubit_idx, second_qubit_idx].duration
             op_times.append((gate_type, [first_qubit_idx, second_qubit_idx], duration, "s"))
@@ -191,7 +168,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             continue
 
         assert len(qargs) in (1, 2)
-        first_qubit_idx = calc_qubit_index(qargs, qc.qregs, 0)
+        first_qubit_idx = scheduled_circ.find_bit(qargs[0]).index
 
         if len(qargs) == 1:
             if gate_type == "measure":
@@ -213,7 +190,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
                 continue
             res *= 1 - device[gate_type][first_qubit_idx,].error
         else:
-            second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
+            second_qubit_idx = scheduled_circ.find_bit(qargs[1]).index
             res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
 
     if qiskit_version >= "2.0.0":

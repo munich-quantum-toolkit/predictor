@@ -90,6 +90,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager.base_tasks import Task
 
     TaskList = list[Task | TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]
+    from qiskit.passmanager import PropertySet
 
 
 class CompilationOrigin(str, Enum):
@@ -146,7 +147,7 @@ class DeviceDependentAction(Action):
             Callable[..., tuple[Any, ...] | Circuit],
         ]
     )
-    do_while: Callable[[dict[str, Circuit]], bool] | None = None
+    do_while: Callable[[PropertySet], bool] | None = None
 
 
 # Registry of actions
