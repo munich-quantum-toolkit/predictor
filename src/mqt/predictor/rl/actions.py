@@ -90,7 +90,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager.base_tasks import Task
 
     TaskList = list[Task | TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]
-    
+
 
 class CompilationOrigin(str, Enum):
     """Enumeration of the origin of the compilation action."""

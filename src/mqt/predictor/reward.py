@@ -69,7 +69,7 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
             else:
                 second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
                     specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
-                
+
             res *= specific_fidelity
 
     return float(np.round(res, precision).item())
