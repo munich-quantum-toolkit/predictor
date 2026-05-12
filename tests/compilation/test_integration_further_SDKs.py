@@ -14,7 +14,7 @@ import re
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
+from bqskit.ext import qiskit_to_bqskit
 from bqskit.ir.circuit import Circuit
 from mqt.bench.targets import get_available_device_names, get_device
 from pytket.circuit import Qubit
@@ -24,7 +24,7 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.layout import TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType, get_actions_by_pass_type
+from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_to_qiskit, get_actions_by_pass_type
 from mqt.predictor.rl.parsing import (
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
@@ -83,14 +83,14 @@ def test_bqskit_synthesis_action(device: Target, available_actions_dict: dict[Pa
     qc.h(0)
     qc.cx(0, 1)
 
-    check_nat_gates = GatesInBasis(target=device)
+    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(qc)
     assert not check_nat_gates.property_set["all_gates_in_basis"]
 
     factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action_bqskit_synthesis_action.transpile_pass)
     lambda_ = factory(device)
     bqskit_qc = qiskit_to_bqskit(qc)
-    if "rigetti" in device.description or "ionq" in device.description or "iqm" in device.description:
+    if "rigetti" in device.description or "ionq" in device.description:
         with pytest.raises(ValueError, match=re.escape("not supported in BQSKIT")):
             bqskit_qc_compiled = lambda_(bqskit_qc)
         return
@@ -98,7 +98,7 @@ def test_bqskit_synthesis_action(device: Target, available_actions_dict: dict[Pa
     assert isinstance(bqskit_qc_compiled, Circuit)
     native_gates_qc = bqskit_to_qiskit(bqskit_qc_compiled)
 
-    check_nat_gates = GatesInBasis(target=device)
+    check_nat_gates = GatesInBasis(basis_gates=device.operation_names)
     check_nat_gates(native_gates_qc)
     only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
     assert only_nat_gates
