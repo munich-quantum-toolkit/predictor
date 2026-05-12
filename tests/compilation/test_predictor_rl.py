@@ -84,9 +84,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    predictor.train_model(
-        test=True,
-    )
+    predictor.train_model(test=True)
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 

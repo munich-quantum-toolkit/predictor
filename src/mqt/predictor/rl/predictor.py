@@ -99,9 +99,10 @@ class Predictor:
         """
         set_random_seed(0)  # for reproducibility
         if test:
-            n_steps = 512
+            # minimum training overhead
+            n_steps = max(timesteps, 2)
             n_epochs = 1
-            batch_size = 16
+            batch_size = n_steps
             progress_bar = False
         else:
             # default PPO values
