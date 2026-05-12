@@ -92,7 +92,7 @@ class PredictorEnv(Env):
         self.actions_routing_indices = []
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
-        self.actions_final_optimization_indices = []
+        self.actions_final_optimization_indices = []  # TODO: currently not used; will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/666
         self.used_actions: list[str] = []
         self.device = device
 
@@ -193,6 +193,11 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
+        # in case a Qiskit.QuantumCircuit has `unitary` or `u`` gates in it, decompose them (otherwise qiskit will throw an error when applying BasisTranslator)
+        # TODO: will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/668
+        if self.state.count_ops().get("unitary"):
+            self.state = self.state.decompose(gates_to_decompose="unitary")
+
         self.state._layout = self.layout  # noqa: SLF001
 
         self.valid_actions = self.determine_valid_actions_for_state()
@@ -207,10 +212,6 @@ class PredictorEnv(Env):
         else:
             reward_val = 0
             done = False
-
-        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying BasisTranslator
-        if self.state.count_ops().get("unitary"):
-            self.state = self.state.decompose(gates_to_decompose="unitary")
 
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
