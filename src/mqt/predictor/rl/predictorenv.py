@@ -32,7 +32,7 @@ import warnings
 from typing import cast
 
 import numpy as np
-from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
+from bqskit.ext import qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
@@ -55,6 +55,7 @@ from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, P
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
+    bqskit_to_qiskit,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
