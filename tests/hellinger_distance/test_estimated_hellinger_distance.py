@@ -196,10 +196,7 @@ def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path:
         # 1. Train the reinforcement learning model for circuit compilation
         rl_predictor = rl_Predictor(device=device, figure_of_merit=figure_of_merit)
 
-        rl_predictor.train_model(
-            timesteps=5,
-            test=True,
-        )
+        rl_predictor.train_model(timesteps=5, test=True)
 
         # 2. Setup and train the machine learning model for device selection
         ml_predictor = ml_Predictor(devices=[device], figure_of_merit=figure_of_merit)
