@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import re
 from functools import cache
 from typing import TYPE_CHECKING, cast
 
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
 
 def _r_gate(theta: float, phi: float) -> Instruction:
+    """Construct an RGate with the given parameters."""
     return RGate(theta, phi)
 
 
@@ -54,12 +56,20 @@ def _bqskit_compilation_options() -> dict[str, float | int]:
 
 
 def bqskit_to_qiskit(circuit: Circuit) -> QuantumCircuit:
-    """Convert a BQSKit circuit to Qiskit.
+    """Convert a BQSKit Circuit to Qiskit's QuantumCircuit.
 
-    This mirrors BQSKit's Qiskit converter and supplements it with handling
-    for IQM's native ``r`` gate, which BQSKit emits as ``U1q``.
+    This function extends BQSKit's built-in conversion by adding support for
+    IQM's native 'r' gate. BQSKit represents this as U1qGate, which is converted
+    to Qiskit's RGate by rewriting the OpenQASM 2 output.
+
+    Args:
+        circuit: The BQSKit circuit to convert.
+
+    Returns:
+        The equivalent Qiskit QuantumCircuit with 'r' gates properly mapped.
     """
-    qasm = OPENQASM2Language().encode(circuit).replace("U1q(", "r(")
+    qasm = OPENQASM2Language().encode(circuit)
+    qasm = re.sub(r"\bU1q\(", "r(", qasm)
     return qasm2.loads(
         qasm,
         custom_instructions=(
