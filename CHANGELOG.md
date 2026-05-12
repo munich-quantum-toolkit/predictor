@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🐛 Support BQSKit conversion of IQM's native `r` gate
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
