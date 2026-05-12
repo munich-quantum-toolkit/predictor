@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import operator
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bqskit.ir import gates
 from bqskit.ir.lang.qasm2 import OPENQASM2Language
@@ -27,9 +27,13 @@ from qiskit.transpiler import Layout, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from bqskit.ir import Circuit as BqskitCircuit
     from bqskit.ir import Gate
-    from pytket import Circuit
+    from pytket import Circuit as TketCircuit
     from qiskit import QuantumCircuit
+    from qiskit.circuit import Instruction
     from qiskit.transpiler import Target
 
 
@@ -90,7 +94,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
 
     """
 
-    def apply(self, circuit: Circuit) -> None:
+    def apply(self, circuit: TketCircuit) -> None:
         """Applies the pre-processing step to route a circuit with tket after a Qiskit Layout pass has been applied."""
         mapping = {Qubit(i): Node(i) for i in range(circuit.n_qubits)}
         place_with_map(circuit=circuit, qmap=mapping)
@@ -182,15 +186,19 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     return native_gates
 
 
-def bqskit_to_qiskit(circuit: Circuit) -> QuantumCircuit:
+def bqskit_to_qiskit(circuit: BqskitCircuit) -> QuantumCircuit:
     """Convert a BQSKit circuit to Qiskit, including IQM's native ``r`` gate."""
     qasm = OPENQASM2Language().encode(circuit)
     qasm = qasm.replace("U1q(", "r(")
 
-    return qasm2.loads(qasm, custom_instructions=[qasm2.CustomInstruction("r", 2, 1, RGate, builtin=True)])
+    def r_gate(theta: float, phi: float) -> RGate:
+        return RGate(theta, phi)
+
+    r_gate_constructor = cast("Callable[[tuple[int | float, ...]], Instruction]", r_gate)
+    return qasm2.loads(qasm, custom_instructions=[qasm2.CustomInstruction("r", 2, 1, r_gate_constructor, builtin=True)])
 
 
-def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
+def final_layout_pytket_to_qiskit(pytket_circuit: TketCircuit, qiskit_circuit: QuantumCircuit) -> Layout:
     """Converts a final layout from pytket to qiskit."""
     pytket_layout = pytket_circuit.qubit_readout
     size_circuit = pytket_circuit.n_qubits
