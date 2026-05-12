@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from mqt.predictor.rl.actions import (
     PreProcessTKETRoutingAfterQiskitLayout,
+    bqskit_to_qiskit,
     final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     get_bqskit_native_gates,
@@ -20,6 +21,7 @@ from mqt.predictor.rl.actions import (
 
 __all__ = [
     "PreProcessTKETRoutingAfterQiskitLayout",
+    "bqskit_to_qiskit",
     "final_layout_bqskit_to_qiskit",
     "final_layout_pytket_to_qiskit",
     "get_bqskit_native_gates",

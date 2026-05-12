@@ -11,25 +11,28 @@
 from __future__ import annotations
 
 import operator
-from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from pytket import Qubit
+from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
 from pytket.architecture import Architecture
 from pytket.circuit import Node
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
-from pytket.placement import place_with_map
 from pytket.passes import CliffordSimp, FullPeepholeOptimise, PeepholeOptimise2Q, RemoveRedundancies, RoutingPass
+from pytket.placement import place_with_map
 from qiskit.transpiler import Layout
 
-from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceDependentAction, DeviceIndependentAction, PassType
+from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, DeviceIndependentAction, PassType
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pytket import Circuit
-    from pytket._tket.passes import BasePass as TketBasePass
     from qiskit import QuantumCircuit
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target, TranspileLayout
+
+    from mqt.predictor.rl.actions import Action
 
 
 class PreProcessTKETRoutingAfterQiskitLayout:

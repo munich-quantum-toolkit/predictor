@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from qiskit.circuit import StandardEquivalenceLibrary
@@ -64,7 +63,6 @@ from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
 
 from mqt.predictor.rl.actions import (
-    Action,
     CompilationOrigin,
     DeviceDependentAction,
     DeviceIndependentAction,
@@ -72,10 +70,16 @@ from mqt.predictor.rl.actions import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from qiskit import QuantumCircuit
     from qiskit.passmanager import PropertySet
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Layout, Target
+
+    from mqt.predictor.rl.actions import (
+        Action,
+    )
 
 logger = logging.getLogger("mqt-predictor")
 

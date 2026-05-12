@@ -12,7 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ♻️ Restructure existing RL passes into SDK-level action modules, including their wrapper logic ([#644]) ([**@flowerthrower**])
-- ✨ Support BQSKit conversion of IQM's native `r` gate.
+- 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679]) ([**@flowerthrower**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
@@ -53,6 +53,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#644]: https://github.com/munich-quantum-toolkit/predictor/pull/644
+[#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406
 [#405]: https://github.com/munich-quantum-toolkit/predictor/pull/405
 [#403]: https://github.com/munich-quantum-toolkit/predictor/pull/403

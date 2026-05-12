@@ -101,9 +101,9 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
     return result
 
 
-from mqt.predictor.rl.actions import bqskit_actions as _bqskit_actions  # noqa: E402
-from mqt.predictor.rl.actions import qiskit_actions as _qiskit_actions  # noqa: E402
-from mqt.predictor.rl.actions import tket_actions as _tket_actions  # noqa: E402
+from mqt.predictor.rl.actions import bqskit_actions as _bqskit_actions
+from mqt.predictor.rl.actions import qiskit_actions as _qiskit_actions
+from mqt.predictor.rl.actions import tket_actions as _tket_actions
 
 for _action in (
     *_qiskit_actions.qiskit_optimization_actions(),
