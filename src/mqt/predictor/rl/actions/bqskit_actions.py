@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from functools import cache
 from typing import TYPE_CHECKING, cast
 
@@ -21,17 +20,22 @@ from bqskit.ext import qiskit_to_bqskit
 from bqskit.ext.qiskit.translate import OPENQASM2Language
 from bqskit.ir import gates
 from qiskit import qasm2
-from qiskit.circuit import Instruction, QuantumRegister
+from qiskit.circuit import QuantumRegister
 from qiskit.circuit.library import RGate
 from qiskit.transpiler import Layout, TranspileLayout
 
-from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceDependentAction, PassType
+from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from bqskit import Circuit
     from bqskit.ir import Gate
     from qiskit import QuantumCircuit
+    from qiskit.circuit import Instruction
     from qiskit.transpiler import Target
+
+    from mqt.predictor.rl.actions import Action
 
 
 def _r_gate(theta: float, phi: float) -> Instruction:
