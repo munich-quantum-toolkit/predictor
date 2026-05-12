@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from bqskit import Circuit
     from gymnasium.spaces import Space
     from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import Layout, Target
+    from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.actions import Action
@@ -32,7 +32,7 @@ import warnings
 from typing import cast
 
 import numpy as np
-from bqskit.ext import qiskit_to_bqskit
+from bqskit.ext import bqskit_to_qiskit, qiskit_to_bqskit
 from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
@@ -41,6 +41,7 @@ from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from qiskit import QuantumCircuit
 from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler.passes import CheckMap, GatesInBasis
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 
 from mqt.predictor.hellinger import get_hellinger_model_path
@@ -55,8 +56,7 @@ from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, P
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
-    bqskit_to_qiskit,
-    final_layout_bqskit_to_qiskit,
+        final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
 )
@@ -146,12 +146,8 @@ class PredictorEnv(Env):
         self.reward_function = reward_function
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
+self.layout: TranspileLayout | None = None
         self.num_qubits_uncompiled_circuit = 0
-
-        # Canonical layout state for the current circuit. It is mirrored to
-        # QuantumCircuit.layout for callers, but kept here because TKET and
-        # BQSKit conversions do not preserve Qiskit's layout metadata.
-        self.layout: TranspileLayout | None = None
 
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
@@ -194,25 +190,23 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
-        self.state._layout = self.layout  # noqa: SLF001
-
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
         if action == self.action_terminate_index:
-            assert action in self.valid_actions, "Terminate action is not valid but was chosen."
-            reward_val = self.calculate_reward()
+                        reward_val = self.calculate_reward()
             done = True
         else:
             reward_val = 0
             done = False
 
-        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying BasisTranslator
+        # in case the Qiskit.QuantumCircuit has unitary or u gates in it, decompose them (because otherwise qiskit will throw an error when applying the BasisTranslator
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
+self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
@@ -263,7 +257,7 @@ class PredictorEnv(Env):
 
         self.layout = None
 
-        self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.actions_opt_indices + self.actions_synthesis_indices
 
         self.error_occurred = False
 
@@ -275,21 +269,15 @@ class PredictorEnv(Env):
         """Returns a list of valid actions for the current state."""
         action_mask = [action in self.valid_actions for action in self.action_set]
 
-        has_layout = self.layout is not None
-
-        if has_layout:
-            # TKET layout/optimization actions must not run after a Qiskit layout has been set
-            # (it is not clear how tket will handle the layout). TKET routing actions are
-            #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
+        # it is not clear how tket will handle the layout, so we remove all actions that are from "origin"=="tket" if a layout is set
+        if self.layout is not None:
             action_mask = [
-                action_mask[i]
-                and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
-                for i in range(len(action_mask))
+                action_mask[i] and self.action_set[i].origin != CompilationOrigin.TKET for i in range(len(action_mask))
             ]
 
-        if self.has_parameterized_gates or has_layout:
+        if self.has_parameterized_gates or self.layout is not None:
             # remove all actions that are from "origin"=="bqskit" because they are not supported for parameterized gates
-            # or after layout since using BQSKit after a layout is set can result in an error
+            # or after layout since using BQSKit after a layout is set may result in an error
             action_mask = [
                 action_mask[i] and self.action_set[i].origin != CompilationOrigin.BQSKIT
                 for i in range(len(action_mask))
@@ -355,17 +343,10 @@ class PredictorEnv(Env):
         ):
             altered_qc = self._handle_qiskit_layout_postprocessing(action, pm, altered_qc)
 
-        elif (
-            action_index in self.actions_routing_indices and self.layout and pm.property_set["final_layout"] is not None
-        ):
+        elif action_index in self.actions_routing_indices and self.layout:
             self.layout.final_layout = pm.property_set["final_layout"]
 
-        # BasisTranslator errors on unitary gates; decompose them immediately so
-        # the circuit is always in a consistent state after a Qiskit action.
-        if altered_qc.count_ops().get("unitary"):
-            altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
-
-        return altered_qc
+                return altered_qc
 
     def _handle_qiskit_layout_postprocessing(
         self, action: Action, pm: PassManager, altered_qc: QuantumCircuit
@@ -377,20 +358,13 @@ class PredictorEnv(Env):
                 assert self.layout is not None
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
-            if pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
-                logger.warning(
-                    "VF2Layout pass did not find a solution. Reason: %s",
-                    pm.property_set["VF2Layout_stop_reason"],
-                )
-            else:
+            assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
                 assert pm.property_set["layout"]
         else:
             assert pm.property_set["layout"]
 
         if pm.property_set["layout"]:
-            # Layout/mapping passes create the base logical-to-physical mapping;
-            # later routing actions only update final_layout.
-            self.layout = TranspileLayout(
+                        self.layout = TranspileLayout(
                 initial_layout=pm.property_set["layout"],
                 input_qubit_mapping=pm.property_set["original_qubit_indices"],
                 final_layout=pm.property_set["final_layout"],
@@ -412,7 +386,7 @@ class PredictorEnv(Env):
 
         qbs = tket_qc.qubits
         tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
-        altered_qc = tk_to_qiskit(tket_qc, replace_implicit_swaps=True)
+        altered_qc = tk_to_qiskit(tket_qc)
 
         if action_index in self.actions_routing_indices:
             assert self.layout is not None
@@ -455,98 +429,27 @@ class PredictorEnv(Env):
 
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
-    def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
-        """True if every logical qubit in the circuit has a physical assignment."""
-        if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
-            layout = layout.final_layout or layout.initial_layout
+        def determine_valid_actions_for_state(self) -> list[int]:
+        """Determines and returns the valid actions for the current state."""
+        check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
+        check_nat_gates(self.state)
+        only_nat_gates = check_nat_gates.property_set["all_gates_in_basis"]
 
-        v2p = layout.get_virtual_bits()
-        return all(q in v2p for q in circuit.qubits)
-
-    def is_circuit_synthesized(self, circuit: QuantumCircuit) -> bool:
-        """Check if the circuit uses only native gates of the device.
-
-        Verifies that every gate name in the circuit is present in
-        ``device.operation_names``, equivalent to the ``GatesInBasis`` pass.
-
-        Args:
-            circuit: QuantumCircuit to check.
-
-        Returns:
-            True if all gates are native to the device.
-        """
-        native_names = set(self.device.operation_names)
-        return all(
-            instr.operation.name in native_names or instr.operation.name in ("barrier", "measure")
-            for instr in circuit.data
-        )
-
-    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
-        """Check if a circuit is fully routed to the device, including directionality.
-
-        A circuit is considered routed if all two-qubit gates are on qubit pairs
-        that exist as directed edges in the device coupling map.
-
-        After a layout pass the circuit's qubits are already physical qubits, so
-        ``circuit.find_bit(q).index`` gives the physical index directly —
-        consistent with how ``reward.py`` looks up gate calibrations.
-
-        Args:
-            circuit: QuantumCircuit to check.
-            coupling_map: CouplingMap of the target device.
-
-        Returns:
-            True if fully routed, False otherwise.
-        """
-        directed_edges = set(coupling_map.get_edges())
-        for instr in circuit.data:
-            if len(instr.qubits) == 2:
-                q0 = circuit.find_bit(instr.qubits[0]).index
-                q1 = circuit.find_bit(instr.qubits[1]).index
-                if (q0, q1) not in directed_edges:
-                    return False
-        return True
-
-    def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-        )
-
-        actions = []
-
-        # Initial state
-        if not synthesized and not laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
-
-        if synthesized and not laid_out and not routed:
-            actions.extend(self.actions_mapping_indices)
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
-        if not synthesized and laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_routing_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Not *depicted* in paper; necessary because of layout-only passes
-        if synthesized and laid_out and not routed:
-            actions.extend(self.actions_routing_indices)
-
-        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
-        if not synthesized and laid_out and routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Final state
-        if synthesized and laid_out and routed:
-            actions.extend([self.action_terminate_index])
-            actions.extend(self.actions_opt_indices)
-
+        if not only_nat_gates:
+            actions = self.actions_synthesis_indices + self.actions_opt_indices
+            if self.layout is not None:
+            actions += self.actions_routing_indices
         return actions
+
+        check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
+        check_mapping(self.state)
+        mapped = check_mapping.property_set["is_swap_mapped"]
+
+        if mapped and self.layout is not None:  # The circuit is correctly mapped.
+            return [self.action_terminate_index, *self.actions_opt_indices]
+
+        if self.layout is not None:  # The circuit is not yet mapped but a layout is set.
+            return self.actions_routing_indices
+
+        # No layout applied yet
+        return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices

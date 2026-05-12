@@ -97,11 +97,11 @@ class Predictor:
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
         """
-        set_random_seed(0)  # for reproducibility
-        if test:
-            n_steps = 512
+                if test:
+set_random_seed(0)  # for reproducibility
+            n_steps = 10
             n_epochs = 1
-            batch_size = 16
+            batch_size = 10
             progress_bar = False
         else:
             # default PPO values

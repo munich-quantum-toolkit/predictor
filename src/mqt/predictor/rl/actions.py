@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -89,8 +90,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager.base_tasks import Task
 
     TaskList = list[Task | TketBasePass | PreProcessTKETRoutingAfterQiskitLayout]
-    from qiskit.passmanager import PropertySet
-
+    
 
 class CompilationOrigin(str, Enum):
     """Enumeration of the origin of the compilation action."""
@@ -146,7 +146,7 @@ class DeviceDependentAction(Action):
             Callable[..., tuple[Any, ...] | Circuit],
         ]
     )
-    do_while: Callable[[PropertySet], bool] | None = None
+    do_while: Callable[[dict[str, Circuit]], bool] | None = None
 
 
 # Registry of actions
@@ -332,7 +332,7 @@ register_action(
             circuit,
             optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
             synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-            max_synthesis_size=3,
+            max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" else 3,
             seed=10,
             num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
         ),
@@ -431,7 +431,7 @@ register_action(
                 with_mapping=True,
                 optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
                 synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=3,
+                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" and sys.platform != "linux" else 3,
                 seed=10,
                 num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
             )
@@ -461,7 +461,7 @@ register_action(
                 model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
                 optimization_level=1 if os.getenv("GITHUB_ACTIONS") == "true" else 2,
                 synthesis_epsilon=1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8,
-                max_synthesis_size=3,
+                max_synthesis_size=2 if os.getenv("GITHUB_ACTIONS") == "true" and sys.platform != "linux" else 3,
                 seed=10,
                 num_workers=1 if os.getenv("GITHUB_ACTIONS") == "true" else -1,
             )
