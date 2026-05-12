@@ -14,7 +14,7 @@ import operator
 from typing import TYPE_CHECKING, cast
 
 from pytket import Qubit
-from pytket._tket.passes import BasePass as TketBasePass  # noqa: PLC2701
+from pytket._tket.passes import BasePass as TketBasePass
 from pytket.architecture import Architecture
 from pytket.circuit import Node
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
