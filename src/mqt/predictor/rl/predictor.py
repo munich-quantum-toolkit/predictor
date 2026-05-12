@@ -97,8 +97,8 @@ class Predictor:
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
         """
-                if test:
-set_random_seed(0)  # for reproducibility
+        if test:
+            set_random_seed(0)  # for reproducibility
             n_steps = 10
             n_epochs = 1
             batch_size = 10

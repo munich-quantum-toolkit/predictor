@@ -23,7 +23,7 @@ from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
-from qiskit.circuit import QuantumRegister, Qubit
+    from qiskit.circuit import QuantumRegister, Qubit
     from qiskit.transpiler import Target
     from sklearn.ensemble import RandomForestRegressor
 
@@ -68,7 +68,7 @@ def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -
                 specific_fidelity = 1 - device[gate_type][first_qubit_idx,].error
             else:
                 second_qubit_idx = calc_qubit_index(qargs, qc.qregs, 1)
-                    specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+                specific_fidelity = 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
 
             res *= specific_fidelity
 

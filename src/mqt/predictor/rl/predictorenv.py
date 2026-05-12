@@ -56,7 +56,7 @@ from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, P
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.parsing import (
     PreProcessTKETRoutingAfterQiskitLayout,
-        final_layout_bqskit_to_qiskit,
+    final_layout_bqskit_to_qiskit,
     final_layout_pytket_to_qiskit,
     postprocess_vf2postlayout,
 )
@@ -146,7 +146,7 @@ class PredictorEnv(Env):
         self.reward_function = reward_function
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
-self.layout: TranspileLayout | None = None
+        self.layout: TranspileLayout | None = None
         self.num_qubits_uncompiled_circuit = 0
 
         self.has_parameterized_gates = False
@@ -196,7 +196,7 @@ self.layout: TranspileLayout | None = None
             raise RuntimeError(msg)
 
         if action == self.action_terminate_index:
-                        reward_val = self.calculate_reward()
+            reward_val = self.calculate_reward()
             done = True
         else:
             reward_val = 0
@@ -206,7 +206,7 @@ self.layout: TranspileLayout | None = None
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
 
-self.state._layout = self.layout  # noqa: SLF001
+        self.state._layout = self.layout  # noqa: SLF001
         obs = create_feature_dict(self.state)
         return obs, reward_val, done, False, {}
 
@@ -346,7 +346,7 @@ self.state._layout = self.layout  # noqa: SLF001
         elif action_index in self.actions_routing_indices and self.layout:
             self.layout.final_layout = pm.property_set["final_layout"]
 
-                return altered_qc
+        return altered_qc
 
     def _handle_qiskit_layout_postprocessing(
         self, action: Action, pm: PassManager, altered_qc: QuantumCircuit
@@ -359,12 +359,12 @@ self.state._layout = self.layout  # noqa: SLF001
                 altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
         elif action.name == "VF2Layout":
             assert pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND
-                assert pm.property_set["layout"]
+            assert pm.property_set["layout"]
         else:
             assert pm.property_set["layout"]
 
         if pm.property_set["layout"]:
-                        self.layout = TranspileLayout(
+            self.layout = TranspileLayout(
                 initial_layout=pm.property_set["layout"],
                 input_qubit_mapping=pm.property_set["original_qubit_indices"],
                 final_layout=pm.property_set["final_layout"],
@@ -429,7 +429,7 @@ self.state._layout = self.layout  # noqa: SLF001
 
         return bqskit_to_qiskit(bqskit_compiled_qc)
 
-        def determine_valid_actions_for_state(self) -> list[int]:
+    def determine_valid_actions_for_state(self) -> list[int]:
         """Determines and returns the valid actions for the current state."""
         check_nat_gates = GatesInBasis(basis_gates=self.device.operation_names)
         check_nat_gates(self.state)
@@ -438,8 +438,8 @@ self.state._layout = self.layout  # noqa: SLF001
         if not only_nat_gates:
             actions = self.actions_synthesis_indices + self.actions_opt_indices
             if self.layout is not None:
-            actions += self.actions_routing_indices
-        return actions
+                actions += self.actions_routing_indices
+            return actions
 
         check_mapping = CheckMap(coupling_map=self.device.build_coupling_map())
         check_mapping(self.state)
