@@ -187,7 +187,9 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
 
 
 def bqskit_to_qiskit(circuit: BqskitCircuit) -> QuantumCircuit:
-    """Convert a BQSKit circuit to Qiskit, including IQM's native ``r`` gate."""
+    """Convert a BQSKit Circuit to Qiskit's QuantumCircuit."""
+    # This function mirrors BQSKit's `bqskit.ext.bqskit_to_qiskit`
+    # It only supplements it with handling of the `r` gate
     qasm = OPENQASM2Language().encode(circuit)
     qasm = qasm.replace("U1q(", "r(")
 
@@ -195,7 +197,13 @@ def bqskit_to_qiskit(circuit: BqskitCircuit) -> QuantumCircuit:
         return RGate(theta, phi)
 
     r_gate_constructor = cast("Callable[[tuple[int | float, ...]], Instruction]", r_gate)
-    return qasm2.loads(qasm, custom_instructions=[qasm2.CustomInstruction("r", 2, 1, r_gate_constructor, builtin=True)])
+    return qasm2.loads(
+        qasm,
+        custom_instructions=(
+            *qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
+            qasm2.CustomInstruction("r", 2, 1, r_gate_constructor, builtin=True),
+        ),
+    )
 
 
 def final_layout_pytket_to_qiskit(pytket_circuit: TketCircuit, qiskit_circuit: QuantumCircuit) -> Layout:
