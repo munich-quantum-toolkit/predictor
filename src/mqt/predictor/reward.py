@@ -191,7 +191,11 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             res *= 1 - device[gate_type][first_qubit_idx,].error
         else:
             second_qubit_idx = scheduled_circ.find_bit(qargs[1]).index
-            res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+            try:
+                res *= 1 - device[gate_type][first_qubit_idx, second_qubit_idx].error
+            except KeyError:
+                msg = f"Error rate for gate {gate_type} on qubits {first_qubit_idx} and {second_qubit_idx} not found in device properties."
+                raise KeyError(msg) from None
 
     if qiskit_version >= "2.0.0":
         for i in range(device.num_qubits):
