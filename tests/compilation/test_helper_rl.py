@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from bqskit.ir import Circuit, gates
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
@@ -22,7 +23,7 @@ from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopRea
 
 from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
-from mqt.predictor.rl.parsing import postprocess_vf2postlayout
+from mqt.predictor.rl.parsing import bqskit_to_qiskit, get_bqskit_native_gates, postprocess_vf2postlayout
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -51,6 +52,24 @@ def test_get_path_training_circuits() -> None:
     path = get_path_training_circuits()
     assert path.exists()
     assert isinstance(path, Path)
+
+
+def test_get_bqskit_native_gates_supports_iqm_r_gate() -> None:
+    """Test that IQM's native RGate is represented in BQSKit."""
+    native_gates = get_bqskit_native_gates(get_device("iqm_crystal_20"))
+
+    assert any(isinstance(gate, gates.U1qGate) for gate in native_gates)
+
+
+def test_bqskit_to_qiskit_converts_u1q_to_r_gate() -> None:
+    """Test that BQSKit's U1qGate is converted to Qiskit's RGate."""
+    circuit = Circuit(1)
+    circuit.append_gate(gates.U1qGate(), [0], [0.1, 0.2])
+
+    qc = bqskit_to_qiskit(circuit)
+
+    assert qc.data[0].operation.name == "r"
+    assert qc.data[0].operation.params == [0.1, 0.2]
 
 
 def test_vf2_layout_and_postlayout() -> None:

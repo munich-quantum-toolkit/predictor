@@ -11,22 +11,30 @@
 from __future__ import annotations
 
 import operator
+import re
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bqskit.ir import gates
+from bqskit.ir.lang.qasm2 import OPENQASM2Language
 from pytket import Qubit
 from pytket.circuit import Node
 from pytket.placement import place_with_map
-from qiskit.circuit import QuantumRegister
+from qiskit import qasm2
+from qiskit.circuit import QuantumCircuit, QuantumRegister
+from qiskit.circuit.library import RGate
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.transpiler import Layout, TranspileLayout
 from qiskit.transpiler.passes import ApplyLayout
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from bqskit.ir import Circuit as BqskitCircuit
     from bqskit.ir import Gate
-    from pytket import Circuit
+    from pytket import Circuit as TketCircuit
     from qiskit import QuantumCircuit
+    from qiskit.circuit import Instruction
     from qiskit.transpiler import Target
 
 
@@ -87,7 +95,7 @@ class PreProcessTKETRoutingAfterQiskitLayout:
 
     """
 
-    def apply(self, circuit: Circuit) -> None:
+    def apply(self, circuit: TketCircuit) -> None:
         """Applies the pre-processing step to route a circuit with tket after a Qiskit Layout pass has been applied."""
         mapping = {Qubit(i): Node(i) for i in range(circuit.n_qubits)}
         place_with_map(circuit=circuit, qmap=mapping)
@@ -121,6 +129,7 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
         "rx": gates.RXGate(),
         "ry": gates.RYGate(),
         "rz": gates.RZGate(),
+        "r": gates.U1qGate(),
         "u1": gates.U1Gate(),
         "u2": gates.U2Gate(),
         "u3": gates.U3Gate(),
@@ -178,7 +187,37 @@ def get_bqskit_native_gates(device: Target) -> list[Gate]:
     return native_gates
 
 
-def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
+def bqskit_to_qiskit(circuit: BqskitCircuit) -> QuantumCircuit:
+    """Convert a BQSKit Circuit to Qiskit's QuantumCircuit.
+
+    This function extends BQSKit's built-in conversion by adding support for
+    IQM's native 'r' gate. BQSKit represents this as U1qGate, which is converted
+    to Qiskit's RGate by rewriting the OpenQASM 2 output.
+
+    Args:
+        circuit: The BQSKit circuit to convert.
+
+    Returns:
+        The equivalent Qiskit QuantumCircuit with 'r' gates properly mapped.
+    """
+    qasm = OPENQASM2Language().encode(circuit)
+    qasm = re.sub(r"\bU1q\(", "r(", qasm)
+
+    def r_gate(theta: float, phi: float) -> RGate:
+        return RGate(theta, phi)
+
+    r_gate_constructor = cast("Callable[[tuple[int | float, ...]], Instruction]", r_gate)
+
+    return qasm2.loads(
+        qasm,
+        custom_instructions=(
+            *qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
+            qasm2.CustomInstruction("r", 2, 1, r_gate_constructor, builtin=True),
+        ),
+    )
+
+
+def final_layout_pytket_to_qiskit(pytket_circuit: TketCircuit, qiskit_circuit: QuantumCircuit) -> Layout:
     """Converts a final layout from pytket to qiskit."""
     pytket_layout = pytket_circuit.qubit_readout
     size_circuit = pytket_circuit.n_qubits
