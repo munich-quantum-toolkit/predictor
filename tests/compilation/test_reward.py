@@ -10,15 +10,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import transpile
+from qiskit import QuantumCircuit, transpile
 from qiskit.circuit.library import CXGate, Measure, XGate
 from qiskit.transpiler import InstructionProperties, Target
 
+from mqt.predictor import reward as reward_module
 from mqt.predictor.reward import crit_depth, esp_data_available, estimated_success_probability, expected_fidelity
 
 try:
@@ -29,9 +30,6 @@ except ImportError:
     QubitProperties = object
 
     QISKIT_PRE_2_0 = True
-
-if TYPE_CHECKING:
-    from qiskit import QuantumCircuit
 
 
 @pytest.fixture
@@ -132,3 +130,35 @@ def test_esp_data_available_invalid_target(kwargs: dict[str, float | bool]) -> N
     """Test that `esp_data_available` returns False for invalid device configurations."""
     target = make_target(**kwargs)  # ty: ignore[invalid-argument-type]
     assert not esp_data_available(target)
+
+
+@pytest.mark.parametrize("reward_function", ["expected_fidelity", "estimated_success_probability"])
+def test_reward_missing_two_qubit_error(reward_function: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that reward functions report missing two-qubit error rates descriptively."""
+    target = make_target()
+    del target["cx"][0, 1]
+
+    qc = QuantumCircuit(2)
+    if reward_function == "estimated_success_probability":
+        qc.x(0)
+
+        scheduled_qc = QuantumCircuit(2)
+        scheduled_qc.cx(0, 1)
+
+        def fake_transpile(*_args: object, **_kwargs: object) -> QuantumCircuit:
+            return scheduled_qc
+
+        def estimate_duration(*, target: Target) -> float:
+            assert target.num_qubits == 2
+            return 0.0
+
+        monkeypatch.setattr(reward_module, "qiskit_version", "2.0.0")
+        monkeypatch.setattr(reward_module, "transpile", fake_transpile)
+        monkeypatch.setattr(scheduled_qc, "estimate_duration", estimate_duration)
+    else:
+        qc.cx(0, 1)
+
+    reward = estimated_success_probability if reward_function == "estimated_success_probability" else expected_fidelity
+    expected_message = "Error rate for gate cx on qubits 0 and 1 not found in device properties."
+    with pytest.raises(KeyError, match=re.escape(expected_message)):
+        reward(qc, target)
