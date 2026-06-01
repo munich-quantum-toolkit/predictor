@@ -154,7 +154,9 @@ def test_reward_missing_two_qubit_error(reward_function: str, monkeypatch: pytes
 
         monkeypatch.setattr(reward_module, "qiskit_version", "2.0.0")
         monkeypatch.setattr(reward_module, "transpile", fake_transpile)
-        monkeypatch.setattr(scheduled_qc, "estimate_duration", estimate_duration, raising=False) # not available in qiskit<2.0
+        monkeypatch.setattr(
+            scheduled_qc, "estimate_duration", estimate_duration, raising=False
+        )  # not available in qiskit<2.0
     else:
         qc.cx(0, 1)
 
