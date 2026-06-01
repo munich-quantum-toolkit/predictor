@@ -81,7 +81,7 @@ def setup_device_predictor(
         figure_of_merit=figure_of_merit,
         devices=devices,
     )
-    try:
+    try:  # noqa: PLW0717
         logger.info(f"Start the training for the figure of merit: {figure_of_merit}")
         # Step 1: Generate compiled circuits for all devices
         predictor.compile_training_circuits(
