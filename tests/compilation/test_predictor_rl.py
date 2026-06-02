@@ -23,7 +23,6 @@ from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLa
 from qiskit.transpiler.passes import GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
-from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
@@ -32,6 +31,7 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
+from mqt.predictor.rl.actions import qiskit_actions as qiskit_actions_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
@@ -228,7 +228,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
             return circuit
 
-    monkeypatch.setattr(predictorenv_module, "PassManager", FakePassManager)
+    monkeypatch.setattr(qiskit_actions_module, "PassManager", FakePassManager)
     action = DeviceIndependentAction(
         name="SyntheticQiskitRouting",
         pass_type=PassType.ROUTING,
@@ -236,7 +236,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         origin=CompilationOrigin.QISKIT,
     )
 
-    altered_qc = env._apply_qiskit_action(action, env.actions_routing_indices[0])  # noqa: SLF001
+    altered_qc = env._apply_qiskit_action(action)  # noqa: SLF001
 
     assert altered_qc is env.state
     assert env.layout.final_layout is final_layout
