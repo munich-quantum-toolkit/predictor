@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -20,9 +21,9 @@ from qiskit import QuantumCircuit
 from qiskit.transpiler import Target
 
 from mqt.predictor.reward import optimization_ratio
-from mqt.predictor.rl.actions import CompilationOrigin, DeviceIndependentAction, PassType
+from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceIndependentAction, PassType
 from mqt.predictor.rl.actions.kit_actions import kit_optimization_actions
-from mqt.predictor.rl.helper import create_feature_dict
+from mqt.predictor.rl.helper import create_feature_dict, logger
 from mqt.predictor.rl.kit_baseline import TARGET_BASIS, build_translation_pass_manager, count_two_qubit_gates
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
@@ -120,6 +121,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         self.error_occurred = False
         self.status = STATUS_OK
         self.error_msg = ""
+        self.log_applied_passes = False
         self.valid_actions = self.determine_valid_actions_for_state()
 
     def reset(
@@ -234,7 +236,18 @@ class OptOnlyPredictorEnv(PredictorEnv):
             msg = f"Action {action} is not valid for the current optimization-only state."
             raise ValueError(msg)
 
-        self.used_actions.append(str(self.action_set[action].name))
+        selected_action = self.action_set[action]
+        self.used_actions.append(str(selected_action.name))
+        started_at = time.perf_counter()
+        if self.log_applied_passes:
+            logger.info(
+                "Applying opt-only action %s: %s on %s with %s qubits and %s operations.",
+                self.num_steps + 1,
+                _describe_action(selected_action),
+                _circuit_name_from_path(self.filename) or "<in-memory>",
+                self.state.num_qubits,
+                len(self.state.data),
+            )
 
         try:
             altered_qc = self.apply_action(action)
@@ -245,6 +258,13 @@ class OptOnlyPredictorEnv(PredictorEnv):
             self.status = STATUS_PASS_MANAGER_ERROR
             self.error_msg = _short_exception(exc)
             self.valid_actions = [self.action_terminate_index]
+            if self.log_applied_passes:
+                logger.info(
+                    "Failed opt-only action %s: %s after %.3fs.",
+                    self.num_steps + 1,
+                    selected_action.name,
+                    time.perf_counter() - started_at,
+                )
             return create_feature_dict(self.state), 0.0, True, False, self._info()
 
         if altered_qc is None:
@@ -252,10 +272,25 @@ class OptOnlyPredictorEnv(PredictorEnv):
             self.status = STATUS_PASS_MANAGER_ERROR
             self.error_msg = "Action returned no circuit."
             self.valid_actions = [self.action_terminate_index]
+            if self.log_applied_passes:
+                logger.info(
+                    "Finished opt-only action %s: %s returned no circuit after %.3fs.",
+                    self.num_steps + 1,
+                    selected_action.name,
+                    time.perf_counter() - started_at,
+                )
             return create_feature_dict(self.state), 0.0, True, False, self._info()
 
         self.state = altered_qc
         self.num_steps += 1
+        if self.log_applied_passes:
+            logger.info(
+                "Finished opt-only action %s: %s after %.3fs; circuit now has %s operations.",
+                self.num_steps,
+                selected_action.name,
+                time.perf_counter() - started_at,
+                len(self.state.data),
+            )
 
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
@@ -307,6 +342,15 @@ class OptOnlyPredictorEnv(PredictorEnv):
 def _make_basis_only_target() -> Target:
     """Return a target placeholder for inherited Qiskit action plumbing."""
     return Target(description="alltoall_basisS")
+
+
+def _describe_action(action: Action) -> str:
+    """Return a concise action description for training logs."""
+    if isinstance(action.transpile_pass, list):
+        pass_names = ", ".join(transpile_pass.__class__.__name__ for transpile_pass in action.transpile_pass)
+        if pass_names:
+            return f"{action.name} [{pass_names}]"
+    return str(action.name)
 
 
 def _get_state_sample(

@@ -80,11 +80,12 @@ class OptOnlyPredictor:
         timesteps: int = 200_000,
         verbose: int = 1,
         test: bool = False,
-        n_checkpoint: int | None = 10_000,
+        n_checkpoint: int | None = 1000,
         resume: bool = True,
         seed: int = 0,
         sampling_seed: int = 10,
         checkpoint_dir: Path | str | None = None,
+        log_applied_passes: bool = True,
     ) -> None:
         """Train the optimization-only RL model.
 
@@ -99,6 +100,7 @@ class OptOnlyPredictor:
             sampling_seed: Random seed for training-circuit sampling when starting fresh.
             checkpoint_dir: Directory for model and training-state checkpoints. Defaults
                 to a model-specific directory next to the final trained model.
+            log_applied_passes: Log every opt-only action before and after it runs.
 
         Raises:
             ValueError: If ``timesteps`` or ``n_checkpoint`` is invalid.
@@ -125,6 +127,7 @@ class OptOnlyPredictor:
         model_path.mkdir(parents=True, exist_ok=True)
         resolved_checkpoint_dir = _resolve_checkpoint_dir(model_path, self.MODEL_NAME, checkpoint_dir)
         resolved_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.env.log_applied_passes = log_applied_passes
 
         checkpoint = _latest_checkpoint(resolved_checkpoint_dir)
         if resume and checkpoint is not None:
