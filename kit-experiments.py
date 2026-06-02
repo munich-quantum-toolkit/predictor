@@ -15,6 +15,7 @@ from mqt.predictor.rl import OptOnlyPredictor
 pred = OptOnlyPredictor(
     path_training_circuits=Path("/Users/patrickhopf/Code/icse-paper-2026-qiskit-ml/data/raw"),
     test_circuits_csv=Path("/Users/patrickhopf/Code/icse-paper-2026-qiskit-ml/data/archive/tables/test_circuits.csv"),
+    pass_timeout=60,
 )
 
 pred.train_model(timesteps=1000, n_checkpoint=100, resume=True)

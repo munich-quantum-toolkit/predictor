@@ -38,6 +38,7 @@ STATUS_TRIVIAL_BASELINE = "trivial_baseline"
 STATUS_PASS_MANAGER_ERROR = "pm_error"
 STATUS_TRANSLATION_ERROR = "translation_error"
 STATUS_BASELINE_ERROR = "baseline_error"
+STATUS_CIRCUIT_TOO_LARGE = "circuit_too_large"
 
 _TRANSLATION_PM = build_translation_pass_manager(TARGET_BASIS)
 
@@ -57,6 +58,9 @@ class OptOnlyPredictorEnv(PredictorEnv):
         baseline_cx_lookup: Mapping[str, int | float] | None = None,
         excluded_circuit_ids: Collection[str] | None = None,
         max_qubits: int = 256,
+        max_steps: int | None = 100,
+        pass_timeout: int | None = None,
+        max_circuit_operations: int | None = 100_000,
     ) -> None:
         """Initialize the optimization-only RL environment.
 
@@ -67,6 +71,11 @@ class OptOnlyPredictorEnv(PredictorEnv):
             excluded_circuit_ids: Circuit stems to exclude from training, for example
                 held-out benchmark circuits from ``test_circuits.csv``.
             max_qubits: Maximum qubit count sampled for training.
+            max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+            pass_timeout: The timeout in seconds for applying a single pass. If None, no timeout is enforced.
+                Defaults to None.
+            max_circuit_operations: The maximum number of operations allowed after applying one pass. If None,
+                no operation-count limit is enforced. Defaults to 100,000.
         """
         Env.__init__(self)
 
@@ -76,6 +85,9 @@ class OptOnlyPredictorEnv(PredictorEnv):
         }
         self.excluded_circuit_ids = {Path(circuit_id).stem for circuit_id in (excluded_circuit_ids or set())}
         self.max_qubits = max_qubits
+        self.max_steps = max_steps
+        self.pass_timeout = pass_timeout
+        self.max_circuit_operations = max_circuit_operations
 
         self.action_set: dict[int, Any] = {}
         self.actions_synthesis_indices: list[int] = []
@@ -238,11 +250,12 @@ class OptOnlyPredictorEnv(PredictorEnv):
 
         selected_action = self.action_set[action]
         self.used_actions.append(str(selected_action.name))
+        step_number = self.num_steps + 1
         started_at = time.perf_counter()
         if self.log_applied_passes:
             logger.info(
                 "Applying opt-only action %s: %s on %s with %s qubits and %s operations.",
-                self.num_steps + 1,
+                step_number,
                 _describe_action(selected_action),
                 _circuit_name_from_path(self.filename) or "<in-memory>",
                 self.state.num_qubits,
@@ -250,38 +263,74 @@ class OptOnlyPredictorEnv(PredictorEnv):
             )
 
         try:
-            altered_qc = self.apply_action(action)
-        except BaseException as exc:
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
+            altered_qc = self._apply_action_with_timeout(action)
+        except Exception as exc:  # noqa: BLE001
             self.error_occurred = True
             self.status = STATUS_PASS_MANAGER_ERROR
             self.error_msg = _short_exception(exc)
             self.valid_actions = [self.action_terminate_index]
+            self.num_steps += 1
             if self.log_applied_passes:
                 logger.info(
                     "Failed opt-only action %s: %s after %.3fs.",
-                    self.num_steps + 1,
+                    step_number,
                     selected_action.name,
                     time.perf_counter() - started_at,
                 )
-            return create_feature_dict(self.state), 0.0, True, False, self._info()
+            return (
+                create_feature_dict(self.state),
+                0.0,
+                False,
+                True,
+                self._truncation_info(f"Error applying action '{selected_action.name}': {exc}"),
+            )
 
         if altered_qc is None:
             self.error_occurred = True
             self.status = STATUS_PASS_MANAGER_ERROR
             self.error_msg = "Action returned no circuit."
             self.valid_actions = [self.action_terminate_index]
+            self.num_steps += 1
             if self.log_applied_passes:
                 logger.info(
                     "Finished opt-only action %s: %s returned no circuit after %.3fs.",
-                    self.num_steps + 1,
+                    step_number,
                     selected_action.name,
                     time.perf_counter() - started_at,
                 )
-            return create_feature_dict(self.state), 0.0, True, False, self._info()
+            return (
+                create_feature_dict(self.state),
+                0.0,
+                False,
+                True,
+                self._truncation_info(f"Error applying action '{selected_action.name}': Action returned no circuit."),
+            )
 
-        self.state = altered_qc
+        operation_count = len(altered_qc.data)
+        if self._exceeds_circuit_operation_limit(operation_count):
+            del altered_qc
+            return self._truncate_oversized_circuit(
+                action_name=str(selected_action.name),
+                step_number=step_number,
+                started_at=started_at,
+                operation_count=operation_count,
+            )
+
+        candidate_qc = altered_qc
+        if candidate_qc.count_ops().get("unitary"):
+            candidate_qc = candidate_qc.decompose(gates_to_decompose="unitary")
+            operation_count = len(candidate_qc.data)
+            if self._exceeds_circuit_operation_limit(operation_count):
+                del altered_qc
+                del candidate_qc
+                return self._truncate_oversized_circuit(
+                    action_name=str(selected_action.name),
+                    step_number=step_number,
+                    started_at=started_at,
+                    operation_count=operation_count,
+                )
+
+        self.state = candidate_qc
         self.num_steps += 1
         if self.log_applied_passes:
             logger.info(
@@ -291,9 +340,6 @@ class OptOnlyPredictorEnv(PredictorEnv):
                 time.perf_counter() - started_at,
                 len(self.state.data),
             )
-
-        if self.state.count_ops().get("unitary"):
-            self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
         self.valid_actions = self.determine_valid_actions_for_state()
@@ -305,7 +351,10 @@ class OptOnlyPredictorEnv(PredictorEnv):
             reward_val = 0.0
             done = False
 
-        return create_feature_dict(self.state), reward_val, done, False, self._info()
+        obs = create_feature_dict(self.state)
+        if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
+            return obs, reward_val, False, True, self._truncation_info("max_steps_exceeded")
+        return obs, reward_val, done, False, self._info()
 
     def determine_valid_actions_for_state(self) -> list[int]:
         """Return opt actions not yet selected plus terminate."""
@@ -337,6 +386,45 @@ class OptOnlyPredictorEnv(PredictorEnv):
     def _info(self) -> dict[str, str]:
         """Return diagnostic episode information."""
         return {"status": self.status, "error_msg": self.error_msg}
+
+    def _truncation_info(self, reason: str) -> dict[str, str]:
+        """Return diagnostic episode information with a truncation reason."""
+        info = self._info()
+        info["truncation_reason"] = reason
+        return info
+
+    def _exceeds_circuit_operation_limit(self, operation_count: int) -> bool:
+        """Return whether the operation-count guard rejects a circuit."""
+        return self.max_circuit_operations is not None and operation_count > self.max_circuit_operations
+
+    def _truncate_oversized_circuit(
+        self,
+        *,
+        action_name: str,
+        step_number: int,
+        started_at: float,
+        operation_count: int,
+    ) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+        """Truncate an episode before storing or featurizing an oversized circuit."""
+        assert self.max_circuit_operations is not None
+        reason = (
+            f"Action '{action_name}' produced {operation_count} operations, "
+            f"exceeding limit of {self.max_circuit_operations}."
+        )
+        self.error_occurred = True
+        self.status = STATUS_CIRCUIT_TOO_LARGE
+        self.error_msg = reason
+        self.valid_actions = [self.action_terminate_index]
+        self.num_steps += 1
+        if self.log_applied_passes:
+            logger.info(
+                "Truncated opt-only action %s: %s after %.3fs; %s",
+                step_number,
+                action_name,
+                time.perf_counter() - started_at,
+                reason,
+            )
+        return create_feature_dict(self.state), 0.0, False, True, self._truncation_info(reason)
 
 
 def _make_basis_only_target() -> Target:

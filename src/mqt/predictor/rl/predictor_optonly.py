@@ -50,6 +50,9 @@ class OptOnlyPredictor:
         excluded_circuit_ids: Collection[str] | None = None,
         test_circuits_csv: Path | str | None = None,
         logger_level: int = logging.INFO,
+        max_steps: int | None = 100,
+        pass_timeout: int | None = None,
+        max_circuit_operations: int | None = 100_000,
     ) -> None:
         """Initialize the opt-only predictor.
 
@@ -61,6 +64,11 @@ class OptOnlyPredictor:
             test_circuits_csv: Optional held-out-circuit CSV. Columns ``circuit_id``
                 and ``circuit_name`` are recognized.
             logger_level: Log level for the shared predictor logger.
+            max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+            pass_timeout: The timeout in seconds for applying a single pass. If None, no timeout is enforced.
+                Defaults to None.
+            max_circuit_operations: The maximum number of operations allowed after applying one pass. If None,
+                no operation-count limit is enforced. Defaults to 100,000.
         """
         logger.setLevel(logger_level)
         excluded_ids = {Path(circuit_id).stem for circuit_id in (excluded_circuit_ids or set())}
@@ -73,6 +81,9 @@ class OptOnlyPredictor:
             path_training_circuits=Path(path_training_circuits) if path_training_circuits else KIT_QASM_DIR,
             baseline_cx_lookup=baseline_cx_lookup,
             excluded_circuit_ids=excluded_ids,
+            max_steps=max_steps,
+            pass_timeout=pass_timeout,
+            max_circuit_operations=max_circuit_operations,
         )
 
     def train_model(
