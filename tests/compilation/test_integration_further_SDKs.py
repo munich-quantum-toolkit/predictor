@@ -24,7 +24,7 @@ from qiskit.transpiler import PassManager
 from qiskit.transpiler.layout import TranspileLayout
 from qiskit.transpiler.passes import CheckMap, GatesInBasis
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_to_qiskit, get_actions_by_pass_type
+from mqt.predictor.rl.actions import CompilationOrigin, PassType, get_actions_by_pass_type
 from mqt.predictor.rl.parsing import (
     bqskit_to_qiskit,
     final_layout_bqskit_to_qiskit,

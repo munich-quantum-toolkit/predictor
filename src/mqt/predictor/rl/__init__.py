@@ -15,9 +15,13 @@ See README.md or go to https://github.com/munich-quantum-toolkit/predictor for m
 from __future__ import annotations
 
 from mqt.predictor.rl.predictor import Predictor, rl_compile
+from mqt.predictor.rl.predictor_optonly import OptOnlyPredictor
 from mqt.predictor.rl.predictorenv import PredictorEnv
+from mqt.predictor.rl.predictorenv_optonly import OptOnlyPredictorEnv
 
 __all__ = [
+    "OptOnlyPredictor",
+    "OptOnlyPredictorEnv",
     "Predictor",
     "PredictorEnv",
     "rl_compile",

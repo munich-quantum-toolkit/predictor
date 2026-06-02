@@ -23,7 +23,7 @@ from mqt.predictor.utils import calc_supermarq_features
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
-    from qiskit.transpiler import Target
+    from qiskit.transpiler import PassManager, Target
     from sklearn.ensemble import RandomForestRegressor
 
 logger = logging.getLogger("mqt-predictor")
@@ -34,6 +34,7 @@ figure_of_merit = Literal[
     "estimated_success_probability",
     "hellinger_distance",
     "estimated_hellinger_distance",
+    "optimization_ratio",
 ]
 
 
@@ -41,6 +42,35 @@ def crit_depth(qc: QuantumCircuit, precision: int = 10) -> float:
     """Calculates the critical depth of a given quantum circuit."""
     supermarq_features = calc_supermarq_features(qc)
     return float(np.round(1 - supermarq_features.critical_depth, precision).item())
+
+
+def optimization_ratio(
+    qc: QuantumCircuit,
+    baseline_cx: float,
+    basis_translation_pass_manager: PassManager,
+    precision: int = 10,
+) -> float:
+    """Calculate the optimization ratio of a circuit against a precomputed baseline.
+
+    Arguments:
+        qc: The quantum circuit after optimization.
+        baseline_cx: The two-qubit gate count of the unoptimized baseline after the same basis translation.
+        basis_translation_pass_manager: The fixed post-optimization basis translation pass manager.
+        precision: The precision of the returned value. Defaults to 10.
+
+    Returns:
+        The ratio ``baseline_cx / optimized_cx``. Returns ``0.0`` for trivial baselines or optimized circuits
+        with no two-qubit gates.
+    """
+    if baseline_cx == 0:
+        return 0.0
+
+    translated_qc = basis_translation_pass_manager.run(qc.copy())
+    optimized_cx = _count_two_qubit_gates(translated_qc)
+    if optimized_cx == 0:
+        return 0.0
+
+    return float(np.round(float(baseline_cx) / optimized_cx, precision).item())
 
 
 def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:
@@ -328,3 +358,12 @@ def estimated_hellinger_distance(
 
     res = model.predict([feature_vector])
     return float(np.round(res, precision).item())
+
+
+def _count_two_qubit_gates(circuit: QuantumCircuit) -> int:
+    """Count two-qubit gates while ignoring directives and non-gate operations."""
+    non_gate_operations = {"barrier", "snapshot", "measure", "reset", "delay"}
+    return sum(
+        len(instruction.qubits) == 2 and instruction.operation.name not in non_gate_operations
+        for instruction in circuit.data
+    )
