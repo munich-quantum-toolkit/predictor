@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from qiskit.transpiler.optimization_metric import OptimizationMetric
 from qiskit.transpiler.passes import (
     Collect1qRuns,
@@ -49,11 +47,6 @@ from qiskit.transpiler.passes import (
 )
 
 from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceIndependentAction, PassType
-
-if TYPE_CHECKING:
-    from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import Target
-
 
 KIT_PASS_NAMES: tuple[str, ...] = (
     "Collect1qRuns",
@@ -180,18 +173,12 @@ def _kit_action(name: str) -> Action:
         "RemoveIdentityEquivalent": lambda: [RemoveIdentityEquivalent()],
         "RemoveResetInZeroState": lambda: [RemoveResetInZeroState()],
         "ResetAfterMeasureSimplification": lambda: [ResetAfterMeasureSimplification()],
+        "HoareOptimizer": lambda: [HoareOptimizer()],
     }
-
-    transpile_pass = _hoare_optimizer_passes if name == "HoareOptimizer" else pass_builders[name]()
 
     return DeviceIndependentAction(
         name,
         CompilationOrigin.QISKIT,
         PassType.OPT,
-        transpile_pass,
+        pass_builders[name](),
     )
-
-
-def _hoare_optimizer_passes(_device: Target) -> list[Task]:
-    """Build HoareOptimizer lazily because it requires the optional z3 package."""
-    return [HoareOptimizer()]
