@@ -60,6 +60,7 @@ class OptOnlyPredictor:
             path_training_circuits: Directory containing QASM files for training.
                 Defaults to the ICSE Qiskit-ML raw corpus checkout.
             baseline_cx_lookup: Optional precomputed baseline counts keyed by circuit stem.
+                Defaults to the Qiskit O0 counts loaded from KIT's ``data/qiskit_baselines.csv``.
             excluded_circuit_ids: Circuit stems excluded from training.
             test_circuits_csv: Optional held-out-circuit CSV. Columns ``circuit_id``
                 and ``circuit_name`` are recognized.

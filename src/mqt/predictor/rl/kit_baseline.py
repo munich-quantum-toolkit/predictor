@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import csv
+import math
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
@@ -34,6 +37,52 @@ TARGET_BASIS: tuple[str, ...] = (
     "barrier",
     "delay",
 )
+
+QISKIT_BASELINE_O0_COLUMN = "baseline_cx_O0"
+
+
+def load_qiskit_baseline_lookup(
+    path: Path | str,
+    baseline_column: str = QISKIT_BASELINE_O0_COLUMN,
+) -> dict[str, float]:
+    """Load precomputed KIT Qiskit baseline counts from a CSV file.
+
+    Args:
+        path: Path to KIT's ``qiskit_baselines.csv`` file.
+        baseline_column: Baseline count column to read. Defaults to Qiskit's
+            optimization level 0 column.
+
+    Returns:
+        A mapping from circuit stem to the precomputed baseline count.
+
+    Raises:
+        ValueError: If the CSV file does not contain the required columns.
+    """
+    csv_path = Path(path)
+    with csv_path.open(newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        fieldnames = set(reader.fieldnames or [])
+        required_columns = {"circuit_id", baseline_column}
+        missing_columns = required_columns - fieldnames
+        if missing_columns:
+            msg = f"{csv_path} is missing required columns: {sorted(missing_columns)}."
+            raise ValueError(msg)
+
+        baseline_lookup: dict[str, float] = {}
+        for row in reader:
+            if "status" in fieldnames and row.get("status") != "ok":
+                continue
+
+            circuit_id = row.get("circuit_id", "")
+            baseline_value = row.get(baseline_column, "")
+            if not circuit_id or not baseline_value:
+                continue
+
+            baseline_cx = float(baseline_value)
+            if math.isfinite(baseline_cx):
+                baseline_lookup[Path(circuit_id).stem] = baseline_cx
+
+    return baseline_lookup
 
 
 def build_translation_pass_manager(target_basis: Iterable[str] = TARGET_BASIS) -> PassManager:

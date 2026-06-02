@@ -24,7 +24,7 @@ from mqt.predictor.reward import optimization_ratio
 from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceIndependentAction, PassType
 from mqt.predictor.rl.actions.kit_actions import kit_optimization_actions
 from mqt.predictor.rl.helper import create_feature_dict, logger
-from mqt.predictor.rl.kit_baseline import TARGET_BASIS, build_translation_pass_manager, count_two_qubit_gates
+from mqt.predictor.rl.kit_baseline import TARGET_BASIS, build_translation_pass_manager, load_qiskit_baseline_lookup
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 KIT_QISKIT_ML_REPO = Path("/Users/patrickhopf/Code/icse-paper-2026-qiskit-ml")
 KIT_QASM_DIR = KIT_QISKIT_ML_REPO / "data" / "raw"
+KIT_QISKIT_BASELINES_CSV = KIT_QISKIT_ML_REPO / "data" / "qiskit_baselines.csv"
 
 STATUS_OK = "ok"
 STATUS_TRIVIAL_BASELINE = "trivial_baseline"
@@ -67,7 +68,8 @@ class OptOnlyPredictorEnv(PredictorEnv):
         Args:
             path_training_circuits: Directory containing training QASM files. Defaults to
                 the ICSE Qiskit-ML raw corpus checkout path.
-            baseline_cx_lookup: Optional precomputed baseline counts keyed by circuit stem.
+            baseline_cx_lookup: Optional precomputed baseline counts keyed by circuit stem. Defaults to the
+                Qiskit O0 counts loaded from KIT's ``data/qiskit_baselines.csv``.
             excluded_circuit_ids: Circuit stems to exclude from training, for example
                 held-out benchmark circuits from ``test_circuits.csv``.
             max_qubits: Maximum qubit count sampled for training.
@@ -80,8 +82,11 @@ class OptOnlyPredictorEnv(PredictorEnv):
         Env.__init__(self)
 
         self.path_training_circuits = Path(path_training_circuits) if path_training_circuits else KIT_QASM_DIR
+        resolved_baseline_cx_lookup = (
+            load_qiskit_baseline_lookup(KIT_QISKIT_BASELINES_CSV) if baseline_cx_lookup is None else baseline_cx_lookup
+        )
         self.baseline_cx_lookup = {
-            Path(circuit_id).stem: float(baseline_cx) for circuit_id, baseline_cx in (baseline_cx_lookup or {}).items()
+            Path(circuit_id).stem: float(baseline_cx) for circuit_id, baseline_cx in resolved_baseline_cx_lookup.items()
         }
         self.excluded_circuit_ids = {Path(circuit_id).stem for circuit_id in (excluded_circuit_ids or set())}
         self.max_qubits = max_qubits
@@ -155,7 +160,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         Env.reset(self, seed=seed)
         if isinstance(qc, QuantumCircuit):
             self.state = qc
-            self.filename = ""
+            self.filename = qc.name
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
             self.filename = str(qc)
@@ -181,13 +186,12 @@ class OptOnlyPredictorEnv(PredictorEnv):
         if circuit_name in self.baseline_cx_lookup:
             self.baseline_cx = self.baseline_cx_lookup[circuit_name]
         else:
-            try:
-                translated = _TRANSLATION_PM.run(self.state.copy())
-                self.baseline_cx = float(count_two_qubit_gates(translated))
-            except Exception as exc:  # noqa: BLE001
-                self.baseline_cx = 0.0
-                self.status = STATUS_BASELINE_ERROR
-                self.error_msg = _short_exception(exc)
+            self.baseline_cx = 0.0
+            self.status = STATUS_BASELINE_ERROR
+            if circuit_name:
+                self.error_msg = f"Missing precomputed KIT Qiskit baseline for circuit '{circuit_name}'."
+            else:
+                self.error_msg = "Missing circuit id for precomputed KIT Qiskit baseline lookup."
 
         if self.baseline_cx == 0 and self.status == STATUS_OK:
             self.status = STATUS_TRIVIAL_BASELINE
