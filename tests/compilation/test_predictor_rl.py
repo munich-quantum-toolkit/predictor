@@ -153,6 +153,7 @@ def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) ->
     assert reward_val == 0
     assert not terminated
     assert truncated
+    assert env.error_occurred
     assert "fake pass failure" in info["truncation_reason"]
 
 
@@ -173,6 +174,7 @@ def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch)
     assert reward_val == 0
     assert not terminated
     assert truncated
+    assert env.error_occurred
     assert "fake pass timeout" in info["truncation_reason"]
 
 
