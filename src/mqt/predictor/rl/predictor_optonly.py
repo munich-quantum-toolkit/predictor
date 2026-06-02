@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import csv
 import logging
+import pickle
+import random
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import torch
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
 from sb3_contrib.common.maskable.utils import get_action_masks
@@ -27,6 +32,10 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
 
     from qiskit import QuantumCircuit
+
+
+_LATEST_CHECKPOINT_FILE = "latest.txt"
+_CHECKPOINT_STATE_SUFFIX = ".state.pkl"
 
 
 class OptOnlyPredictor:
@@ -66,15 +75,41 @@ class OptOnlyPredictor:
             excluded_circuit_ids=excluded_ids,
         )
 
-    def train_model(self, timesteps: int = 200_000, verbose: int = 1, test: bool = False) -> None:
+    def train_model(
+        self,
+        timesteps: int = 200_000,
+        verbose: int = 1,
+        test: bool = False,
+        n_checkpoint: int | None = 10_000,
+        resume: bool = True,
+        seed: int = 0,
+        sampling_seed: int = 10,
+        checkpoint_dir: Path | str | None = None,
+    ) -> None:
         """Train the optimization-only RL model.
 
         Args:
-            timesteps: Number of PPO training timesteps.
+            timesteps: Number of additional PPO training timesteps.
             verbose: Stable-Baselines verbosity.
             test: Use a tiny rollout configuration suitable for tests.
+            n_checkpoint: Save training state after each chunk of this many timesteps.
+                Pass ``None`` to disable periodic checkpoints.
+            resume: Continue from the latest checkpoint when one exists.
+            seed: Random seed for PPO, Python, NumPy, and Torch when starting fresh.
+            sampling_seed: Random seed for training-circuit sampling when starting fresh.
+            checkpoint_dir: Directory for model and training-state checkpoints. Defaults
+                to a model-specific directory next to the final trained model.
+
+        Raises:
+            ValueError: If ``timesteps`` or ``n_checkpoint`` is invalid.
         """
-        set_random_seed(0)
+        if timesteps <= 0:
+            msg = "timesteps must be positive."
+            raise ValueError(msg)
+        if n_checkpoint is not None and n_checkpoint <= 0:
+            msg = "n_checkpoint must be positive or None."
+            raise ValueError(msg)
+
         if test:
             n_steps = max(timesteps, 2)
             n_epochs = 1
@@ -86,19 +121,60 @@ class OptOnlyPredictor:
             batch_size = 64
             progress_bar = True
 
-        model = MaskablePPO(
-            MaskableMultiInputActorCriticPolicy,
-            self.env,
-            verbose=verbose,
-            tensorboard_log=f"./{self.MODEL_NAME}",
-            gamma=0.98,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            n_epochs=n_epochs,
-        )
-        model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
         model_path = get_path_trained_model()
         model_path.mkdir(parents=True, exist_ok=True)
+        resolved_checkpoint_dir = _resolve_checkpoint_dir(model_path, self.MODEL_NAME, checkpoint_dir)
+        resolved_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        checkpoint = _latest_checkpoint(resolved_checkpoint_dir)
+        if resume and checkpoint is not None:
+            model = MaskablePPO.load(checkpoint.model_path, env=self.env, verbose=verbose)
+            checkpoint_status = _restore_training_status(checkpoint.state_path, self.env)
+            seed = int(checkpoint_status.get("seed", seed))
+            sampling_seed = int(checkpoint_status.get("sampling_seed", sampling_seed))
+            reset_num_timesteps = False
+            logger.info("Resuming opt-only RL training from checkpoint %s.", checkpoint.model_path)
+        else:
+            set_random_seed(seed)
+            random.seed(seed)
+            # Stable-Baselines still uses NumPy's global RNG; keep it checkpointable.
+            np.random.seed(seed)  # noqa: NPY002
+            torch.manual_seed(seed)
+            self.env.rng = np.random.default_rng(sampling_seed)
+            model = MaskablePPO(
+                MaskableMultiInputActorCriticPolicy,
+                self.env,
+                verbose=verbose,
+                tensorboard_log=f"./{self.MODEL_NAME}",
+                gamma=0.98,
+                n_steps=n_steps,
+                batch_size=batch_size,
+                n_epochs=n_epochs,
+                seed=seed,
+            )
+            reset_num_timesteps = True
+
+        target_num_timesteps = int(model.num_timesteps) + timesteps
+        while model.num_timesteps < target_num_timesteps:
+            remaining_timesteps = target_num_timesteps - int(model.num_timesteps)
+            chunk_timesteps = remaining_timesteps if n_checkpoint is None else min(n_checkpoint, remaining_timesteps)
+            model.learn(
+                total_timesteps=chunk_timesteps,
+                progress_bar=progress_bar,
+                reset_num_timesteps=reset_num_timesteps,
+            )
+            reset_num_timesteps = False
+
+            if n_checkpoint is not None:
+                _save_checkpoint(
+                    model=model,
+                    env=self.env,
+                    checkpoint_dir=resolved_checkpoint_dir,
+                    model_name=self.MODEL_NAME,
+                    seed=seed,
+                    sampling_seed=sampling_seed,
+                )
+
         model.save(model_path / self.MODEL_NAME)
 
     def compile_as_predicted(self, qc: QuantumCircuit | str | Path) -> tuple[QuantumCircuit, list[str], str]:
@@ -124,6 +200,94 @@ class OptOnlyPredictor:
             obs, _reward_val, terminated, truncated, _info = self.env.step(action)
 
         return self.env.state, used_compilation_passes, self.env.status
+
+
+@dataclass(frozen=True, slots=True)
+class _Checkpoint:
+    """Resolved checkpoint files."""
+
+    model_path: Path
+    state_path: Path
+
+
+def _resolve_checkpoint_dir(model_path: Path, model_name: str, checkpoint_dir: Path | str | None) -> Path:
+    """Resolve the checkpoint directory for opt-only training."""
+    if checkpoint_dir is not None:
+        return Path(checkpoint_dir)
+    return model_path / f"{model_name}_checkpoints"
+
+
+def _checkpoint_stem(model_name: str, num_timesteps: int) -> str:
+    """Return the checkpoint stem for a model timestep."""
+    return f"{model_name}_step_{num_timesteps}"
+
+
+def _save_checkpoint(
+    *,
+    model: MaskablePPO,
+    env: OptOnlyPredictorEnv,
+    checkpoint_dir: Path,
+    model_name: str,
+    seed: int,
+    sampling_seed: int,
+) -> None:
+    """Save the PPO model and matching training status."""
+    checkpoint_stem = _checkpoint_stem(model_name, int(model.num_timesteps))
+    checkpoint_model_path = checkpoint_dir / checkpoint_stem
+    checkpoint_state_path = checkpoint_dir / f"{checkpoint_stem}{_CHECKPOINT_STATE_SUFFIX}"
+
+    model.save(checkpoint_model_path)
+    with checkpoint_state_path.open("wb") as file:
+        pickle.dump(
+            {
+                "num_timesteps": int(model.num_timesteps),
+                "seed": seed,
+                "sampling_seed": sampling_seed,
+                "env": env.snapshot_training_state(),
+                "python_random_state": random.getstate(),
+                # Stable-Baselines still uses NumPy's global RNG; keep it checkpointable.
+                "numpy_random_state": np.random.get_state(),  # noqa: NPY002
+                "torch_random_state": torch.random.get_rng_state(),
+            },
+            file,
+        )
+
+    latest_checkpoint_path = checkpoint_dir / _LATEST_CHECKPOINT_FILE
+    latest_checkpoint_path.write_text(
+        f"{checkpoint_model_path.with_suffix('.zip').name}\n{checkpoint_state_path.name}\n",
+        encoding="utf-8",
+    )
+    logger.info("Saved opt-only RL checkpoint at %s.", checkpoint_model_path.with_suffix(".zip"))
+
+
+def _latest_checkpoint(checkpoint_dir: Path) -> _Checkpoint | None:
+    """Return the latest checkpoint recorded by the marker file."""
+    latest_checkpoint_path = checkpoint_dir / _LATEST_CHECKPOINT_FILE
+    if not latest_checkpoint_path.is_file():
+        return None
+
+    checkpoint_files = latest_checkpoint_path.read_text(encoding="utf-8").splitlines()
+    if len(checkpoint_files) < 2:
+        return None
+
+    model_path = checkpoint_dir / checkpoint_files[0]
+    state_path = checkpoint_dir / checkpoint_files[1]
+    if not model_path.is_file() or not state_path.is_file():
+        return None
+    return _Checkpoint(model_path=model_path, state_path=state_path)
+
+
+def _restore_training_status(state_path: Path, env: OptOnlyPredictorEnv) -> dict[str, Any]:
+    """Restore random states and the optimization-only environment."""
+    with state_path.open("rb") as file:
+        status = pickle.load(file)
+
+    env.restore_training_state(status["env"])
+    random.setstate(status["python_random_state"])
+    # Stable-Baselines still uses NumPy's global RNG; keep it checkpointable.
+    np.random.set_state(status["numpy_random_state"])  # noqa: NPY002
+    torch.random.set_rng_state(status["torch_random_state"])
+    return status
 
 
 def load_optonly_model(model_name: str = OptOnlyPredictor.MODEL_NAME) -> MaskablePPO:

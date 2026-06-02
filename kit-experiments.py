@@ -17,4 +17,4 @@ pred = OptOnlyPredictor(
     test_circuits_csv=Path("/Users/patrickhopf/Code/icse-paper-2026-qiskit-ml/data/archive/tables/test_circuits.csv"),
 )
 
-pred.train_model(timesteps=1000, test=True)
+pred.train_model(timesteps=10_000)

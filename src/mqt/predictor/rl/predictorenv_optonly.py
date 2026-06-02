@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from gymnasium import Env
@@ -180,6 +180,40 @@ class OptOnlyPredictorEnv(PredictorEnv):
 
         self.valid_actions = self.determine_valid_actions_for_state()
         return create_feature_dict(self.state), {"status": self.status}
+
+    def snapshot_training_state(self) -> dict[str, Any]:
+        """Create a serializable snapshot of the environment training state."""
+        return {
+            "rng_state": self.rng.bit_generator.state,
+            "state": self.state.copy(),
+            "filename": self.filename,
+            "num_steps": self.num_steps,
+            "used_actions": self.used_actions,
+            "valid_actions": self.valid_actions,
+            "baseline_cx": self.baseline_cx,
+            "layout": self.layout,
+            "error_occurred": self.error_occurred,
+            "status": self.status,
+            "error_msg": self.error_msg,
+            "num_qubits_uncompiled_circuit": self.num_qubits_uncompiled_circuit,
+            "has_parameterized_gates": self.has_parameterized_gates,
+        }
+
+    def restore_training_state(self, snapshot: Mapping[str, Any]) -> None:
+        """Restore a snapshot created with :meth:`snapshot_training_state`."""
+        self.rng.bit_generator.state = snapshot["rng_state"]
+        self.state = cast("QuantumCircuit", snapshot["state"]).copy()
+        self.filename = str(snapshot["filename"])
+        self.num_steps = int(snapshot["num_steps"])
+        self.used_actions = list(snapshot["used_actions"])
+        self.valid_actions = list(snapshot["valid_actions"])
+        self.baseline_cx = float(snapshot["baseline_cx"])
+        self.layout = snapshot["layout"]
+        self.error_occurred = bool(snapshot["error_occurred"])
+        self.status = str(snapshot["status"])
+        self.error_msg = str(snapshot["error_msg"])
+        self.num_qubits_uncompiled_circuit = int(snapshot["num_qubits_uncompiled_circuit"])
+        self.has_parameterized_gates = bool(snapshot["has_parameterized_gates"])
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Apply an optimization action and return the Gymnasium step tuple.
