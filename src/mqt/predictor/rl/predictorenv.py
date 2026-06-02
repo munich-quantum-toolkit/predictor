@@ -216,6 +216,7 @@ class PredictorEnv(Env):
             altered_qc = self._apply_action_with_timeout(action)
         except Exception as exc:
             logger.exception("Error applying action '%s'", action_name)
+            self.error_occurred = True
             self.num_steps += 1
             return (
                 create_feature_dict(self.state),
