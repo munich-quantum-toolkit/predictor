@@ -41,7 +41,7 @@ _CHECKPOINT_STATE_SUFFIX = ".state.pkl"
 class OptOnlyPredictor:
     """Train and use the RL predictor under KIT's optimization-only protocol."""
 
-    MODEL_NAME = "model_optimization_ratio_alltoall_S"
+    MODEL_NAME = "model_cx_relative_reduction_alltoall_S"
 
     def __init__(
         self,
@@ -59,8 +59,9 @@ class OptOnlyPredictor:
         Args:
             path_training_circuits: Directory containing QASM files for training.
                 Defaults to the ICSE Qiskit-ML raw corpus checkout.
-            baseline_cx_lookup: Optional precomputed baseline counts keyed by circuit stem.
-                Defaults to the Qiskit O0 counts loaded from KIT's ``data/qiskit_baselines.csv``.
+            baseline_cx_lookup: Optional precomputed reference counts keyed by circuit stem.
+                If omitted, the environment computes the reference count from each input circuit after fixed
+                basis translation.
             excluded_circuit_ids: Circuit stems excluded from training.
             test_circuits_csv: Optional held-out-circuit CSV. Columns ``circuit_id``
                 and ``circuit_name`` are recognized.

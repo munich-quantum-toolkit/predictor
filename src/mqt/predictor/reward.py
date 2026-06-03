@@ -35,6 +35,7 @@ figure_of_merit = Literal[
     "hellinger_distance",
     "estimated_hellinger_distance",
     "optimization_ratio",
+    "cx_relative_reduction",
 ]
 
 
@@ -71,6 +72,32 @@ def optimization_ratio(
         return 0.0
 
     return float(np.round(float(baseline_cx) / optimized_cx, precision).item())
+
+
+def cx_relative_reduction(
+    qc: QuantumCircuit,
+    reference_cx: float,
+    basis_translation_pass_manager: PassManager,
+    precision: int = 10,
+) -> float:
+    """Calculate the relative two-qubit-gate reduction against a reference circuit.
+
+    Arguments:
+        qc: The quantum circuit after optimization.
+        reference_cx: The two-qubit gate count of the reference circuit after the same basis translation.
+        basis_translation_pass_manager: The fixed post-optimization basis translation pass manager.
+        precision: The precision of the returned value. Defaults to 10.
+
+    Returns:
+        The normalized reduction ``(reference_cx - optimized_cx) / reference_cx``. Negative values indicate that
+        optimization increased the two-qubit-gate count. Returns ``0.0`` for trivial references.
+    """
+    if reference_cx == 0:
+        return 0.0
+
+    translated_qc = basis_translation_pass_manager.run(qc.copy())
+    optimized_cx = _count_two_qubit_gates(translated_qc)
+    return float(np.round((float(reference_cx) - optimized_cx) / float(reference_cx), precision).item())
 
 
 def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:

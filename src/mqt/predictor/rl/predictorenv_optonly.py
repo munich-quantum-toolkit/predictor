@@ -20,11 +20,11 @@ from gymnasium.spaces import Box, Dict, Discrete
 from qiskit import QuantumCircuit
 from qiskit.transpiler import Target
 
-from mqt.predictor.reward import optimization_ratio
+from mqt.predictor.reward import cx_relative_reduction
 from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceIndependentAction, PassType
 from mqt.predictor.rl.actions.kit_actions import kit_optimization_actions
 from mqt.predictor.rl.helper import create_feature_dict, logger
-from mqt.predictor.rl.kit_baseline import TARGET_BASIS, build_translation_pass_manager, load_qiskit_baseline_lookup
+from mqt.predictor.rl.kit_baseline import TARGET_BASIS, build_translation_pass_manager, count_two_qubit_gates
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
 KIT_QISKIT_ML_REPO = Path("/Users/patrickhopf/Code/icse-paper-2026-qiskit-ml")
 KIT_QASM_DIR = KIT_QISKIT_ML_REPO / "data" / "raw"
-KIT_QISKIT_BASELINES_CSV = KIT_QISKIT_ML_REPO / "data" / "qiskit_baselines.csv"
 
 STATUS_OK = "ok"
 STATUS_TRIVIAL_BASELINE = "trivial_baseline"
@@ -49,8 +48,8 @@ class OptOnlyPredictorEnv(PredictorEnv):
 
     The environment exposes exactly KIT's concrete optimization pass names as
     binary choices: each pass can be selected once, then the policy terminates.
-    Rewards are computed as ``baseline_cx / optimized_cx`` after applying the
-    same fixed post-optimization translation pass manager to both circuits.
+    Rewards are computed as ``(reference_cx - optimized_cx) / reference_cx`` after applying the
+    same fixed post-optimization translation pass manager to the original and optimized circuits.
     """
 
     def __init__(
@@ -68,8 +67,8 @@ class OptOnlyPredictorEnv(PredictorEnv):
         Args:
             path_training_circuits: Directory containing training QASM files. Defaults to
                 the ICSE Qiskit-ML raw corpus checkout path.
-            baseline_cx_lookup: Optional precomputed baseline counts keyed by circuit stem. Defaults to the
-                Qiskit O0 counts loaded from KIT's ``data/qiskit_baselines.csv``.
+            baseline_cx_lookup: Optional precomputed reference counts keyed by circuit stem. If omitted, the
+                reference count is computed from the input circuit after the fixed basis translation.
             excluded_circuit_ids: Circuit stems to exclude from training, for example
                 held-out benchmark circuits from ``test_circuits.csv``.
             max_qubits: Maximum qubit count sampled for training.
@@ -82,11 +81,8 @@ class OptOnlyPredictorEnv(PredictorEnv):
         Env.__init__(self)
 
         self.path_training_circuits = Path(path_training_circuits) if path_training_circuits else KIT_QASM_DIR
-        resolved_baseline_cx_lookup = (
-            load_qiskit_baseline_lookup(KIT_QISKIT_BASELINES_CSV) if baseline_cx_lookup is None else baseline_cx_lookup
-        )
         self.baseline_cx_lookup = {
-            Path(circuit_id).stem: float(baseline_cx) for circuit_id, baseline_cx in resolved_baseline_cx_lookup.items()
+            Path(circuit_id).stem: float(baseline_cx) for circuit_id, baseline_cx in (baseline_cx_lookup or {}).items()
         }
         self.excluded_circuit_ids = {Path(circuit_id).stem for circuit_id in (excluded_circuit_ids or set())}
         self.max_qubits = max_qubits
@@ -133,7 +129,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         self.filename = ""
         self.num_steps = 0
         self.num_qubits_uncompiled_circuit = 0
-        self.reward_function = "optimization_ratio"
+        self.reward_function = "cx_relative_reduction"
         self.baseline_cx = 0.0
         self.error_occurred = False
         self.status = STATUS_OK
@@ -186,12 +182,12 @@ class OptOnlyPredictorEnv(PredictorEnv):
         if circuit_name in self.baseline_cx_lookup:
             self.baseline_cx = self.baseline_cx_lookup[circuit_name]
         else:
-            self.baseline_cx = 0.0
-            self.status = STATUS_BASELINE_ERROR
-            if circuit_name:
-                self.error_msg = f"Missing precomputed KIT Qiskit baseline for circuit '{circuit_name}'."
-            else:
-                self.error_msg = "Missing circuit id for precomputed KIT Qiskit baseline lookup."
+            try:
+                self.baseline_cx = float(count_two_qubit_gates(_TRANSLATION_PM.run(self.state.copy())))
+            except Exception as exc:  # noqa: BLE001
+                self.baseline_cx = 0.0
+                self.status = STATUS_BASELINE_ERROR
+                self.error_msg = f"Could not compute reference CX count: {_short_exception(exc)}"
 
         if self.baseline_cx == 0 and self.status == STATUS_OK:
             self.status = STATUS_TRIVIAL_BASELINE
@@ -381,7 +377,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
             return 0.0
 
         try:
-            return optimization_ratio(self.state, self.baseline_cx, _TRANSLATION_PM)
+            return cx_relative_reduction(self.state, self.baseline_cx, _TRANSLATION_PM)
         except Exception as exc:  # noqa: BLE001
             self.status = STATUS_TRANSLATION_ERROR
             self.error_msg = _short_exception(exc)
