@@ -130,14 +130,16 @@ class OptOnlyPredictor:
             batch_size = n_steps
             progress_bar = False
         else:
-            n_steps = 2048
+            n_steps = max(min(n_checkpoint if n_checkpoint is not None else timesteps, 2048), 2)
             n_epochs = 10
-            batch_size = 64
+            batch_size = min(64, n_steps)
             progress_bar = True
 
         model_path = get_path_trained_model()
         model_path.mkdir(parents=True, exist_ok=True)
-        resolved_checkpoint_dir = _resolve_checkpoint_dir(model_path, self.MODEL_NAME, checkpoint_dir)
+        resolved_checkpoint_dir = (
+            Path(checkpoint_dir) if checkpoint_dir is not None else model_path / f"{self.MODEL_NAME}_checkpoints"
+        )
         resolved_checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.env.log_applied_passes = log_applied_passes
 
@@ -225,18 +227,6 @@ class _Checkpoint:
     state_path: Path
 
 
-def _resolve_checkpoint_dir(model_path: Path, model_name: str, checkpoint_dir: Path | str | None) -> Path:
-    """Resolve the checkpoint directory for opt-only training."""
-    if checkpoint_dir is not None:
-        return Path(checkpoint_dir)
-    return model_path / f"{model_name}_checkpoints"
-
-
-def _checkpoint_stem(model_name: str, num_timesteps: int) -> str:
-    """Return the checkpoint stem for a model timestep."""
-    return f"{model_name}_step_{num_timesteps}"
-
-
 def _save_checkpoint(
     *,
     model: MaskablePPO,
@@ -247,7 +237,7 @@ def _save_checkpoint(
     sampling_seed: int,
 ) -> None:
     """Save the PPO model and matching training status."""
-    checkpoint_stem = _checkpoint_stem(model_name, int(model.num_timesteps))
+    checkpoint_stem = f"{model_name}_step_{int(model.num_timesteps)}"
     checkpoint_model_path = checkpoint_dir / checkpoint_stem
     checkpoint_state_path = checkpoint_dir / f"{checkpoint_stem}{_CHECKPOINT_STATE_SUFFIX}"
 

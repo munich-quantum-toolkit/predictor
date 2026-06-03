@@ -18,4 +18,9 @@ pred = OptOnlyPredictor(
     pass_timeout=60,
 )
 
-pred.train_model(timesteps=1000, n_checkpoint=100, resume=True)
+pred.train_model(
+    timesteps=100_000,
+    n_checkpoint=500,
+    resume=True,
+    checkpoint_dir=Path("/Users/patrickhopf/Code/mqt/mqt-predictor/model_optimization_ratio_alltoall_S_checkpoints"),
+)
