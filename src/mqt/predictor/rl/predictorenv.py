@@ -194,7 +194,7 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
-        # in case a Qiskit.QuantumCircuit has `unitary` or `u`` gates in it, decompose them (otherwise qiskit will throw an error when applying BasisTranslator)
+        # in case a Qiskit.QuantumCircuit has `unitary` gates in it, decompose them (otherwise qiskit will throw an error when applying BasisTranslator)
         # TODO: will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/668
         if self.state.count_ops().get("unitary"):
             self.state = self.state.decompose(gates_to_decompose="unitary")
@@ -530,17 +530,20 @@ class PredictorEnv(Env):
             actions.extend(self.actions_layout_indices)
             actions.extend(self.actions_opt_indices)
 
-        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
+        # Possible state because optimization can destroy the native gate set
+        # State is not explicitly *depicted* in original paper
         if not synthesized and laid_out and not routed:
             actions.extend(self.actions_synthesis_indices)
             actions.extend(self.actions_routing_indices)
             actions.extend(self.actions_opt_indices)
 
-        # Not *depicted* in paper; necessary because of layout-only passes
+        # Possible state because there are layout-only passes
+        # State is not explicitly *depicted* in original paper
         if synthesized and laid_out and not routed:
             actions.extend(self.actions_routing_indices)
 
-        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
+        # Possible state because routing may add SWAP gates which are not necessarily native gates
+        # State is not explicitly *depicted* in original paper
         if not synthesized and laid_out and routed:
             actions.extend(self.actions_synthesis_indices)
             actions.extend(self.actions_opt_indices)
