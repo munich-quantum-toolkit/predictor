@@ -16,12 +16,14 @@ from pathlib import Path
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
+from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Target
+from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
+from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
@@ -84,10 +86,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    predictor.train_model(
-        timesteps=100,
-        test=True,
-    )
+    predictor.train_model(timesteps=512, test=True, seed=0)
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
@@ -118,6 +117,72 @@ def test_warning_for_unidirectional_device() -> None:
     msg = "The connectivity of the device 'uni-directional device' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
     with pytest.warns(UserWarning, match=re.escape(msg)):
         Predictor(figure_of_merit="expected_fidelity", device=target)
+
+
+def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
+    """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
+    device = get_device("ibm_falcon_27")
+    env = predictorenv_module.PredictorEnv(device=device)
+    qc = QuantumCircuit(3)
+    qc.h(0)
+    qc.cx(0, 2)
+    env.reset(qc)
+
+    env.layout = TranspileLayout(
+        initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
+        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
+        final_layout=None,
+        _output_qubit_list=qc.qubits,
+        _input_qubit_count=qc.num_qubits,
+    )
+
+    valid_actions = env.determine_valid_actions_for_state()
+
+    assert set(env.actions_synthesis_indices).issubset(valid_actions)
+    assert set(env.actions_routing_indices).issubset(valid_actions)
+    assert set(env.actions_opt_indices).issubset(valid_actions)
+    assert env.action_terminate_index not in valid_actions
+
+
+def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that Qiskit routing actions update the tracked final layout."""
+    device = get_device("ibm_falcon_27")
+    env = predictorenv_module.PredictorEnv(device=device)
+    qc = QuantumCircuit(2)
+    qc.cx(0, 1)
+    env.reset(qc)
+
+    initial_layout = Layout({qubit: index for index, qubit in enumerate(qc.qubits)})
+    final_layout = Layout({qc.qubits[0]: 1, qc.qubits[1]: 0})
+    env.layout = TranspileLayout(
+        initial_layout=initial_layout,
+        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
+        final_layout=None,
+        _output_qubit_list=qc.qubits,
+        _input_qubit_count=qc.num_qubits,
+    )
+
+    class FakePassManager:
+        """Minimal PassManager replacement that exposes a final layout."""
+
+        def __init__(self, _passes: object) -> None:
+            self.property_set = {"final_layout": final_layout}
+
+        def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
+            return circuit
+
+    monkeypatch.setattr(predictorenv_module, "PassManager", FakePassManager)
+    action = DeviceIndependentAction(
+        name="SyntheticQiskitRouting",
+        pass_type=PassType.ROUTING,
+        transpile_pass=[],
+        origin=CompilationOrigin.QISKIT,
+    )
+
+    altered_qc = env._apply_qiskit_action(action, env.actions_routing_indices[0])  # noqa: SLF001
+
+    assert altered_qc is env.state
+    assert env.layout.final_layout is final_layout
 
 
 def test_register_action() -> None:

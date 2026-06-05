@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🎨 Improve the RL state machine logic ([#677]) ([**@flowerthrower**])
 - 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679]) ([**@flowerthrower**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
 - 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
@@ -47,6 +48,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
