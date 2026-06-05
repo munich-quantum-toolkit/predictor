@@ -53,3 +53,7 @@ venv.bak/
 .mypy_cache/
 
 src/**/_version.py
+events.out.*
+*.state.pkl
+latest.txt
+results/*
