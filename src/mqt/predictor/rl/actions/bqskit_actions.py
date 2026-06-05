@@ -88,6 +88,9 @@ def bqskit_optimization_action() -> Action:
         CompilationOrigin.BQSKIT,
         PassType.OPT,
         transpile_pass=lambda circuit: bqskit_compile(circuit, **_bqskit_compilation_options()),
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=False,
     )
 
 
