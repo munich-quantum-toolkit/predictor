@@ -41,7 +41,7 @@ class PassType(str, Enum):
     TERMINATE = "terminate"
 
 
-`@dataclass`
+@dataclass
 class Action:
     """Base class for all actions in the reinforcement learning environment.
 
@@ -64,12 +64,12 @@ class Action:
     preserves_synthesis: bool = False
 
 
-`@dataclass`
+@dataclass
 class DeviceIndependentAction(Action):
     """Action that represents a static compilation pass that can be applied directly."""
 
 
-`@dataclass`
+@dataclass
 class DeviceDependentAction(Action):
     """Device-specific action that depends on a target device.
 

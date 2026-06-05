@@ -328,7 +328,8 @@ def _postprocess_layout_action(
         post_layout = property_set["post_layout"]
         if post_layout:
             assert layout is not None
-            altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, layout)
+            altered_qc, apply_layout = postprocess_vf2postlayout(altered_qc, post_layout, layout)
+            property_set = apply_layout.property_set
     elif action.name == "VF2Layout":
         if property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
             logger.warning(
