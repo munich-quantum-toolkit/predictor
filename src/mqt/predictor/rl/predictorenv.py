@@ -407,59 +407,6 @@ class PredictorEnv(Env):
                     return False
         return True
 
-    def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
-        """True if every logical qubit in the circuit has a physical assignment."""
-        if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
-            layout = layout.final_layout or layout.initial_layout
-
-        v2p = layout.get_virtual_bits()
-        return all(q in v2p for q in circuit.qubits)
-
-    def is_circuit_synthesized(self, circuit: QuantumCircuit) -> bool:
-        """Check if the circuit uses only native gates of the device.
-
-        Verifies that every gate name in the circuit is present in
-        ``device.operation_names``, equivalent to the ``GatesInBasis`` pass.
-
-        Args:
-            circuit: QuantumCircuit to check.
-
-        Returns:
-            True if all gates are native to the device.
-        """
-        native_names = set(self.device.operation_names)
-        return all(
-            instr.operation.name in native_names or instr.operation.name in ("barrier", "measure")
-            for instr in circuit.data
-        )
-
-    def is_circuit_routed(self, circuit: QuantumCircuit, coupling_map: CouplingMap) -> bool:
-        """Check if a circuit is fully routed to the device, including directionality.
-
-        A circuit is considered routed if all two-qubit gates are on qubit pairs
-        that exist as directed edges in the device coupling map.
-
-        After a layout pass the circuit's qubits are already physical qubits, so
-        ``circuit.find_bit(q).index`` gives the physical index directly —
-        consistent with how ``reward.py`` looks up gate calibrations.
-
-        Args:
-            circuit: QuantumCircuit to check.
-            coupling_map: CouplingMap of the target device.
-
-        Returns:
-            True if fully routed, False otherwise.
-        """
-        directed_edges = set(coupling_map.get_edges())
-        for instr in circuit.data:
-            if len(instr.qubits) == 2:
-                q0 = circuit.find_bit(instr.qubits[0]).index
-                q1 = circuit.find_bit(instr.qubits[1]).index
-                if (q0, q1) not in directed_edges:
-                    return False
-        return True
-
     def determine_valid_actions_for_state(self) -> list[int]:
         """Determine valid actions based on circuit state: synthesized, mapped, routed."""
         synthesized = self.is_circuit_synthesized(self.state)

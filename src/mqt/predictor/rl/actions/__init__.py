@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Actions available in the reinforcement learning environment."""
+"""Actions (i.e. compiler passes) available in the reinforcement learning environment."""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ class CompilationOrigin(str, Enum):
     QISKIT = "qiskit"
     TKET = "tket"
     BQSKIT = "bqskit"
-    GENERAL = "general"
 
 
 class PassType(str, Enum):
@@ -47,7 +46,7 @@ class Action:
     """Base class for all actions in the reinforcement learning environment."""
 
     name: str
-    origin: CompilationOrigin
+    origin: CompilationOrigin | None
     pass_type: PassType
     transpile_pass: Any
 
@@ -119,7 +118,7 @@ for _action in (
     _bqskit_actions.bqskit_synthesis_action(),
     DeviceIndependentAction(
         "terminate",
-        CompilationOrigin.GENERAL,
+        None,
         PassType.TERMINATE,
         transpile_pass=[],
     ),

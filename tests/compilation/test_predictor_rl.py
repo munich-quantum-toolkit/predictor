@@ -32,9 +32,7 @@ from mqt.predictor.rl.actions import (
     register_action,
     remove_action,
 )
-from mqt.predictor.rl.actions import qiskit_actions as qiskit_actions_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
-from mqt.predictor.rl.predictorenv import PredictorEnv
 
 
 def test_predictor_env_reset_from_string() -> None:
