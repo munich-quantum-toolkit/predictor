@@ -179,8 +179,9 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         transpile_pass=[],
         origin=CompilationOrigin.QISKIT,
     )
-    env.action_set[0] = action
-    altered_qc = env.apply_action(action_index=0)
+    routing_action_index = next(iter(env.actions_routing_indices))
+    env.action_set[routing_action_index] = action
+    altered_qc = env.apply_action(action_index=routing_action_index)
 
     assert altered_qc is env.state
     assert env.layout.final_layout is final_layout
