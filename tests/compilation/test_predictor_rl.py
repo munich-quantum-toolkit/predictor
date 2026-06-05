@@ -23,6 +23,7 @@ from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLa
 from qiskit.transpiler.passes import GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
+from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
@@ -87,7 +88,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    predictor.train_model(timesteps=512, test=True)
+    predictor.train_model(timesteps=512, test=True, seed=0)
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
@@ -123,7 +124,7 @@ def test_warning_for_unidirectional_device() -> None:
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
     """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
     device = get_device("ibm_falcon_27")
-    env = PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(3)
     qc.h(0)
     qc.cx(0, 2)
@@ -148,7 +149,7 @@ def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -
 def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that Qiskit routing actions update the tracked final layout."""
     device = get_device("ibm_falcon_27")
-    env = PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(2)
     qc.cx(0, 1)
     env.reset(qc)
@@ -172,7 +173,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
             return circuit
 
-    monkeypatch.setattr(qiskit_actions_module, "PassManager", FakePassManager)
+    monkeypatch.setattr(predictorenv_module, "PassManager", FakePassManager)
     action = DeviceIndependentAction(
         name="SyntheticQiskitRouting",
         pass_type=PassType.ROUTING,
