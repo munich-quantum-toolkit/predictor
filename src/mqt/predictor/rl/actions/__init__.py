@@ -49,6 +49,9 @@ class Action:
     origin: CompilationOrigin | None
     pass_type: PassType
     transpile_pass: Any
+    preserves_layout: bool = False
+    preserves_routing: bool = False
+    preserves_synthesis: bool = False
 
 
 @dataclass

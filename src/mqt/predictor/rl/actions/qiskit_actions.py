@@ -320,7 +320,7 @@ def _postprocess_layout_action(
     property_set: PropertySet,
     altered_qc: QuantumCircuit,
     layout: TranspileLayout | None,
-    input_qubit_count: int,
+    input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Update Qiskit's layout metadata after passes that can create or alter layouts."""
     if action.name == "VF2PostLayout":
@@ -345,8 +345,8 @@ def _postprocess_layout_action(
             initial_layout=property_set["layout"],
             input_qubit_mapping=property_set["original_qubit_indices"],
             final_layout=property_set["final_layout"],
-            _output_qubit_list=altered_qc.qubits,
             _input_qubit_count=input_qubit_count,
+            _output_qubit_list=altered_qc.qubits,
         )
     return altered_qc, layout
 
@@ -356,7 +356,7 @@ def run_qiskit_action(
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    input_qubit_count: int,
+    input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     passes = _qiskit_passes(action, device, layout)
@@ -374,6 +374,7 @@ def run_qiskit_action(
         layout.final_layout = pm.property_set["final_layout"]
 
     if altered_qc.count_ops().get("unitary"):
+        # Custom "unitary" gates can not be processed further by other passes
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
 
     return altered_qc, layout

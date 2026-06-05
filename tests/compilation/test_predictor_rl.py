@@ -29,6 +29,7 @@ from mqt.predictor.rl.actions import (
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
     register_action,
     remove_action,
 )
@@ -171,15 +172,15 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
             return circuit
 
-    monkeypatch.setattr(predictorenv_module, "PassManager", FakePassManager)
+    monkeypatch.setattr(qiskit_actions, "PassManager", FakePassManager)
     action = DeviceIndependentAction(
         name="SyntheticQiskitRouting",
         pass_type=PassType.ROUTING,
         transpile_pass=[],
         origin=CompilationOrigin.QISKIT,
     )
-
-    altered_qc = env._apply_qiskit_action(action)  # noqa: SLF001
+    env.action_set[0] = action
+    altered_qc = env.apply_action(action_index=0)
 
     assert altered_qc is env.state
     assert env.layout.final_layout is final_layout
