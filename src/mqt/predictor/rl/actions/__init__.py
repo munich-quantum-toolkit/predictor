@@ -41,9 +41,19 @@ class PassType(str, Enum):
     TERMINATE = "terminate"
 
 
-@dataclass
+`@dataclass`
 class Action:
-    """Base class for all actions in the reinforcement learning environment."""
+    """Base class for all actions in the reinforcement learning environment.
+
+    Attributes:
+        name: Unique action name.
+        origin: SDK origin of the action; ``None`` for terminate.
+        pass_type: Category of pass represented by this action.
+        transpile_pass: Pass object(s) executed for this action.
+        preserves_layout: Whether action preserves existing layout.
+        preserves_routing: Whether action preserves existing routing.
+        preserves_synthesis: Whether action preserves synthesis state.
+    """
 
     name: str
     origin: CompilationOrigin | None
@@ -54,18 +64,21 @@ class Action:
     preserves_synthesis: bool = False
 
 
-@dataclass
+`@dataclass`
 class DeviceIndependentAction(Action):
     """Action that represents a static compilation pass that can be applied directly."""
 
 
-@dataclass
+`@dataclass`
 class DeviceDependentAction(Action):
-    """Action that represents a device-specific compilation pass that can be applied to a specific device."""
+    """Device-specific action that depends on a target device.
+
+    Attributes:
+        do_while: Optional do-while predicate for pass-manager execution.
+    """
 
     transpile_pass: Any
     do_while: Callable[[PropertySet], bool] | None = None
-
 
 _ACTIONS: dict[str, Action] = {}
 
@@ -100,7 +113,7 @@ def remove_action(name: str) -> None:
     """
     if name not in _ACTIONS:
         msg = f"No action with name {name} is registered."
-        raise KeyError(msg)
+        raise ValueError(msg)
     del _ACTIONS[name]
 
 
