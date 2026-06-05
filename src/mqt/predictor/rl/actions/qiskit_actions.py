@@ -353,3 +353,9 @@ def run_qiskit_action(
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
 
     return altered_qc, layout
+
+
+def is_qiskit_action_available(action: Action, device: Target) -> bool:
+    """Return whether a Qiskit action is available for the current device."""
+    # Only allow VF2PostLayout if "ibm" is in the device name # TODO: Why?
+    return action.name != "VF2PostLayout" or "ibm" in device.description
