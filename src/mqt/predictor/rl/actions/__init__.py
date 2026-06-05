@@ -71,7 +71,13 @@ _ACTIONS: dict[str, Action] = {}
 
 
 def register_action(action: Action) -> Action:
-    """Registers a new action in the global actions registry.
+    """Registers a new Action in the global _ACTIONS registry.
+
+    Args:
+        action: Action to register.
+
+    Returns:
+        The registered Action.
 
     Raises:
         ValueError: If an action with the same name is already registered.
@@ -84,10 +90,13 @@ def register_action(action: Action) -> Action:
 
 
 def remove_action(name: str) -> None:
-    """Removes an action from the global actions registry by name.
+    """Removes an Action from the global _ACTIONS registry by name.
+
+    Args:
+        name: Name of the Action to remove.
 
     Raises:
-        ValueError: If no action with the given name is registered.
+        KeyError: If no action with the given name is registered.
     """
     if name not in _ACTIONS:
         msg = f"No action with name {name} is registered."
@@ -96,7 +105,11 @@ def remove_action(name: str) -> None:
 
 
 def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
-    """Returns a dictionary mapping each PassType to a list of Actions of that type."""
+    """Groups registered Actions from the global _ACTIONS registry by PassType.
+
+    Returns:
+        A dictionary mapping each PassType to the list of registered Actions of that type.
+    """
     result: dict[PassType, list[Action]] = defaultdict(list)
     for action in _ACTIONS.values():
         result[action.pass_type].append(action)
