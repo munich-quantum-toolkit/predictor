@@ -80,6 +80,7 @@ class DeviceDependentAction(Action):
     transpile_pass: Any
     do_while: Callable[[PropertySet], bool] | None = None
 
+
 _ACTIONS: dict[str, Action] = {}
 
 
