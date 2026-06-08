@@ -257,7 +257,7 @@ class PredictorEnv(Env):
         self.num_steps = 0
         self.used_actions = []
 
-        self.layout = None
+        self.layout = self.is_circuit_laid_out(self.state, self.layout) if self.layout else None
 
         self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
@@ -313,7 +313,7 @@ class PredictorEnv(Env):
     def apply_action(self, action_index: int) -> QuantumCircuit:
         """Applies the given action to the current state and returns the altered state.
 
-        Arguments:
+        Args:
             action_index: The index of the action to be applied, which must be in the action set.
 
         Returns:
