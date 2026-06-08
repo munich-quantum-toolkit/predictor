@@ -46,6 +46,57 @@ def _is_available(env: PredictorEnv, idx: int) -> bool:
     return env.action_masks()[idx]
 
 
+def _lay_out(circuit: QuantumCircuit, target: Target) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Apply a trivial Qiskit layout to the circuit."""
+    coupling_map = target.build_coupling_map()
+    layout_pm = PassManager([
+        TrivialLayout(coupling_map),
+        FullAncillaAllocation(coupling_map),
+        EnlargeWithAncilla(),
+        ApplyLayout(),
+    ])
+    laid_out = layout_pm.run(circuit.copy())
+    layout = TranspileLayout(
+        initial_layout=layout_pm.property_set["layout"],
+        input_qubit_mapping=dict(layout_pm.property_set["original_qubit_indices"]),
+        final_layout=layout_pm.property_set.get("final_layout"),
+        _output_qubit_list=laid_out.qubits,
+        _input_qubit_count=circuit.num_qubits,
+    )
+    return laid_out, layout
+
+
+def _route(circuit: QuantumCircuit, layout: TranspileLayout, target: Target) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Route the laid-out circuit with SabreSwap."""
+    coupling_map = target.build_coupling_map()
+    routing_pm = PassManager([SabreSwap(coupling_map=coupling_map)])
+    routed = routing_pm.run(circuit.copy())
+    routed_layout = TranspileLayout(
+        initial_layout=layout.initial_layout,
+        input_qubit_mapping=dict(layout.input_qubit_mapping),
+        final_layout=routing_pm.property_set.get("final_layout"),
+        _output_qubit_list=routed.qubits,
+        _input_qubit_count=len(layout.input_qubit_mapping),
+    )
+    return routed, routed_layout
+
+
+def _synthesize(
+    circuit: QuantumCircuit, layout: TranspileLayout, target: Target
+) -> tuple[QuantumCircuit, TranspileLayout]:
+    """Translate the circuit to the target basis without changing its layout."""
+    synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=target.operation_names)])
+    synthesized = synthesis_pm.run(circuit.copy())
+    synthesized_layout = TranspileLayout(
+        initial_layout=layout.initial_layout,
+        input_qubit_mapping=dict(layout.input_qubit_mapping),
+        final_layout=layout.final_layout,
+        _output_qubit_list=synthesized.qubits,
+        _input_qubit_count=len(layout.input_qubit_mapping),
+    )
+    return synthesized, synthesized_layout
+
+
 @pytest.fixture
 def target() -> Target:
     """Fixture to provide the target device for testing."""
@@ -69,66 +120,6 @@ def simple_circuit() -> QuantumCircuit:
 
 
 @pytest.fixture
-def laid_out_circuit(simple_circuit: QuantumCircuit, target: Target) -> tuple[QuantumCircuit, TranspileLayout]:
-    """Return the simple circuit after layout with its TranspileLayout."""
-    coupling_map = target.build_coupling_map()
-    pm = PassManager([
-        TrivialLayout(coupling_map),
-        FullAncillaAllocation(coupling_map),
-        EnlargeWithAncilla(),
-        ApplyLayout(),
-    ])
-    laid_out = pm.run(simple_circuit.copy())
-    layout = TranspileLayout(
-        initial_layout=pm.property_set["layout"],
-        input_qubit_mapping=dict(pm.property_set["original_qubit_indices"]),
-        final_layout=pm.property_set.get("final_layout"),
-        _output_qubit_list=laid_out.qubits,
-        _input_qubit_count=simple_circuit.num_qubits,
-    )
-    return laid_out, layout
-
-
-@pytest.fixture
-def laid_out_and_routed_circuit(
-    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
-    target: Target,
-) -> tuple[QuantumCircuit, TranspileLayout]:
-    """Return the laid-out circuit after SabreSwap routing with its TranspileLayout."""
-    coupling_map = target.build_coupling_map()
-    laid_out, layout_before = laid_out_circuit
-    pm = PassManager([SabreSwap(coupling_map=coupling_map)])
-    routed = pm.run(laid_out.copy())
-    layout_after = TranspileLayout(
-        initial_layout=layout_before.initial_layout,
-        input_qubit_mapping=dict(layout_before.input_qubit_mapping),
-        final_layout=pm.property_set.get("final_layout"),
-        _output_qubit_list=routed.qubits,
-        _input_qubit_count=len(layout_before.input_qubit_mapping),
-    )
-    return routed, layout_after
-
-
-@pytest.fixture
-def laid_out_and_routed_and_synthesized_circuit(
-    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
-    target: Target,
-) -> tuple[QuantumCircuit, TranspileLayout]:
-    """Return the routed circuit translated to the device basis with the same layout."""
-    routed, layout = laid_out_and_routed_circuit
-    pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=target.operation_names)])
-    synthesized = pm.run(routed.copy())
-    synthesized_layout = TranspileLayout(
-        initial_layout=layout.initial_layout,
-        input_qubit_mapping=dict(layout.input_qubit_mapping),
-        final_layout=layout.final_layout,
-        _output_qubit_list=synthesized.qubits,
-        _input_qubit_count=len(layout.input_qubit_mapping),
-    )
-    return synthesized, synthesized_layout
-
-
-@pytest.fixture
 def env(target: Target) -> PredictorEnv:
     """Create a PredictorEnv for state-based invariant checking."""
     return PredictorEnv(device=target, reward_function="expected_fidelity")
@@ -136,14 +127,12 @@ def env(target: Target) -> PredictorEnv:
 
 def test_synthesis_actions_produce_native_gates(
     simple_circuit: QuantumCircuit,
-    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
-    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
     env: PredictorEnv,
 ) -> None:
     """Invariant: every synthesis action produces only native gates for all circuit states."""
     n_qubits = simple_circuit.num_qubits
-    qc_laid_out, laid_layout = laid_out_circuit
-    qc_routed, routed_layout = laid_out_and_routed_circuit
+    qc_laid_out, laid_layout = _lay_out(simple_circuit, env.device)
+    qc_routed, routed_layout = _route(qc_laid_out, laid_layout, env.device)
 
     test_cases = [
         ("uncompiled", simple_circuit, None),
@@ -191,11 +180,11 @@ def test_layout_actions_establish_layout(
 
 
 def test_routing_actions_route_circuit(
-    laid_out_circuit: tuple[QuantumCircuit, TranspileLayout],
+    simple_circuit: QuantumCircuit,
     env: PredictorEnv,
 ) -> None:
     """Invariant: every routing action produces a circuit where all 2-qubit gates respect the coupling map."""
-    qc_laid_out, layout = laid_out_circuit
+    qc_laid_out, layout = _lay_out(simple_circuit, env.device)
     n_qubits = qc_laid_out.num_qubits
     coupling_map = env.device.build_coupling_map()
 
@@ -212,13 +201,13 @@ def test_routing_actions_route_circuit(
 
 
 def test_optimization_actions_preserve_invariants(
-    laid_out_and_routed_circuit: tuple[QuantumCircuit, TranspileLayout],
-    laid_out_and_routed_and_synthesized_circuit: tuple[QuantumCircuit, TranspileLayout],
+    simple_circuit: QuantumCircuit,
     env: PredictorEnv,
 ) -> None:
     """Invariant: OPT actions honour their declared preserves_layout/routing/synthesis contracts."""
-    qc_routed, layout = laid_out_and_routed_circuit
-    qc_synthesized, layout_synth = laid_out_and_routed_and_synthesized_circuit
+    qc_laid_out, laid_layout = _lay_out(simple_circuit, env.device)
+    qc_routed, layout = _route(qc_laid_out, laid_layout, env.device)
+    qc_synthesized, layout_synth = _synthesize(qc_routed, layout, env.device)
     n_qubits = qc_routed.num_qubits
     coupling_map = env.device.build_coupling_map()
 
