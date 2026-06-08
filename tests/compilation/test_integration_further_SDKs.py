@@ -34,14 +34,29 @@ if TYPE_CHECKING:
 
 
 def _setup_env(env: PredictorEnv, circuit: QuantumCircuit, layout: TranspileLayout | None, n_qubits: int) -> None:
-    """Reset env to the given circuit/layout state without starting a full RL episode."""
+    """Reset env to the given circuit/layout state without starting a full RL episode.
+
+    Args:
+        env: the PredictorEnv to set up
+        circuit: the QuantumCircuit to set as the current state
+        layout: the TranspileLayout to set as the current layout (if any)
+        n_qubits: the number of qubits in the uncompiled circuit (used for invariant check)
+    """
     env.reset(qc=circuit.copy())
     env.layout = layout
     env.num_qubits_uncompiled_circuit = n_qubits
 
 
 def _is_available(env: PredictorEnv, idx: int) -> bool:
-    """Return True if action idx is structurally and SDK-valid for the current env state."""
+    """Check if action idx is available in the current env state.
+
+    Args:
+        env: the PredictorEnv to check the action availability in
+        idx: the index of the action to check
+
+    Returns:
+        True if action idx is structurally and SDK-valid for the current env state, False otherwise
+    """
     env.valid_actions = env.determine_valid_actions_for_state()
     return env.action_masks()[idx]
 
@@ -104,7 +119,7 @@ def laid_out_and_routed_circuit(
         input_qubit_mapping=dict(layout_before.input_qubit_mapping),
         final_layout=pm.property_set.get("final_layout"),
         _output_qubit_list=routed.qubits,
-        _input_qubit_count=layout_before._input_qubit_count,  # noqa: SLF001
+        _input_qubit_count=len(layout_before.input_qubit_mapping),
     )
     return routed, layout_after
 
@@ -123,7 +138,7 @@ def laid_out_and_routed_and_synthesized_circuit(
         input_qubit_mapping=dict(layout.input_qubit_mapping),
         final_layout=layout.final_layout,
         _output_qubit_list=synthesized.qubits,
-        _input_qubit_count=layout._input_qubit_count,  # noqa: SLF001
+        _input_qubit_count=len(layout.input_qubit_mapping),
     )
     return synthesized, synthesized_layout
 
@@ -235,12 +250,15 @@ def test_optimization_actions_preserve_invariants(
                     f"{action.name} on {env.device.description} VIOLATED INVARIANT preserves_layout: "
                     f"circuit no longer has a valid layout after action"
                 )
-                if env.layout is not None:
-                    post_v2p = dict(env.layout.initial_layout.get_virtual_bits())
-                    assert post_v2p == pre_v2p, (
-                        f"{action.name} on {env.device.description} VIOLATED INVARIANT preserves_layout: "
-                        f"initial qubit assignment changed. Before: {pre_v2p}, After: {post_v2p}"
-                    )
+                assert env.layout is not None, (
+                    f"{action.name} on {env.device.description} VIOLATED INVARIANT preserves_layout: "
+                    f"layout metadata was removed"
+                )
+                post_v2p = dict(env.layout.initial_layout.get_virtual_bits())
+                assert post_v2p == pre_v2p, (
+                    f"{action.name} on {env.device.description} VIOLATED INVARIANT preserves_layout: "
+                    f"initial qubit assignment changed. Before: {pre_v2p}, After: {post_v2p}"
+                )
 
         if action.preserves_routing:
             _setup_env(env, qc_routed, layout, n_qubits)
