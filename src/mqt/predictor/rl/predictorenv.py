@@ -64,7 +64,7 @@ class PredictorEnv(Env):
     ) -> None:
         """Initializes the PredictorEnv object.
 
-        Arguments:
+        Args:
             device: The target device to be used for compilation.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
@@ -160,7 +160,7 @@ class PredictorEnv(Env):
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
 
-        Arguments:
+        Args:
             action: The action to be executed, represented by its index in the action set.
 
         Returns:
@@ -173,13 +173,14 @@ class PredictorEnv(Env):
             self.used_actions.append(str(self.action_set[action].name))
             altered_qc = self.apply_action(action)
         except Exception as exc:  # noqa: BLE001
+            # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
             return (
                 create_feature_dict(self.state),  # features
                 0,  # reward
                 False,  # terminated
                 True,  # truncated
-                {"error": f"{type(exc).__name__}: {exc}"},  # info
+                {"Truncated because of error": f"{type(exc).__name__}: {exc}"},  # info
             )
 
         if not altered_qc:
@@ -237,7 +238,7 @@ class PredictorEnv(Env):
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
-        Arguments:
+        Args:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit. Defaults to None.
             seed: The seed to be used for the random number generator. Defaults to None.
             options: Additional options. Defaults to None.
@@ -257,7 +258,7 @@ class PredictorEnv(Env):
         self.num_steps = 0
         self.used_actions = []
 
-        self.layout = self.is_circuit_laid_out(self.state, self.layout) if self.layout else None
+        self.layout = None
 
         self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 

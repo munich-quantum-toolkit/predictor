@@ -39,7 +39,7 @@ def timeout_watcher(
 ) -> tuple[QuantumCircuit, list[str]] | bool:
     """Method that stops a function call after a given timeout limit.
 
-    Arguments:
+    Args:
         func: The function to be called.
         args: The arguments to be passed to the function.
         timeout: The timeout limit in seconds.

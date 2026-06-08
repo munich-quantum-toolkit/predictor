@@ -112,7 +112,7 @@ def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, int]:
 def create_feature_vector(qc: QuantumCircuit) -> list[int | float]:
     """Creates and returns a feature dictionary for a given quantum circuit.
 
-    Arguments:
+    Args:
         qc: The quantum circuit to be compiled.
 
     Returns:

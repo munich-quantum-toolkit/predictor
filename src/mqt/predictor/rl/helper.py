@@ -32,7 +32,7 @@ logger = logging.getLogger("mqt-predictor")
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
     """Returns a random quantum circuit from the training circuits folder.
 
-    Arguments:
+    Args:
         max_qubits: The maximum number of qubits the returned quantum circuit may have. If no limit is set, it defaults to None.
         path_training_circuits: The path to the training circuits folder.
         rng: A random number generator to select a random quantum circuit.
@@ -73,7 +73,7 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
 def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
     """Creates a feature dictionary for a given quantum circuit.
 
-    Arguments:
+    Args:
         qc: The quantum circuit for which the feature dictionary is created.
 
     Returns:
