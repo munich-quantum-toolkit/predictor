@@ -34,29 +34,14 @@ if TYPE_CHECKING:
 
 
 def _setup_env(env: PredictorEnv, circuit: QuantumCircuit, layout: TranspileLayout | None, n_qubits: int) -> None:
-    """Reset env to the given circuit/layout state without starting a full RL episode.
-
-    Args:
-        env: the PredictorEnv to set up
-        circuit: the QuantumCircuit to set as the current state
-        layout: the TranspileLayout to set as the current layout (if any)
-        n_qubits: the number of qubits in the uncompiled circuit (used for invariant check)
-    """
+    """Reset env to the given circuit/layout state without starting a full RL episode."""
     env.reset(qc=circuit.copy())
     env.layout = layout
     env.num_qubits_uncompiled_circuit = n_qubits
 
 
 def _is_available(env: PredictorEnv, idx: int) -> bool:
-    """Check if action idx is available in the current env state.
-
-    Args:
-        env: the PredictorEnv to check the action availability in
-        idx: the index of the action to check
-
-    Returns:
-        True if action idx is structurally and SDK-valid for the current env state, False otherwise
-    """
+    """Return whether action idx is structurally and SDK-valid for the current env state."""
     env.valid_actions = env.determine_valid_actions_for_state()
     return env.action_masks()[idx]
 

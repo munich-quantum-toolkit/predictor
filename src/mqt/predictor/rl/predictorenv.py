@@ -40,14 +40,11 @@ from mqt.predictor.reward import (
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     PassType,
-    bqskit_actions,
     get_actions_by_pass_type,
-    qiskit_actions,
-    run_bqskit_action,
-    run_qiskit_action,
-    run_tket_action,
-    tket_actions,
 )
+from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, run_bqskit_action
+from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
+from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 
 logger = logging.getLogger("mqt-predictor")
@@ -295,12 +292,12 @@ class PredictorEnv(Env):
                 action_mask.append(True)
                 continue
             if action.origin == CompilationOrigin.QISKIT:
-                action_mask.append(qiskit_actions.is_qiskit_action_available(action, self.device))
+                action_mask.append(is_qiskit_action_available(action, self.device))
             elif action.origin == CompilationOrigin.TKET:
-                action_mask.append(tket_actions.is_tket_action_available(action=action, has_layout=has_layout))
+                action_mask.append(is_tket_action_available(action=action, has_layout=has_layout))
             elif action.origin == CompilationOrigin.BQSKIT:
                 action_mask.append(
-                    bqskit_actions.is_bqskit_action_available(
+                    is_bqskit_action_available(
                         has_layout=has_layout,
                         has_parameterized_gates=self.has_parameterized_gates,
                     )

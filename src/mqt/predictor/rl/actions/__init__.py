@@ -114,7 +114,7 @@ def remove_action(name: str) -> None:
     """
     if name not in _ACTIONS:
         msg = f"No action with name {name} is registered."
-        raise ValueError(msg)
+        raise KeyError(msg)
     del _ACTIONS[name]
 
 
@@ -155,34 +155,13 @@ for _action in (
 ):
     register_action(_action)
 
-PreProcessTKETRoutingAfterQiskitLayout = _tket_actions.PreProcessTKETRoutingAfterQiskitLayout
-final_layout_pytket_to_qiskit = _tket_actions.final_layout_pytket_to_qiskit
-run_tket_action = _tket_actions.run_tket_action
-
-final_layout_bqskit_to_qiskit = _bqskit_actions.final_layout_bqskit_to_qiskit
-bqskit_to_qiskit = _bqskit_actions.bqskit_to_qiskit
-get_bqskit_native_gates = _bqskit_actions.get_bqskit_native_gates
-run_bqskit_action = _bqskit_actions.run_bqskit_action
-
-postprocess_vf2postlayout = _qiskit_actions.postprocess_vf2postlayout
-run_qiskit_action = _qiskit_actions.run_qiskit_action
-
 __all__ = [
     "Action",
     "CompilationOrigin",
     "DeviceDependentAction",
     "DeviceIndependentAction",
     "PassType",
-    "PreProcessTKETRoutingAfterQiskitLayout",
-    "bqskit_to_qiskit",
-    "final_layout_bqskit_to_qiskit",
-    "final_layout_pytket_to_qiskit",
     "get_actions_by_pass_type",
-    "get_bqskit_native_gates",
-    "postprocess_vf2postlayout",
     "register_action",
     "remove_action",
-    "run_bqskit_action",
-    "run_qiskit_action",
-    "run_tket_action",
 ]

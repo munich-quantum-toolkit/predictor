@@ -24,11 +24,10 @@ from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopRea
 
 from mqt.predictor.rl.actions import (
     PassType,
-    bqskit_to_qiskit,
     get_actions_by_pass_type,
-    get_bqskit_native_gates,
-    postprocess_vf2postlayout,
 )
+from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
+from mqt.predictor.rl.actions.qiskit_actions import postprocess_vf2postlayout
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 
 if TYPE_CHECKING:
