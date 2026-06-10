@@ -16,9 +16,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
+from qiskit.passmanager import ConditionalController
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.optimization_metric import OptimizationMetric
-from qiskit.transpiler.passes import BasisTranslator, HighLevelSynthesis, UnitarySynthesis
+from qiskit.transpiler.passes import (
+    BasisTranslator,
+    GatesInBasis,
+    HighLevelSynthesis,
+    UnitarySynthesis,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -97,6 +103,9 @@ def build_translation_pass_manager(target_basis: Iterable[str] = TARGET_BASIS) -
       2. UnitarySynthesis     - synthesizes UnitaryGate objects using the target basis
       3. BasisTranslator      - translates remaining gates into target_basis
 
+    The synthesis and translation tasks are guarded by ``GatesInBasis`` and skipped
+    when the circuit is already in the target basis.
+
     We use exact synthesis (approximation_degree=1.0 means NO approximation per
     Qiskit docs).
 
@@ -107,11 +116,19 @@ def build_translation_pass_manager(target_basis: Iterable[str] = TARGET_BASIS) -
         A Qiskit PassManager configured for exact synthesis and basis translation.
     """
     target_basis_list = list(target_basis)
-    return PassManager([
+    translation_tasks = [
         HighLevelSynthesis(optimization_metric=OptimizationMetric.COUNT_2Q),
         UnitarySynthesis(basis_gates=target_basis_list, approximation_degree=1.0),
         BasisTranslator(SessionEquivalenceLibrary, target_basis=target_basis_list),
-    ])
+    ]
+
+    def needs_translation(property_set: dict[str, bool]) -> bool:
+        return not property_set["all_gates_in_basis"]
+
+    translation_pass_manager = PassManager()
+    translation_pass_manager.append(GatesInBasis(basis_gates=target_basis_list))
+    translation_pass_manager.append(ConditionalController(translation_tasks, condition=needs_translation))
+    return translation_pass_manager
 
 
 def count_two_qubit_gates(circuit: QuantumCircuit) -> int:

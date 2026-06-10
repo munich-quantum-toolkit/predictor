@@ -23,9 +23,7 @@ from qiskit.transpiler.passes import (
     CommutativeOptimization,
     ConsolidateBlocks,
     ContractIdleWiresInControlFlow,
-    ElidePermutations,
     HighLevelSynthesis,
-    HoareOptimizer,
     InverseCancellation,
     LightCone,
     Optimize1qGates,
@@ -33,7 +31,6 @@ from qiskit.transpiler.passes import (
     Optimize1qGatesSimpleCommutation,
     OptimizeAnnotated,
     OptimizeCliffords,
-    OptimizeCliffordT,
     OptimizeSwapBeforeMeasure,
     RemoveDiagonalGatesBeforeMeasure,
     RemoveFinalReset,
@@ -41,14 +38,15 @@ from qiskit.transpiler.passes import (
     RemoveResetInZeroState,
     ResetAfterMeasureSimplification,
     Split2QUnitaries,
-    SubstitutePi4Rotations,
     TemplateOptimization,
     UnitarySynthesis,
+    Unroll3qOrMore,
 )
 
 from mqt.predictor.rl.actions import Action, CompilationOrigin, DeviceIndependentAction, PassType
 
 KIT_PASS_NAMES: tuple[str, ...] = (
+    "Unroll3qOrMore",
     "Collect1qRuns",
     "CommutationAnalysis",
     "Collect2qBlocks",
@@ -60,13 +58,10 @@ KIT_PASS_NAMES: tuple[str, ...] = (
     "Optimize1qGatesDecomposition",
     "Optimize1qGatesSimpleCommutation",
     "Split2QUnitaries",
-    "SubstitutePi4Rotations",
-    "OptimizeCliffordT",
     "InverseCancellation",
     "CommutativeCancellation",
     "CommutativeInverseCancellation",
     "CommutativeOptimization",
-    "HoareOptimizer",
     "OptimizeAnnotated",
     "TemplateOptimization",
     "OptimizeCliffords",
@@ -76,12 +71,12 @@ KIT_PASS_NAMES: tuple[str, ...] = (
     "RemoveDiagonalGatesBeforeMeasure",
     "ResetAfterMeasureSimplification",
     "OptimizeSwapBeforeMeasure",
-    "ElidePermutations",
     "ContractIdleWiresInControlFlow",
     "LightCone",
 )
 
 KIT_ACTION_NAMES: tuple[str, ...] = (
+    "Unroll3qOrMore",
     "Collect1qRuns",
     "Collect2qBlocks",
     "CollectMultiQBlocks",
@@ -89,7 +84,6 @@ KIT_ACTION_NAMES: tuple[str, ...] = (
     "CollectCliffords",
     "CollectLinearFunctions",
     "ConsolidateBlocks",
-    "HoareOptimizer",
     "OptimizeAnnotated",
     "OptimizeCliffords",
     "TemplateOptimization",
@@ -100,11 +94,8 @@ KIT_ACTION_NAMES: tuple[str, ...] = (
     "Optimize1qGates",
     "Optimize1qGatesDecomposition",
     "Optimize1qGatesSimpleCommutation",
-    "OptimizeCliffordT",
     "Split2QUnitaries",
-    "SubstitutePi4Rotations",
     "ContractIdleWiresInControlFlow",
-    "ElidePermutations",
     "LightCone",
     "OptimizeSwapBeforeMeasure",
     "RemoveDiagonalGatesBeforeMeasure",
@@ -132,13 +123,13 @@ def kit_optimization_actions() -> list[Action]:
 def _kit_action(name: str) -> Action:
     """Create one opt-only action by pass name."""
     pass_builders = {
+        "Unroll3qOrMore": lambda: [Unroll3qOrMore()],
         "Collect1qRuns": lambda: [Collect1qRuns()],
         "Collect2qBlocks": lambda: [Collect2qBlocks()],
         "CollectMultiQBlocks": lambda: [CollectMultiQBlocks()],
         "CommutationAnalysis": lambda: [CommutationAnalysis()],
         "CollectCliffords": lambda: [
             CollectCliffords(),
-            OptimizeCliffords(),
             HighLevelSynthesis(optimization_metric=OptimizationMetric.COUNT_2Q),
         ],
         "CollectLinearFunctions": lambda: [
@@ -147,7 +138,6 @@ def _kit_action(name: str) -> Action:
         ],
         "ConsolidateBlocks": lambda: [
             Collect1qRuns(),
-            Collect2qBlocks(),
             ConsolidateBlocks(),
             UnitarySynthesis(approximation_degree=1.0),
         ],
@@ -161,11 +151,8 @@ def _kit_action(name: str) -> Action:
         "Optimize1qGates": lambda: [Optimize1qGates()],
         "Optimize1qGatesDecomposition": lambda: [Optimize1qGatesDecomposition()],
         "Optimize1qGatesSimpleCommutation": lambda: [Optimize1qGatesSimpleCommutation()],
-        "OptimizeCliffordT": lambda: [OptimizeCliffordT()],
         "Split2QUnitaries": lambda: [Split2QUnitaries()],
-        "SubstitutePi4Rotations": lambda: [SubstitutePi4Rotations()],
         "ContractIdleWiresInControlFlow": lambda: [ContractIdleWiresInControlFlow()],
-        "ElidePermutations": lambda: [ElidePermutations()],
         "LightCone": lambda: [LightCone()],
         "OptimizeSwapBeforeMeasure": lambda: [OptimizeSwapBeforeMeasure()],
         "RemoveDiagonalGatesBeforeMeasure": lambda: [RemoveDiagonalGatesBeforeMeasure()],
@@ -173,7 +160,6 @@ def _kit_action(name: str) -> Action:
         "RemoveIdentityEquivalent": lambda: [RemoveIdentityEquivalent()],
         "RemoveResetInZeroState": lambda: [RemoveResetInZeroState()],
         "ResetAfterMeasureSimplification": lambda: [ResetAfterMeasureSimplification()],
-        "HoareOptimizer": lambda: [HoareOptimizer()],
     }
 
     return DeviceIndependentAction(
