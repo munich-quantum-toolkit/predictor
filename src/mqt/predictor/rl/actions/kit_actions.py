@@ -138,6 +138,7 @@ def _kit_action(name: str) -> Action:
         ],
         "ConsolidateBlocks": lambda: [
             Collect1qRuns(),
+            Collect2qBlocks(),
             ConsolidateBlocks(),
             UnitarySynthesis(approximation_degree=1.0),
         ],
