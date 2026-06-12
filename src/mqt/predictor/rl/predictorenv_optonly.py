@@ -61,6 +61,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         max_steps: int | None = 100,
         pass_timeout: int | None = None,
         max_circuit_operations: int | None = 100_000,
+        max_template_optimization_operations: int | None = 40_000,
     ) -> None:
         """Initialize the optimization-only RL environment.
 
@@ -77,6 +78,8 @@ class OptOnlyPredictorEnv(PredictorEnv):
                 Defaults to None.
             max_circuit_operations: The maximum number of operations allowed after applying one pass. If None,
                 no operation-count limit is enforced. Defaults to 100,000.
+            max_template_optimization_operations: The maximum number of operations allowed before running
+                TemplateOptimization. If None, no limit is enforced. Defaults to 40,000.
         """
         Env.__init__(self)
 
@@ -89,6 +92,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         self.max_steps = max_steps
         self.pass_timeout = pass_timeout
         self.max_circuit_operations = max_circuit_operations
+        self.max_template_optimization_operations = max_template_optimization_operations
 
         self.action_set: dict[int, Any] = {}
         self.actions_synthesis_indices: list[int] = []
@@ -262,6 +266,19 @@ class OptOnlyPredictorEnv(PredictorEnv):
                 len(self.state.data),
             )
 
+        if (
+            selected_action.name == "TemplateOptimization"
+            and self.max_template_optimization_operations is not None
+            and len(self.state.data) > self.max_template_optimization_operations
+        ):
+            return self._truncate_expensive_action(
+                action_name=str(selected_action.name),
+                step_number=step_number,
+                started_at=started_at,
+                operation_count=len(self.state.data),
+                operation_limit=self.max_template_optimization_operations,
+            )
+
         try:
             altered_qc = self._apply_action_with_timeout(action)
         except Exception as exc:  # noqa: BLE001
@@ -410,6 +427,34 @@ class OptOnlyPredictorEnv(PredictorEnv):
         reason = (
             f"Action '{action_name}' produced {operation_count} operations, "
             f"exceeding limit of {self.max_circuit_operations}."
+        )
+        self.error_occurred = True
+        self.status = STATUS_CIRCUIT_TOO_LARGE
+        self.error_msg = reason
+        self.valid_actions = [self.action_terminate_index]
+        self.num_steps += 1
+        if self.log_applied_passes:
+            logger.info(
+                "Truncated opt-only action %s: %s after %.3fs; %s",
+                step_number,
+                action_name,
+                time.perf_counter() - started_at,
+                reason,
+            )
+        return create_feature_dict(self.state), 0.0, False, True, self._truncation_info(reason)
+
+    def _truncate_expensive_action(
+        self,
+        *,
+        action_name: str,
+        step_number: int,
+        started_at: float,
+        operation_count: int,
+        operation_limit: int,
+    ) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
+        """Truncate before a known costly pass."""
+        reason = (
+            f"Action '{action_name}' skipped on {operation_count} operations, exceeding limit of {operation_limit}."
         )
         self.error_occurred = True
         self.status = STATUS_CIRCUIT_TOO_LARGE
