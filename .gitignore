@@ -52,4 +52,7 @@ venv.bak/
 .ruff_cache/
 .mypy_cache/
 
+CLAUDE.md
+.claude/
+
 src/**/_version.py
