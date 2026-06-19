@@ -23,7 +23,6 @@ from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLa
 from qiskit.transpiler.passes import GatesInBasis
 
 import mqt.predictor.rl.actions as actions_module
-from mqt.predictor.rl.actions import qiskit_actions
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
@@ -31,6 +30,7 @@ from mqt.predictor.rl.actions import (
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
     register_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
