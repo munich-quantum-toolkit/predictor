@@ -17,7 +17,6 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed, load
 from joblib import dump as joblib_dump
@@ -51,7 +50,6 @@ if TYPE_CHECKING:
 
     from mqt.predictor.reward import figure_of_merit
 
-plt.rcParams["font.family"] = "Times New Roman"
 
 logger = logging.getLogger("mqt-predictor")
 
