@@ -54,7 +54,7 @@ class Predictor:
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
-        Args:
+        Arguments:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
 
         Returns:
@@ -93,7 +93,7 @@ class Predictor:
     ) -> None:
         """Trains all models for the given reward functions and device.
 
-        Args:
+        Arguments:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
@@ -136,7 +136,7 @@ class Predictor:
 def load_model(model_name: str) -> MaskablePPO:
     """Loads a trained model from the trained model folder.
 
-    Args:
+    Arguments:
         model_name: The name of the model to be loaded.
 
     Returns:
@@ -162,7 +162,7 @@ def rl_compile(
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
-    Args:
+    Arguments:
         qc: The quantum circuit to be compiled. If a string is given, it is assumed to be a path to a qasm file.
         device: The device to compile to.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
