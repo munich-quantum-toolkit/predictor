@@ -180,16 +180,6 @@ class PredictorEnv(Env):
                 {"Truncated because of error": f"{type(exc).__name__}: {exc}"},  # info
             )
 
-        if not altered_qc:
-            # TODO: Remove as dead code?
-            return (
-                create_feature_dict(self.state),  # features
-                0,  # reward
-                True,  # terminated
-                False,  # truncated
-                {},  # info
-            )
-
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 

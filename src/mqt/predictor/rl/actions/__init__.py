@@ -103,21 +103,6 @@ def register_action(action: Action) -> Action:
     return action
 
 
-def remove_action(name: str) -> None:
-    """Removes an Action from the global _ACTIONS registry by name.
-
-    Args:
-        name: Name of the Action to remove.
-
-    Raises:
-        KeyError: If no action with the given name is registered.
-    """
-    if name not in _ACTIONS:
-        msg = f"No action with name {name} is registered."
-        raise KeyError(msg)
-    del _ACTIONS[name]
-
-
 def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
     """Groups registered Actions from the global _ACTIONS registry by PassType.
 
@@ -163,5 +148,4 @@ __all__ = [
     "PassType",
     "get_actions_by_pass_type",
     "register_action",
-    "remove_action",
 ]

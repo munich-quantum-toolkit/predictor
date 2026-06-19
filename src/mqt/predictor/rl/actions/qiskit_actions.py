@@ -301,20 +301,6 @@ def postprocess_vf2postlayout(
     return dag_to_circuit(altered_qc), apply_layout
 
 
-def _qiskit_passes(action: Action, device: Target, layout: TranspileLayout | None) -> list[Task]:
-    """Build the concrete Qiskit pass list for an action."""
-    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-        factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
-        return factory(
-            device.operation_names,
-            CouplingMap(device.build_coupling_map()) if layout else None,
-        )
-    if callable(action.transpile_pass):
-        factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
-        return factory(device)
-    return cast("list[Task]", action.transpile_pass)
-
-
 def _postprocess_layout_action(
     action: Action,
     property_set: PropertySet,
@@ -360,7 +346,16 @@ def run_qiskit_action(
     input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
-    passes = _qiskit_passes(action, device, layout)
+    # Build the concrete Qiskit pass list for given action.
+    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+        factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
+        passes = factory(device.operation_names, CouplingMap(device.build_coupling_map()) if layout else None)
+    elif callable(action.transpile_pass):
+        factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
+        passes = factory(device)
+    else:
+        passes = cast("list[Task]", action.transpile_pass)
+
     if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
         assert action.do_while is not None
         pm = PassManager([DoWhileController(passes, do_while=action.do_while)])

@@ -22,6 +22,7 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
+import mqt.predictor.rl.actions as actions_module
 import mqt.predictor.rl.actions.qiskit_actions as qiskit_actions
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl import predictorenv as predictorenv_module
@@ -31,7 +32,6 @@ from mqt.predictor.rl.actions import (
     PassType,
     get_actions_by_pass_type,
     register_action,
-    remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
@@ -187,8 +187,10 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
     assert env.layout.final_layout is final_layout
 
 
-def test_register_action() -> None:
+def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
+    actions_registry = vars(actions_module)
+    monkeypatch.setitem(actions_registry, "_ACTIONS", actions_registry["_ACTIONS"].copy())
     action = DeviceIndependentAction(
         name="test_action", pass_type=PassType.OPT, transpile_pass=[], origin=CompilationOrigin.QISKIT
     )
@@ -198,8 +200,3 @@ def test_register_action() -> None:
 
     with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
         register_action(action)
-
-    remove_action(action.name)
-
-    with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
-        remove_action("wrong_action_name")

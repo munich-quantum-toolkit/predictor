@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ♻️ Refactor existing RL passes into SDK-level action modules ([#680]) ([**@flowerthrower**])
+- ♻️ Refactor RL passes into SDK-level action modules ([#680]) ([**@flowerthrower**])
 - 🎨 Improve the RL state machine logic ([#677]) ([**@flowerthrower**])
 - 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679]) ([**@flowerthrower**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
