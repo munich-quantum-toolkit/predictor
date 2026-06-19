@@ -61,7 +61,7 @@ class OptOnlyPredictorEnv(PredictorEnv):
         max_steps: int | None = 100,
         pass_timeout: int | None = None,
         max_circuit_operations: int | None = 100_000,
-        max_template_optimization_operations: int | None = 40_000,
+        max_template_optimization_operations: int | None = 10_000,
     ) -> None:
         """Initialize the optimization-only RL environment.
 

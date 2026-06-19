@@ -22,5 +22,5 @@ pred.train_model(
     timesteps=100_000,
     n_checkpoint=1000,
     resume=True,
-    checkpoint_dir=Path("/Users/patrickhopf/Code/mqt/mqt-predictor/model_cx_relative_reduction_alltoall_S_checkpoints"),
+    checkpoint_dir=Path("/Users/patrickhopf/Code/mqt/mqt-predictor/new_model_cx_relative_reduction_checkpoints"),
 )

@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 _LATEST_CHECKPOINT_FILE = "latest.txt"
 _CHECKPOINT_STATE_SUFFIX = ".state.pkl"
+_CHECKPOINTS_TO_KEEP = 2
 
 
 class OptOnlyPredictor:
@@ -53,6 +54,7 @@ class OptOnlyPredictor:
         max_steps: int | None = 100,
         pass_timeout: int | None = None,
         max_circuit_operations: int | None = 100_000,
+        max_template_optimization_operations: int | None = 10_000,
     ) -> None:
         """Initialize the opt-only predictor.
 
@@ -71,6 +73,8 @@ class OptOnlyPredictor:
                 Defaults to None.
             max_circuit_operations: The maximum number of operations allowed after applying one pass. If None,
                 no operation-count limit is enforced. Defaults to 100,000.
+            max_template_optimization_operations: The maximum number of operations allowed before running
+                TemplateOptimization. If None, no limit is enforced. Defaults to 40,000.
         """
         logger.setLevel(logger_level)
         excluded_ids = {Path(circuit_id).stem for circuit_id in (excluded_circuit_ids or set())}
@@ -86,6 +90,7 @@ class OptOnlyPredictor:
             max_steps=max_steps,
             pass_timeout=pass_timeout,
             max_circuit_operations=max_circuit_operations,
+            max_template_optimization_operations=max_template_optimization_operations,
         )
 
     def train_model(
@@ -263,7 +268,67 @@ def _save_checkpoint(
         f"{checkpoint_model_path.with_suffix('.zip').name}\n{checkpoint_state_path.name}\n",
         encoding="utf-8",
     )
+    _prune_old_checkpoints(checkpoint_dir=checkpoint_dir, model_name=model_name)
     logger.info("Saved opt-only RL checkpoint at %s.", checkpoint_model_path.with_suffix(".zip"))
+
+
+def _prune_old_checkpoints(*, checkpoint_dir: Path, model_name: str, keep: int = _CHECKPOINTS_TO_KEEP) -> None:
+    """Keep only the newest checkpoints."""
+    if keep <= 0:
+        msg = "keep must be positive."
+        raise ValueError(msg)
+
+    checkpoint_steps: dict[str, int] = {}
+    checkpoint_paths: dict[str, list[Path]] = {}
+    model_stems: set[str] = set()
+    state_stems: set[str] = set()
+
+    for checkpoint_path in checkpoint_dir.glob(f"{model_name}_step_*.zip"):
+        checkpoint = _checkpoint_stem_and_step(checkpoint_path, model_name)
+        if checkpoint is None:
+            continue
+        checkpoint_stem, step = checkpoint
+        checkpoint_steps[checkpoint_stem] = step
+        checkpoint_paths.setdefault(checkpoint_stem, []).append(checkpoint_path)
+        model_stems.add(checkpoint_stem)
+
+    for checkpoint_path in checkpoint_dir.glob(f"{model_name}_step_*{_CHECKPOINT_STATE_SUFFIX}"):
+        checkpoint = _checkpoint_stem_and_step(checkpoint_path, model_name)
+        if checkpoint is None:
+            continue
+        checkpoint_stem, step = checkpoint
+        checkpoint_steps[checkpoint_stem] = step
+        checkpoint_paths.setdefault(checkpoint_stem, []).append(checkpoint_path)
+        state_stems.add(checkpoint_stem)
+
+    complete_stems = model_stems & state_stems
+    kept_stems = set(sorted(complete_stems, key=checkpoint_steps.__getitem__)[-keep:])
+
+    for checkpoint_stem, paths in checkpoint_paths.items():
+        if checkpoint_stem in kept_stems:
+            continue
+        for path in paths:
+            path.unlink(missing_ok=True)
+
+
+def _checkpoint_stem_and_step(path: Path, model_name: str) -> tuple[str, int] | None:
+    """Return checkpoint stem and step."""
+    if path.name.endswith(".zip"):
+        checkpoint_stem = path.with_suffix("").name
+    elif path.name.endswith(_CHECKPOINT_STATE_SUFFIX):
+        checkpoint_stem = path.name[: -len(_CHECKPOINT_STATE_SUFFIX)]
+    else:
+        return None
+
+    prefix = f"{model_name}_step_"
+    if not checkpoint_stem.startswith(prefix):
+        return None
+
+    step = checkpoint_stem.removeprefix(prefix)
+    if not step.isdecimal():
+        return None
+
+    return checkpoint_stem, int(step)
 
 
 def _latest_checkpoint(checkpoint_dir: Path) -> _Checkpoint | None:
