@@ -53,6 +53,3 @@ venv.bak/
 .mypy_cache/
 
 src/**/_version.py
-
-# RL training checkpoints and logs
-events.out.*

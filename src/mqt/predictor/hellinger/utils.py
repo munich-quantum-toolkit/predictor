@@ -39,7 +39,7 @@ def calc_device_specific_features(
 ) -> NDArray[np.float64]:
     """Creates and returns a device-specific feature vector for a given quantum circuit and device.
 
-    Args:
+    Arguments:
         qc: The quantum circuit for which the features are calculated.
         device: The device for which the features are calculated.
         ignore_gates: A list of gates to be ignored when calculating the features. Defaults to ["barrier", "id", "measure", "if_else"].

@@ -46,7 +46,7 @@ def crit_depth(qc: QuantumCircuit, precision: int = 10) -> float:
 def expected_fidelity(qc: QuantumCircuit, device: Target, precision: int = 10) -> float:
     """Calculates the expected fidelity of a given quantum circuit on a given device.
 
-    Args:
+    Arguments:
         qc: The quantum circuit to be compiled.
         device: The device to be used for compilation.
         precision: The precision of the returned value. Defaults to 10.
@@ -83,7 +83,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
     It is calculated by multiplying the expected fidelity with a min(T1,T2)-dependent
     decay factor during qubit idle times. To this end, the circuit is scheduled using ASAP scheduling.
 
-    Args:
+    Arguments:
         qc: The quantum circuit to be compiled.
         device: The device to be used for compilation.
         precision: The precision of the returned value. Defaults to 10.
@@ -210,7 +210,7 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
 def esp_data_available(device: Target) -> bool:
     """Check if calibration data to calculate ESP is available for the device.
 
-    Args:
+    Arguments:
         device: The device to be checked for calibration data.
 
     Returns:
@@ -310,7 +310,7 @@ def estimated_hellinger_distance(
 ) -> float:
     """Calculates the estimated Hellinger distance of a given quantum circuit on a given device.
 
-    Args:
+    Arguments:
         qc: The quantum circuit to be compiled.
         device: The device to be used for compilation.
         model: The pre-trained model to use for prediction (optional). If not provided, the model will try to be loaded from files.

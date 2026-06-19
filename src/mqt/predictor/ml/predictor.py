@@ -66,7 +66,7 @@ def setup_device_predictor(
 ) -> bool:
     """Sets up the device predictor for the given figure of merit.
 
-    Args:
+    Arguments:
         devices: The devices to be used for training.
         figure_of_merit: The figure of merit to be used for training. Defaults to "expected_fidelity".
         path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
@@ -127,7 +127,7 @@ class Predictor:
     ) -> None:
         """Initializes the Predictor class.
 
-        Args:
+        Arguments:
             figure_of_merit: The figure of merit to be used for training.
             devices: The devices to be used for training.
             logger_level: The level of the logger. Defaults to logging.INFO.
@@ -151,7 +151,7 @@ class Predictor:
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
-        Args:
+        Arguments:
             device: The device to be used for compilation.
             timeout: The timeout in seconds for the compilation of a single circuit.
             path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
@@ -204,7 +204,7 @@ class Predictor:
     ) -> None:
         """Compiles all circuits in the given directory with the given timeout and saves them in the given directory.
 
-        Args:
+        Arguments:
             path_uncompiled_circuits: The path to the directory containing the circuits to be compiled. Defaults to None.
             path_compiled_circuits: The path to the directory where the compiled circuits should be saved. Defaults to None.
             timeout: The timeout in seconds for the compilation of a single circuit. Defaults to 600.
@@ -237,7 +237,7 @@ class Predictor:
     ) -> None:
         """Creates and saves training data from all generated training samples.
 
-        Args:
+        Arguments:
             path_uncompiled_circuits: The path to the directory containing the uncompiled circuits. Defaults to None.
             path_compiled_circuits: The path to the directory containing the compiled circuits. Defaults to None.
             path_training_data: The path to the directory where the generated training data should be saved. Defaults to None.
@@ -295,7 +295,7 @@ class Predictor:
     ) -> tuple[tuple[list[Any], Any], str, list[float]]:
         """Handles to create a training sample from a given file.
 
-        Args:
+        Arguments:
             file: The name of the file to be used for training.
             path_uncompiled_circuit: The path to the directory containing the uncompiled circuits. Defaults to None.
             path_compiled_circuits: The path to the directory containing the compiled circuits. Defaults to None.
@@ -365,7 +365,7 @@ class Predictor:
     ) -> RandomForestRegressor | RandomForestClassifier:
         """Trains a random forest model for the given figure of merit.
 
-        Args:
+        Arguments:
             training_data: The training data to be used for training the model. If None, the training data is loaded from the pre-prepared training data files.
 
         Returns:
@@ -453,7 +453,7 @@ def predict_device_for_figure_of_merit(
 ) -> Target:
     """Returns the probabilities for all supported quantum devices to be the most suitable one for the given quantum circuit.
 
-    Args:
+    Arguments:
         qc: The QuantumCircuit or Path to the respective qasm file.
         figure_of_merit: The figure of merit to be used for compilation.
 
