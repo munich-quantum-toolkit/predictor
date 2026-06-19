@@ -92,24 +92,36 @@ def qiskit_optimization_actions() -> list[Action]:
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [Optimize1qGatesDecomposition()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=False,
         ),
         DeviceIndependentAction(
             "CommutativeCancellation",
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [CommutativeCancellation()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
         DeviceIndependentAction(
             "CommutativeInverseCancellation",
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [CommutativeInverseCancellation()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
         DeviceIndependentAction(
             "RemoveDiagonalGatesBeforeMeasure",
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [RemoveDiagonalGatesBeforeMeasure()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
         DeviceIndependentAction(
             "InverseCancellation",
@@ -131,18 +143,27 @@ def qiskit_optimization_actions() -> list[Action]:
                     (SXGate(), SXdgGate()),
                 ])
             ],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
         DeviceIndependentAction(
             "OptimizeCliffords",
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [OptimizeCliffords()],
+            preserves_layout=True,
+            preserves_routing=False,
+            preserves_synthesis=False,
         ),
         DeviceIndependentAction(
             "Opt2qBlocks",
             CompilationOrigin.QISKIT,
             PassType.OPT,
             [Collect2qBlocks(), ConsolidateBlocks(), UnitarySynthesis()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=False,
         ),
     ]
 
@@ -153,6 +174,9 @@ def qiskit_o3_action() -> Action:
         "QiskitO3",
         CompilationOrigin.QISKIT,
         PassType.OPT,
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=True,
         transpile_pass=lambda native_gate, coupling_map: cast(
             "list[Task]",
             [
@@ -277,26 +301,12 @@ def postprocess_vf2postlayout(
     return dag_to_circuit(altered_qc), apply_layout
 
 
-def _qiskit_passes(action: Action, device: Target, layout: TranspileLayout | None) -> list[Task]:
-    """Build the concrete Qiskit pass list for an action."""
-    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
-        factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
-        return factory(
-            device.operation_names,
-            CouplingMap(device.build_coupling_map()) if layout else None,
-        )
-    if callable(action.transpile_pass):
-        factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
-        return factory(device)
-    return cast("list[Task]", action.transpile_pass)
-
-
 def _postprocess_layout_action(
     action: Action,
     property_set: PropertySet,
     altered_qc: QuantumCircuit,
     layout: TranspileLayout | None,
-    input_qubit_count: int,
+    input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Update Qiskit's layout metadata after passes that can create or alter layouts."""
     if action.name == "VF2PostLayout":
@@ -304,7 +314,8 @@ def _postprocess_layout_action(
         post_layout = property_set["post_layout"]
         if post_layout:
             assert layout is not None
-            altered_qc, _ = postprocess_vf2postlayout(altered_qc, post_layout, layout)
+            altered_qc, apply_layout = postprocess_vf2postlayout(altered_qc, post_layout, layout)
+            property_set = apply_layout.property_set
     elif action.name == "VF2Layout":
         if property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
             logger.warning(
@@ -321,8 +332,8 @@ def _postprocess_layout_action(
             initial_layout=property_set["layout"],
             input_qubit_mapping=property_set["original_qubit_indices"],
             final_layout=property_set["final_layout"],
-            _output_qubit_list=altered_qc.qubits,
             _input_qubit_count=input_qubit_count,
+            _output_qubit_list=altered_qc.qubits,
         )
     return altered_qc, layout
 
@@ -332,10 +343,19 @@ def run_qiskit_action(
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    input_qubit_count: int,
+    input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
-    passes = _qiskit_passes(action, device, layout)
+    # Build the concrete Qiskit pass list for given action.
+    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+        factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
+        passes = factory(device.operation_names, CouplingMap(device.build_coupling_map()) if layout else None)
+    elif callable(action.transpile_pass):
+        factory = cast("Callable[[Target], list[Task]]", action.transpile_pass)
+        passes = factory(device)
+    else:
+        passes = cast("list[Task]", action.transpile_pass)
+
     if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
         assert action.do_while is not None
         pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
@@ -350,6 +370,13 @@ def run_qiskit_action(
         layout.final_layout = pm.property_set["final_layout"]
 
     if altered_qc.count_ops().get("unitary"):
+        # Custom "unitary" gates can not be processed further by other passes
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
 
     return altered_qc, layout
+
+
+def is_qiskit_action_available(action: Action, device: Target) -> bool:
+    """Return whether a Qiskit action is available for the current device."""
+    # Only allow VF2PostLayout if "ibm" is in the device name # TODO: Why?
+    return action.name != "VF2PostLayout" or "ibm" in device.description

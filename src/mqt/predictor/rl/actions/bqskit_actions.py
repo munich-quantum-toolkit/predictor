@@ -88,6 +88,9 @@ def bqskit_optimization_action() -> Action:
         CompilationOrigin.BQSKIT,
         PassType.OPT,
         transpile_pass=lambda circuit: bqskit_compile(circuit, **_bqskit_compilation_options()),
+        preserves_layout=True,
+        preserves_routing=True,
+        preserves_synthesis=False,
     )
 
 
@@ -132,11 +135,11 @@ def bqskit_synthesis_action() -> Action:
 def get_bqskit_native_gates(device: Target) -> list[Gate]:
     """Returns the native gates of the given device.
 
-    Arguments:
-        device: The device for which the native gates are returned.
+    Args:
+        device: Target whose operation names are translated to BQSKit native gates.
 
     Returns:
-        The native gates of the given device as BQSKit gates.
+        The native gates of the given Target as a list of BQSKit Gate objects.
 
     Raises:
         ValueError: If a gate in the device is not supported in BQSKit.
@@ -225,6 +228,16 @@ def final_layout_bqskit_to_qiskit(
     BQSKit provides an initial layout as a list[int] where each virtual qubit is mapped to a physical qubit
     similarly, it provides a final layout as a list[int] representing where each virtual qubit is mapped to at the end
     of the circuit.
+
+    Args:
+        bqskit_initial_layout: Tuple mapping each BQSKit virtual qubit index to its initial physical qubit index.
+        bqskit_final_layout: Tuple mapping each BQSKit virtual qubit index to its final physical qubit index.
+        compiled_qc: Compiled QuantumCircuit whose qubits define the output qubit list and final layout values.
+        initial_qc: Initial QuantumCircuit whose qubits define the input layout values.
+
+    Returns:
+        A TranspileLayout with a Qiskit Layout for the initial layout, an input-qubit-to-index mapping, and a final
+        Layout mapping physical qubit indices to compiled QuantumCircuit qubits when BQSKit changed the layout.
     """
     ancilla = QuantumRegister(compiled_qc.num_qubits - initial_qc.num_qubits, "ancilla")
     qiskit_initial_layout = {}
@@ -284,3 +297,10 @@ def run_bqskit_action(
         raise ValueError(msg)
 
     return bqskit_to_qiskit(bqskit_compiled_qc), layout
+
+
+def is_bqskit_action_available(*, has_layout: bool, has_parameterized_gates: bool) -> bool:
+    """Return whether a BQSKit action is available for the current circuit state."""
+    # Using BQSKit after a layout is set can result in an error # TODO: Why?
+    # BQSKit does not support parameterized gates
+    return not (has_layout or has_parameterized_gates)

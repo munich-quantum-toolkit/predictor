@@ -1,8 +1,3 @@
-model_*.zip
-*.qasm
-*.DS_Store
-*-checkpoint.ipynb
-
 /build*
 /cmake-build-*
 .idea/*
@@ -51,5 +46,22 @@ venv.bak/
 
 .ruff_cache/
 .mypy_cache/
+
+CLAUDE.md
+.claude/
+
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+._*
+Thumbs.db
+editor.swp
+editor~
+ehthumbs.db
+
+model_*.zip
+*.qasm
+*-checkpoint.ipynb
 
 src/**/_version.py

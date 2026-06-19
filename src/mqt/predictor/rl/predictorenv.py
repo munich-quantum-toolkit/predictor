@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -22,10 +23,6 @@ if TYPE_CHECKING:
     from qiskit.transpiler import Layout, Target
 
     from mqt.predictor.reward import figure_of_merit
-    from mqt.predictor.rl.actions import Action
-
-
-import warnings
 
 import numpy as np
 from gymnasium import Env
@@ -46,10 +43,10 @@ from mqt.predictor.rl.actions import (
     CompilationOrigin,
     PassType,
     get_actions_by_pass_type,
-    run_bqskit_action,
-    run_qiskit_action,
-    run_tket_action,
 )
+from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, run_bqskit_action
+from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
+from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 
 logger = logging.getLogger("mqt-predictor")
@@ -72,7 +69,7 @@ class PredictorEnv(Env):
     ) -> None:
         """Initializes the PredictorEnv object.
 
-        Arguments:
+        Args:
             device: The target device to be used for compilation.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
@@ -150,8 +147,8 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = 0
 
         # Canonical layout state for the current circuit. It is mirrored to
-        # QuantumCircuit.layout for callers, but kept here because TKET and
-        # BQSKit conversions do not preserve Qiskit's layout metadata.
+        # QuantumCircuit.layout for callers, but kept here because some action
+        # implementations do not preserve layout metadata across conversions.
         self.layout: TranspileLayout | None = None
 
         self.has_parameterized_gates = False
@@ -201,7 +198,7 @@ class PredictorEnv(Env):
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
 
-        Arguments:
+        Args:
             action: The action to be executed, represented by its index in the action set.
 
         Returns:
@@ -210,39 +207,22 @@ class PredictorEnv(Env):
         Raises:
             RuntimeError: If no valid actions are left.
         """
-        action_name = str(self.action_set[action].name)
-        self.used_actions.append(action_name)
         try:
-            altered_qc = self._apply_action_with_timeout(action)
-        except Exception as exc:
-            logger.exception("Error applying action '%s'", action_name)
+            self.used_actions.append(str(self.action_set[action].name))
+            altered_qc = self.apply_action(action)
+        except Exception as exc:  # noqa: BLE001
+            # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
-            self.num_steps += 1
             return (
-                create_feature_dict(self.state),
-                0.0,
-                False,
-                True,
-                {"truncation_reason": f"Error applying action '{action_name}': {exc}"},
-            )
-
-        if not altered_qc:
-            self.num_steps += 1
-            return (
-                create_feature_dict(self.state),
-                0.0,
-                True,
-                False,
-                {},
+                create_feature_dict(self.state),  # features
+                0,  # reward
+                False,  # terminated
+                True,  # truncated
+                {"Truncated because of error": f"{type(exc).__name__}: {exc}"},  # info
             )
 
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
-
-        # in case a Qiskit.QuantumCircuit has `unitary` or `u`` gates in it, decompose them (otherwise qiskit will throw an error when applying BasisTranslator)
-        # TODO: will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/668
-        if self.state.count_ops().get("unitary"):
-            self.state = self.state.decompose(gates_to_decompose="unitary")
 
         self.state._layout = self.layout  # noqa: SLF001
 
@@ -252,7 +232,6 @@ class PredictorEnv(Env):
             raise RuntimeError(msg)
 
         if action == self.action_terminate_index:
-            assert action in self.valid_actions, "Terminate action is not valid but was chosen."
             reward_val = self.calculate_reward()
             done = True
         else:
@@ -289,7 +268,7 @@ class PredictorEnv(Env):
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
-        Arguments:
+        Args:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit. Defaults to None.
             seed: The seed to be used for the random number generator. Defaults to None.
             options: Additional options. Defaults to None.
@@ -320,47 +299,59 @@ class PredictorEnv(Env):
         return create_feature_dict(self.state), {}
 
     def action_masks(self) -> list[bool]:
-        """Returns a list of valid actions for the current state."""
-        action_mask = [action in self.valid_actions for action in self.action_set]
+        """Build the boolean action mask exposed to the RL policy.
 
+        ``self.valid_actions`` contains the structurally valid action indices
+        for the current circuit state. This method expands that sparse list to
+        one boolean per registered action and applies SDK-specific availability
+        filters that depend on circuit features or the selected device.
+        Terminate has no SDK origin and is accepted solely from the structural
+        candidate list.
+
+        Returns:
+            A dense boolean mask ordered like ``self.action_set``.
+        """
         has_layout = self.layout is not None
+        valid_action_indices = set(self.valid_actions)
+        action_mask: list[bool] = []
 
-        if has_layout:
-            # TKET layout/optimization actions must not run after a Qiskit layout has been set
-            # (it is not clear how tket will handle the layout). TKET routing actions are
-            #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
-            action_mask = [
-                action_mask[i]
-                and (self.action_set[i].origin != CompilationOrigin.TKET or i in self.actions_routing_indices)
-                for i in range(len(action_mask))
-            ]
+        for action_index in range(len(self.action_set)):
+            action = self.action_set[action_index]
 
-        if self.has_parameterized_gates or has_layout:
-            # remove all actions that are from "origin"=="bqskit" because they are not supported for parameterized gates
-            # or after layout since using BQSKit after a layout is set can result in an error
-            action_mask = [
-                action_mask[i] and self.action_set[i].origin != CompilationOrigin.BQSKIT
-                for i in range(len(action_mask))
-            ]
+            if action_index not in valid_action_indices:
+                action_mask.append(False)
+                continue
+            if action.pass_type == PassType.TERMINATE:
+                action_mask.append(True)
+                continue
+            if action.origin == CompilationOrigin.QISKIT:
+                action_mask.append(is_qiskit_action_available(action, self.device))
+            elif action.origin == CompilationOrigin.TKET:
+                action_mask.append(is_tket_action_available(action=action, has_layout=has_layout))
+            elif action.origin == CompilationOrigin.BQSKIT:
+                action_mask.append(
+                    is_bqskit_action_available(
+                        has_layout=has_layout,
+                        has_parameterized_gates=self.has_parameterized_gates,
+                    )
+                )
+            else:
+                msg = f"Origin {action.origin} not supported."
+                raise ValueError(msg)
 
-        # only allow VF2PostLayout if "ibm" is in the device name
-        if "ibm" not in self.device.description:
-            action_mask = [
-                action_mask[i] and self.action_set[i].name != "VF2PostLayout" for i in range(len(action_mask))
-            ]
         return action_mask
 
-    def apply_action(self, action_index: int) -> QuantumCircuit | None:
+    def apply_action(self, action_index: int) -> QuantumCircuit:
         """Applies the given action to the current state and returns the altered state.
 
-        Arguments:
+        Args:
             action_index: The index of the action to be applied, which must be in the action set.
 
         Returns:
-            The altered quantum circuit after applying the action, or None if the action is to terminate the compilation.
+            The altered quantum circuit after applying the action.
 
         Raises:
-            ValueError: If the action index is not in the action set or if the action origin is not supported.
+            ValueError: If the action index is not in the action set or if the action cannot be applied.
         """
         if action_index not in self.action_set:
             msg = f"Action {action_index} not supported."
@@ -368,48 +359,35 @@ class PredictorEnv(Env):
 
         action = self.action_set[action_index]
 
-        if action.name == "terminate":
+        if action.pass_type == PassType.TERMINATE:
             return self.state
+
         if action.origin == CompilationOrigin.QISKIT:
-            return self._apply_qiskit_action(action)
-        if action.origin == CompilationOrigin.TKET:
-            return self._apply_tket_action(action)
-        if action.origin == CompilationOrigin.BQSKIT:
-            return self._apply_bqskit_action(action)
-        msg = f"Origin {action.origin} not supported."
-        raise ValueError(msg)
+            altered_qc, self.layout = run_qiskit_action(
+                action=action,
+                circuit=self.state,
+                device=self.device,
+                layout=self.layout,
+                input_qubit_count=self.num_qubits_uncompiled_circuit,
+            )
+        elif action.origin == CompilationOrigin.TKET:
+            altered_qc, self.layout = run_tket_action(
+                action=action,
+                circuit=self.state,
+                device=self.device,
+                layout=self.layout,
+            )
+        elif action.origin == CompilationOrigin.BQSKIT:
+            altered_qc, self.layout = run_bqskit_action(
+                action=action,
+                circuit=self.state,
+                device=self.device,
+                layout=self.layout,
+            )
+        else:
+            msg = f"Origin {action.origin} not supported."
+            raise ValueError(msg)
 
-    def _apply_qiskit_action(self, action: Action) -> QuantumCircuit:
-        altered_qc, self.layout = run_qiskit_action(
-            action=action,
-            circuit=self.state,
-            device=self.device,
-            layout=self.layout,
-            input_qubit_count=self.num_qubits_uncompiled_circuit,
-        )
-        return altered_qc
-
-    def _apply_tket_action(self, action: Action) -> QuantumCircuit:
-        altered_qc, self.layout = run_tket_action(
-            action=action, circuit=self.state, device=self.device, layout=self.layout
-        )
-        return altered_qc
-
-    def _apply_bqskit_action(self, action: Action) -> QuantumCircuit:
-        """Applies the given BQSKit action to the current state and returns the altered state.
-
-        Arguments:
-            action: The BQSKit action to be applied.
-
-        Returns:
-            The altered quantum circuit after applying the action.
-
-        Raises:
-            ValueError: If the action index is not in the action set or if the action origin is not supported.
-        """
-        altered_qc, self.layout = run_bqskit_action(
-            action=action, circuit=self.state, device=self.device, layout=self.layout
-        )
         return altered_qc
 
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
@@ -466,7 +444,17 @@ class PredictorEnv(Env):
         return True
 
     def determine_valid_actions_for_state(self) -> list[int]:
-        """Determine valid actions based on circuit state: synthesized, mapped, routed."""
+        """Select structurally valid action indices for the current circuit state.
+
+        The circuit is classified by compilation progress: synthesized to the
+        target gate set, laid out to physical qubits, and routed against the
+        directed coupling map. This method only determines which pass types can
+        advance that state; SDK/backend-specific availability filters are applied later
+        in ``action_masks``.
+
+        Returns:
+            Action indices whose pass type can be attempted from the current state.
+        """
         synthesized = self.is_circuit_synthesized(self.state)
         laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
         # Routing is only allowed after layout

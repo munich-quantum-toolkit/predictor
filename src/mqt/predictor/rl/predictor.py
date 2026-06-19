@@ -104,6 +104,7 @@ class Predictor:
         timesteps: int = 1000,
         verbose: int = 2,
         test: bool = False,
+        seed: int | None = None,
     ) -> None:
         """Trains all models for the given reward functions and device.
 
@@ -111,8 +112,11 @@ class Predictor:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
+            seed: The random seed to use for reproducible training. Set to None to use true randomness.
+                Defaults to None.
         """
-        set_random_seed(0)  # for reproducibility
+        if seed is not None:
+            set_random_seed(seed)
         if test:
             # minimum training overhead
             n_steps = max(timesteps, 2)
@@ -136,6 +140,7 @@ class Predictor:
             n_steps=n_steps,
             batch_size=batch_size,
             n_epochs=n_epochs,
+            seed=seed,
         )
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.

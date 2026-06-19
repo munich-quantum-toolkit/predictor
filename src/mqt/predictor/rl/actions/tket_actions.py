@@ -57,24 +57,36 @@ def tket_optimization_actions() -> list[Action]:
             CompilationOrigin.TKET,
             PassType.OPT,
             [PeepholeOptimise2Q()],
+            preserves_layout=False,
+            preserves_routing=False,
+            preserves_synthesis=False,
         ),
         DeviceIndependentAction(
             "CliffordSimp",
             CompilationOrigin.TKET,
             PassType.OPT,
             [CliffordSimp()],
+            preserves_layout=False,
+            preserves_routing=False,
+            preserves_synthesis=False,
         ),
         DeviceIndependentAction(
             "FullPeepholeOptimiseCX",
             CompilationOrigin.TKET,
             PassType.OPT,
             [FullPeepholeOptimise()],
+            preserves_layout=False,
+            preserves_routing=False,
+            preserves_synthesis=False,
         ),
         DeviceIndependentAction(
             "RemoveRedundancies",
             CompilationOrigin.TKET,
             PassType.OPT,
             [RemoveRedundancies()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
     ]
 
@@ -140,3 +152,11 @@ def run_tket_action(
         layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
 
     return altered_qc, layout
+
+
+def is_tket_action_available(*, action: Action, has_layout: bool) -> bool:
+    """Return whether a TKET action is available for the current layout state."""
+    # TKET layout/optimization actions must not run after a Qiskit layout has been set
+    # (it is not clear how tket will handle the layout). TKET routing actions, however, are
+    #  designed to work after a Qiskit layout via PreProcessTKETRoutingAfterQiskitLayout.
+    return not has_layout or action.pass_type == PassType.ROUTING
