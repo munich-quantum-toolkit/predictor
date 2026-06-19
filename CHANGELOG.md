@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Add RL truncation ([#697]) ([**@flowerthrower**])
 - ♻️ Refactor RL passes into SDK-level action modules ([#680]) ([**@flowerthrower**])
 - 🎨 Improve the RL state machine logic ([#677]) ([**@flowerthrower**])
 - 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679]) ([**@flowerthrower**])
@@ -49,6 +50,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
 [#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
