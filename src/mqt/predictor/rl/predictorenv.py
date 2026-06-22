@@ -273,11 +273,11 @@ class PredictorEnv(Env):
         action_mask: list[bool] = []
 
         for action_index in range(len(self.action_set)):
-            action = self.action_set[action_index]
-
             if action_index not in valid_action_indices:
                 action_mask.append(False)
                 continue
+                
+            action = self.action_set[action_index]    
             if action.pass_type == PassType.TERMINATE:
                 action_mask.append(True)
                 continue
