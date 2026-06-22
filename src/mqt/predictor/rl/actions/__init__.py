@@ -144,6 +144,9 @@ __all__ = [
     "DeviceDependentAction",
     "DeviceIndependentAction",
     "PassType",
+    "bqskit_actions",
     "get_actions_by_pass_type",
+    "qiskit_actions",
     "register_action",
+    "tket_actions",
 ]

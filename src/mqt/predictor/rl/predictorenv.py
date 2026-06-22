@@ -276,8 +276,8 @@ class PredictorEnv(Env):
             if action_index not in valid_action_indices:
                 action_mask.append(False)
                 continue
-                
-            action = self.action_set[action_index]    
+
+            action = self.action_set[action_index]
             if action.pass_type == PassType.TERMINATE:
                 action_mask.append(True)
                 continue
