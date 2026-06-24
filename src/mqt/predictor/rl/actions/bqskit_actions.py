@@ -299,8 +299,7 @@ def run_bqskit_action(
     return bqskit_to_qiskit(bqskit_compiled_qc), layout
 
 
-def is_bqskit_action_available(*, has_layout: bool, has_parameterized_gates: bool) -> bool:
+def is_bqskit_action_available(*, has_parameterized_gates: bool) -> bool:
     """Return whether a BQSKit action is available for the current circuit state."""
-    # Using BQSKit after a layout is set can result in an error # TODO: Why?
     # BQSKit does not support parameterized gates
-    return not (has_layout or has_parameterized_gates)
+    return not has_parameterized_gates
