@@ -204,7 +204,7 @@ class PredictorEnv(Env):
 
             self.tracer.record_step(
                 step_index=step_index,
-                action=action_name,
+                action_name=action_name,
                 action_type=action_type,
                 reward=reward_val,
                 current_qc=self.state,
