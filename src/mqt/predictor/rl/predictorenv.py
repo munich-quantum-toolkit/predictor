@@ -184,12 +184,22 @@ class PredictorEnv(Env):
             )
 
             # Collect figures of merit
-            ef_metric = FOMMetric(value=expected_fidelity(self.state, self.device), kind="exact")
-            cd_metric = FOMMetric(value=crit_depth(self.state), kind="exact")
+            try:
+                ef_val = expected_fidelity(self.state, self.device)
+                ef_metric = FOMMetric(value=ef_val, kind="exact")
+            except KeyError:
+                ef_metric = FOMMetric(value=0.0, kind="exact")
+
+            cd_val = crit_depth(self.state)
+            cd_metric = FOMMetric(value=cd_val, kind="exact")
 
             esp_metric = None
             if esp_data_available(self.device):
-                esp_metric = FOMMetric(value=estimated_success_probability(self.state, self.device), kind="exact")
+                try:
+                    esp_val = estimated_success_probability(self.state, self.device)
+                    esp_metric = FOMMetric(value=esp_val, kind="exact")
+                except KeyError:
+                    esp_metric = None
 
             hd_metric = None
             if self.hellinger_model is not None:
