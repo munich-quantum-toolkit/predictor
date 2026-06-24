@@ -61,7 +61,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert "steps" in trace_data, "Tracer JSON is missing the steps array."
 
     assert len(trace_data["steps"]) > 1, "Tracer should record subsequent compilation steps beyond the Baseline."
-    assert trace_data["steps"][0]["action"] == "Baseline", "First step must be Baseline."
+    assert trace_data["steps"][0]["action_name"] == "Baseline", "First step must be Baseline."
     assert trace_data["schema_version"] == "1.0.0"
 
     last_step_data = trace_data["steps"][-1]
