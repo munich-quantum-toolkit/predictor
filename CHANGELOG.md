@@ -27,6 +27,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
 
 - 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
 - ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360]) ([**@flowerthrower**])
+- ✨ Added CompilationTracer that collects detailed compilation information and exports it to a JSON file ([#714]) ([**@linus-hologram**])
 
 ### Changed
 
@@ -49,6 +50,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
 [#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
@@ -72,6 +74,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@denialhaag**]: https://github.com/denialhaag
 [**@bachase**]: https://github.com/bachase
 [**@Shaobo-Zhou**]: https://github.com/Shaobo-Zhou
+[**@linus-hologram**]: https://github.com/linus-hologram
 
 <!-- General links -->
 
