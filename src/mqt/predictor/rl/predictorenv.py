@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 import warnings
 from pathlib import Path
@@ -231,7 +232,14 @@ class PredictorEnv(Env):
             if done:
                 out_path = Path(self.tracer_output_path)
                 if out_path.is_dir() or not out_path.suffix:
-                    out_path = out_path / f"trace_{self.current_circuit_name}.json"
+                    # Sanitize circuit name: replace anything not alphanumeric, dash, or underscore with an underscore
+                    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", self.current_circuit_name)
+
+                    # Fallback just in case the name was entirely stripped
+                    if not safe_name or not safe_name.strip("_"):
+                        safe_name = "unknown_circuit"
+
+                    out_path = out_path / f"trace_{safe_name}.json"
 
                 self.tracer.save_to_json(out_path)
                 logger.info("✅ TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())

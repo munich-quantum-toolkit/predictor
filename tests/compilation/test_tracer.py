@@ -19,7 +19,14 @@ from mqt.bench.targets.devices import get_device
 
 from mqt.predictor.rl.helper import get_path_trained_model
 from mqt.predictor.rl.predictor import Predictor, rl_compile
-from mqt.predictor.rl.tracer import CompilationStep, DeviceMetadata
+from mqt.predictor.rl.tracer import (
+    CompilationStep,
+    DeviceMetadata,
+    FigureOfMeritMetrics,
+    FOMMetric,
+    GateCalibration,
+    TopologyEdge,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -107,15 +114,38 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         assert "kind" in hd_metric, "Hellinger distance is missing its kind string."
 
     # Semantic Validation via Dataclasses
-    try:
-        # Initialize from JSON (throws if the structures don't match)
-        DeviceMetadata(**trace_data["device"])
+    # 1. Validate DeviceMetadata
+    device_data = trace_data["device"]
+    topology = [TopologyEdge(**edge) for edge in device_data.get("topology", [])]
 
-        # Semantically validate both the first and the last steps
-        CompilationStep(**first_step)
-        CompilationStep(**last_step_data)
+    calibration_data = {
+        gate: [GateCalibration(**cal) for cal in cals] for gate, cals in device_data.get("calibration_data", {}).items()
+    }
 
-    except TypeError as e:
-        pytest.fail(
-            f"Semantic Validation Failed! The generated JSON does not match the corresponding Python dataclasses. Error: {e}"
+    DeviceMetadata(
+        name=device_data["name"],
+        device_qubits=device_data["device_qubits"],
+        native_gates=device_data["native_gates"],
+        topology=topology,
+        calibration_data=calibration_data,
+    )
+
+    # 2. Validate CompilationSteps
+    for step_data in (first_step, last_step_data):
+        fom_raw = step_data["figures_of_merit"]
+
+        # Safely unpack optional Hellinger Distance and ESP
+        hd_raw = fom_raw.get("hellinger_distance")
+        esp_raw = fom_raw.get("success_probability")
+
+        fom_metrics = FigureOfMeritMetrics(
+            expected_fidelity=FOMMetric(**fom_raw["expected_fidelity"]),
+            critical_depth=FOMMetric(**fom_raw["critical_depth"]),
+            hellinger_distance=FOMMetric(**hd_raw) if hd_raw is not None else None,
+            success_probability=FOMMetric(**esp_raw) if esp_raw is not None else None,
         )
+
+        step_args = step_data.copy()
+        step_args["figures_of_merit"] = fom_metrics
+
+        CompilationStep(**step_args)
