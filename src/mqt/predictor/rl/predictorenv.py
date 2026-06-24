@@ -276,8 +276,8 @@ class PredictorEnv(Env):
             if action_index not in valid_action_indices:
                 action_mask.append(False)
                 continue
-                
-            action = self.action_set[action_index]    
+
+            action = self.action_set[action_index]
             if action.pass_type == PassType.TERMINATE:
                 action_mask.append(True)
                 continue
@@ -288,7 +288,6 @@ class PredictorEnv(Env):
             elif action.origin == CompilationOrigin.BQSKIT:
                 action_mask.append(
                     is_bqskit_action_available(
-                        has_layout=has_layout,
                         has_parameterized_gates=self.has_parameterized_gates,
                     )
                 )
@@ -350,7 +349,9 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            # Use final_layout if available; otherwise fallback to initial_layout
+            output_qubits = layout._output_qubit_list  # noqa: SLF001
+            if output_qubits is not None and all(q in output_qubits for q in circuit.qubits):
+                return True
             layout = layout.final_layout or layout.initial_layout
 
         v2p = layout.get_virtual_bits()
