@@ -255,7 +255,7 @@ class PredictorEnv(Env):
                 action_type=action_type,
                 reward_val=0.0,
                 feature_vector=obs,
-                done=True
+                done=True,
             )
             return (
                 obs,  # features
@@ -291,7 +291,7 @@ class PredictorEnv(Env):
             action_type=action_type,
             reward_val=reward_val,
             feature_vector=obs,
-            done=done
+            done=done,
         )
 
         return obs, reward_val, done, False, {}
