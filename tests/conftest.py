@@ -12,28 +12,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from mqt.predictor.ml.helper import get_path_training_data as ml_get_path_training_data
 from mqt.predictor.rl.helper import get_path_trained_model as rl_get_path_trained_model
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    import pytest
 
 
-@pytest.fixture(scope="session", autouse=True)
-def clean_rl_models() -> Generator[None]:
-    """Clean up trained RL models after test session."""
-    yield
-
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+    """Clean up trained RL and ML models after test session."""
     for model in rl_get_path_trained_model().glob("*.zip"):
         model.unlink()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def clean_ml_models() -> Generator[None]:
-    """Clean up trained ML models after test session."""
-    yield
 
     for model in (ml_get_path_training_data() / "trained_model").glob("*.joblib"):
         model.unlink()
