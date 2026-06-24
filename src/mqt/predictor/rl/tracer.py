@@ -108,6 +108,7 @@ class CompilationStep:
     Attributes:
         step_index: The current step number in the reinforcement learning episode.
         action: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
+        action_type: The type of the compilation pass applied (e.g., 'Optimization')
         reward: The calculated reward value for applying this specific action.
         current_depth: The depth of the quantum circuit after the action was applied.
         num_qubits: The number of qubits in the circuit.
@@ -128,6 +129,7 @@ class CompilationStep:
 
     step_index: int
     action: str
+    action_type: str
     reward: float
     current_depth: int
     num_qubits: int
@@ -196,7 +198,8 @@ class CompilationTracer:
     def record_step(
         self,
         step_index: int,
-        action: str,
+        action_name: str,
+        action_type: str,
         reward: float,
         current_qc: QuantumCircuit,
         figures_of_merit: FigureOfMeritMetrics,
@@ -210,7 +213,8 @@ class CompilationTracer:
 
         Args:
             step_index: The current step number in the environment.
-            action: The name of the compilation pass that was just applied.
+            action_name: The name of the compilation pass that was just applied.
+            action_type: The type of the compilation pass that was just applied.
             reward: The calculated reward for the applied pass.
             current_qc: The current Qiskit QuantumCircuit object after the pass.
             figures_of_merit: The available figures of merit for the current circuit.
@@ -229,7 +233,8 @@ class CompilationTracer:
 
         new_step = CompilationStep(
             step_index=step_index,
-            action=action,
+            action=action_name,
+            action_type=action_type,
             reward=round(reward, 6),
             current_depth=current_qc.depth(),
             num_qubits=current_qc.num_qubits,
