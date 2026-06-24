@@ -53,21 +53,41 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     with trace_file.open(encoding="utf-8") as f:
         trace_data = json.load(f)
 
+    # Validate Top-Level Metadata
     assert "circuit_name" in trace_data, "Tracer JSON is missing the circuit name."
     assert "mdp_policy" in trace_data, "Tracer JSON is missing the mdp policy."
     assert "device" in trace_data, "Tracer JSON is missing the device information."
     assert "schema_version" in trace_data, "Tracer JSON is missing the schema version."
     assert "timestamp" in trace_data, "Tracer JSON is missing the timestamp."
     assert "steps" in trace_data, "Tracer JSON is missing the steps array."
+    assert "total_duration" in trace_data, "Tracer JSON is missing the total_duration."
 
-    assert len(trace_data["steps"]) > 1, "Tracer should record subsequent compilation steps beyond the Baseline."
-    assert trace_data["steps"][0]["action_name"] == "Baseline", "First step must be Baseline."
     assert trace_data["schema_version"] == "1.0.0"
+    assert trace_data["total_duration"] >= 0.0, "Total duration must be non-negative."
 
+    # Validate Step Array Length
+    assert len(trace_data["steps"]) > 1, "Tracer should record subsequent compilation steps beyond the Baseline."
+
+    # Validate Baseline (First Step)
+    first_step = trace_data["steps"][0]
+    assert first_step["action_name"] == "Baseline", "First step must be Baseline."
+    assert first_step["action_type"] == "INITIAL", "First step action_type must be INITIAL."
+    assert first_step["action_duration"] == pytest.approx(0.0), "Baseline step duration should be 0.0."
+
+    # Validate Terminal Step (Last Step)
     last_step_data = trace_data["steps"][-1]
     assert last_step_data.get("is_terminal") is True, "The final compilation step must be marked as terminal."
+    assert "action_type" in last_step_data, "Action type is missing from the trace step."
+    assert "action_duration" in last_step_data, "Action duration is missing from the trace step."
+    assert last_step_data["action_duration"] >= 0.0, "Action duration must be non-negative."
 
-    # Verify Figures of Merit
+    # Validate that total duration mathematically matches the sum of step durations
+    calculated_total = sum(step.get("action_duration", 0.0) for step in trace_data["steps"])
+    assert trace_data["total_duration"] == pytest.approx(calculated_total), (
+        "total_duration does not equal the sum of step durations."
+    )
+
+    # Verify Figures of Merit on the final step
     fom_data = last_step_data.get("figures_of_merit")
     assert fom_data is not None, "Figures of merit dictionary is missing from the trace step."
 
@@ -86,15 +106,16 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         assert "value" in hd_metric, "Hellinger distance is missing its float value."
         assert "kind" in hd_metric, "Hellinger distance is missing its kind string."
 
+    # Semantic Validation via Dataclasses
     try:
         # Initialize from JSON (throws if the structures don't match)
         DeviceMetadata(**trace_data["device"])
 
         # Semantically validate both the first and the last steps
-        CompilationStep(**trace_data["steps"][0])
+        CompilationStep(**first_step)
         CompilationStep(**last_step_data)
 
     except TypeError as e:
         pytest.fail(
-            f"Semantic Validation Failed! The generated JSON does not match your Python dataclasses. Error: {e}"
+            f"Semantic Validation Failed! The generated JSON does not match the corresponding Python dataclasses. Error: {e}"
         )
