@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -169,6 +170,7 @@ class PredictorEnv(Env):
         step_index: int,
         action_name: str,
         action_type: str,
+        action_duration: float,
         reward_val: float,
         feature_vector: dict[str, Any],
         done: bool,
@@ -206,6 +208,7 @@ class PredictorEnv(Env):
                 step_index=step_index,
                 action_name=action_name,
                 action_type=action_type,
+                action_duration=action_duration,
                 reward=reward_val,
                 current_qc=self.state,
                 figures_of_merit=metrics,
@@ -240,10 +243,13 @@ class PredictorEnv(Env):
         action_name = str(action_obj.name)
         action_type = str(action_obj.pass_type.name)
 
+        start_time = time.perf_counter()
         try:
             self.used_actions.append(action_name)
             altered_qc = self.apply_action(action)
+            action_duration = time.perf_counter() - start_time
         except Exception as exc:  # noqa: BLE001
+            action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
             obs = create_feature_dict(self.state)
@@ -253,6 +259,7 @@ class PredictorEnv(Env):
                 step_index=self.num_steps + 1,
                 action_name=action_name,
                 action_type=action_type,
+                action_duration=action_duration,
                 reward_val=0.0,
                 feature_vector=obs,
                 done=True,
@@ -289,6 +296,7 @@ class PredictorEnv(Env):
             step_index=self.num_steps,
             action_name=action_name,
             action_type=action_type,
+            action_duration=action_duration,
             reward_val=reward_val,
             feature_vector=obs,
             done=done,
@@ -357,6 +365,8 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
+        self.episode_start_time = time.perf_counter()
+
         obs = create_feature_dict(self.state)
 
         # Setup tracer for the new episode
@@ -381,6 +391,7 @@ class PredictorEnv(Env):
                 step_index=0,
                 action_name="Baseline",
                 action_type="INITIAL",
+                action_duration=0.0,
                 reward_val=0.0,
                 feature_vector=obs,
                 done=False,

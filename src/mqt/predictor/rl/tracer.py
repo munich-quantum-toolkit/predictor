@@ -108,7 +108,8 @@ class CompilationStep:
     Attributes:
         step_index: The current step number in the reinforcement learning episode.
         action: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
-        action_type: The type of the compilation pass applied (e.g., 'Optimization')
+        action_type: The type of the compilation pass applied (e.g., 'Optimization').
+        action_duration: The time it took to apply the compilation pass.
         reward: The calculated reward value for applying this specific action.
         current_depth: The depth of the quantum circuit after the action was applied.
         num_qubits: The number of qubits in the circuit.
@@ -130,6 +131,7 @@ class CompilationStep:
     step_index: int
     action: str
     action_type: str
+    action_duration: float
     reward: float
     current_depth: int
     num_qubits: int
@@ -164,6 +166,7 @@ class CompilationTracer:
         schema_version: The version of this schema. Upgrade in case of schema changes to maintain compatibility with tracer frontend.
         timestamp: A timestamp indicating start of the compilation.
         steps: An ordered list of CompilationStep snapshots.
+        total_duration: The total time spent compiling the circuit (sum of all action durations).
     """
 
     circuit_name: str
@@ -173,6 +176,7 @@ class CompilationTracer:
     schema_version: str = "1.0.0"
     timestamp: float = field(default_factory=time.time)
     steps: list[CompilationStep] = field(default_factory=list)
+    total_duration: float = 0.0
 
     @classmethod
     def from_initial_state(
@@ -200,6 +204,7 @@ class CompilationTracer:
         step_index: int,
         action_name: str,
         action_type: str,
+        action_duration: float,
         reward: float,
         current_qc: QuantumCircuit,
         figures_of_merit: FigureOfMeritMetrics,
@@ -215,6 +220,7 @@ class CompilationTracer:
             step_index: The current step number in the environment.
             action_name: The name of the compilation pass that was just applied.
             action_type: The type of the compilation pass that was just applied.
+            action_duration: The time it took to apply the compilation pass.
             reward: The calculated reward for the applied pass.
             current_qc: The current Qiskit QuantumCircuit object after the pass.
             figures_of_merit: The available figures of merit for the current circuit.
@@ -235,6 +241,7 @@ class CompilationTracer:
             step_index=step_index,
             action=action_name,
             action_type=action_type,
+            action_duration=action_duration,
             reward=round(reward, 6),
             current_depth=current_qc.depth(),
             num_qubits=current_qc.num_qubits,
@@ -253,6 +260,9 @@ class CompilationTracer:
             routed=routed,
         )
         self.steps.append(new_step)
+
+        if done:
+            self.total_duration = sum(step.action_duration for step in self.steps)
 
     def save_to_json(self, filepath: str | Path) -> None:
         """Serializes the metadata and all recorded steps to a JSON file.
