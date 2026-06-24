@@ -58,13 +58,13 @@ class DeviceMetadata:
     """Metadata containing information about the target quantum device for compilation.
 
     Attributes:
-        description: The name of the quantum device.
+        name: The name of the quantum device.
         device_qubits: The number of qubits available on the device.
         native_gates: A set of gates native to this device.
         calibration_data: The calibration data for this device per native instruction.
     """
 
-    description: str
+    name: str
     device_qubits: int
     native_gates: list[str]
     topology: list[TopologyEdge]
@@ -289,7 +289,7 @@ class CompilationTracer:
             calibration_data[gate_name] = gate_calibrations
 
         return DeviceMetadata(
-            description=device.description,
+            name=device.description,
             device_qubits=device.num_qubits,
             native_gates=native_gates,
             topology=topology,
