@@ -107,7 +107,7 @@ class CompilationStep:
 
     Attributes:
         step_index: The current step number in the reinforcement learning episode.
-        action: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
+        action_name: The string representation of the compilation pass applied (e.g., 'OptimizeCliffords').
         action_type: The type of the compilation pass applied (e.g., 'Optimization').
         action_duration: The time it took to apply the compilation pass.
         reward: The calculated reward value for applying this specific action.
@@ -129,7 +129,7 @@ class CompilationStep:
     """
 
     step_index: int
-    action: str
+    action_name: str
     action_type: str
     action_duration: float
     reward: float
@@ -175,8 +175,8 @@ class CompilationTracer:
     device: DeviceMetadata
     schema_version: str = "1.0.0"
     timestamp: float = field(default_factory=time.time)
-    steps: list[CompilationStep] = field(default_factory=list)
     total_duration: float = 0.0
+    steps: list[CompilationStep] = field(default_factory=list)
 
     @classmethod
     def from_initial_state(
@@ -239,7 +239,7 @@ class CompilationTracer:
 
         new_step = CompilationStep(
             step_index=step_index,
-            action=action_name,
+            action_name=action_name,
             action_type=action_type,
             action_duration=action_duration,
             reward=round(reward, 6),
