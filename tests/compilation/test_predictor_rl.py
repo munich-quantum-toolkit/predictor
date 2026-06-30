@@ -22,6 +22,7 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
+import mqt.predictor.rl.actions as actions_module
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
@@ -29,8 +30,8 @@ from mqt.predictor.rl.actions import (
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
     register_action,
-    remove_action,
 )
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
@@ -119,6 +120,64 @@ def test_warning_for_unidirectional_device() -> None:
         Predictor(figure_of_merit="expected_fidelity", device=target)
 
 
+def test_predictor_env_truncates_at_max_steps() -> None:
+    """Test that the environment truncates episodes that hit the step limit."""
+    device = get_device("ibm_falcon_27")
+    env = PredictorEnv(device=device, max_steps=1)
+    qc = QuantumCircuit(1)
+    qc.h(0)
+    env.reset(qc)
+
+    _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
+
+    assert reward_val == 0
+    assert not terminated
+    assert truncated
+    assert info["truncation_reason"] == "max_steps_exceeded"
+
+
+def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that failed pass execution truncates the episode."""
+    device = get_device("ibm_falcon_27")
+    env = PredictorEnv(device=device)
+    env.reset(QuantumCircuit(1))
+
+    def fail_action(_action: int) -> QuantumCircuit:
+        msg = "fake pass failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(env, "apply_action", fail_action)
+
+    _, reward_val, terminated, truncated, info = env.step(env.valid_actions[0])
+
+    assert reward_val == 0
+    assert not terminated
+    assert truncated
+    assert env.error_occurred
+    assert "fake pass failure" in info["truncation_reason"]
+
+
+def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that pass timeouts truncate the episode."""
+    device = get_device("ibm_falcon_27")
+    env = PredictorEnv(device=device)
+    env.reset(QuantumCircuit(1))
+
+    def timeout_action(_action: int) -> QuantumCircuit:
+        msg = "fake pass timeout"
+        raise TimeoutError(msg)
+
+    monkeypatch.setattr(env, "apply_action", timeout_action)
+
+    _, reward_val, terminated, truncated, info = env.step(env.valid_actions[0])
+
+    assert reward_val == 0
+    assert not terminated
+    assert truncated
+    assert env.error_occurred
+    assert "fake pass timeout" in info["truncation_reason"]
+
+
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
     """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
     device = get_device("ibm_falcon_27")
@@ -171,22 +230,25 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
         def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
             return circuit
 
-    monkeypatch.setattr(predictorenv_module, "PassManager", FakePassManager)
+    monkeypatch.setattr(qiskit_actions, "PassManager", FakePassManager)
     action = DeviceIndependentAction(
         name="SyntheticQiskitRouting",
         pass_type=PassType.ROUTING,
         transpile_pass=[],
         origin=CompilationOrigin.QISKIT,
     )
-
-    altered_qc = env._apply_qiskit_action(action, env.actions_routing_indices[0])  # noqa: SLF001
+    routing_action_index = next(iter(env.actions_routing_indices))
+    env.action_set[routing_action_index] = action
+    altered_qc = env.apply_action(action_index=routing_action_index)
 
     assert altered_qc is env.state
     assert env.layout.final_layout is final_layout
 
 
-def test_register_action() -> None:
+def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
+    actions_registry = vars(actions_module)
+    monkeypatch.setitem(actions_registry, "_ACTIONS", actions_registry["_ACTIONS"].copy())
     action = DeviceIndependentAction(
         name="test_action", pass_type=PassType.OPT, transpile_pass=[], origin=CompilationOrigin.QISKIT
     )
@@ -196,8 +258,3 @@ def test_register_action() -> None:
 
     with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
         register_action(action)
-
-    remove_action(action.name)
-
-    with pytest.raises(KeyError, match=re.escape("No action with name wrong_action_name is registered")):
-        remove_action("wrong_action_name")

@@ -38,12 +38,27 @@ class Predictor:
         device: Target,
         path_training_circuits: Path | None = None,
         logger_level: int = logging.INFO,
+        max_steps: int | None = 100,
+        pass_timeout: int | None = None,
     ) -> None:
-        """Initializes the Predictor object."""
+        """Initializes the Predictor object.
+
+        Arguments:
+            figure_of_merit: The figure of merit to optimize during compilation.
+            device: The target device to compile to.
+            path_training_circuits: The path to the training circuits folder. Defaults to None.
+            logger_level: The logger level. Defaults to logging.INFO.
+            max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+            pass_timeout: The timeout in seconds for applying a single pass. If None, no timeout is enforced. Defaults to None.
+        """
         logger.setLevel(logger_level)
 
         self.env = PredictorEnv(
-            reward_function=figure_of_merit, device=device, path_training_circuits=path_training_circuits
+            reward_function=figure_of_merit,
+            device=device,
+            path_training_circuits=path_training_circuits,
+            max_steps=max_steps,
+            pass_timeout=pass_timeout,
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
@@ -159,6 +174,8 @@ def rl_compile(
     device: Target | None,
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
+    max_steps: int | None = 100,
+    pass_timeout: int | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -167,6 +184,8 @@ def rl_compile(
         device: The device to compile to.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
+        max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+        pass_timeout: The timeout in seconds for applying a single pass. If None, no timeout is enforced. Defaults to None.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -181,8 +200,22 @@ def rl_compile(
         if device is None:
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+        predictor = Predictor(
+            figure_of_merit=figure_of_merit,
+            device=device,
+            max_steps=max_steps,
+            pass_timeout=pass_timeout,
+        )
     else:
         predictor = predictor_singleton
+        original_max_steps = predictor.env.max_steps
+        original_pass_timeout = predictor.env.pass_timeout
+        predictor.env.max_steps = max_steps
+        predictor.env.pass_timeout = pass_timeout
+        try:
+            return predictor.compile_as_predicted(qc)
+        finally:
+            predictor.env.max_steps = original_max_steps
+            predictor.env.pass_timeout = original_pass_timeout
 
     return predictor.compile_as_predicted(qc)
