@@ -14,16 +14,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
-from bqskit.ir import Circuit, gates
+from bqskit.ir import gates
+from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
-from mqt.predictor.rl.actions import PassType, get_actions_by_pass_type
+from mqt.predictor.rl.actions import (
+    PassType,
+    get_actions_by_pass_type,
+)
+from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
+from mqt.predictor.rl.actions.qiskit_actions import postprocess_vf2postlayout
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
-from mqt.predictor.rl.parsing import bqskit_to_qiskit, get_bqskit_native_gates, postprocess_vf2postlayout
 
 if TYPE_CHECKING:
     from collections.abc import Callable
