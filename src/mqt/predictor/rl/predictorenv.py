@@ -421,7 +421,7 @@ class PredictorEnv(Env):
             self._collect_tracer_data(
                 step_index=0,
                 action_name="Baseline",
-                action_type="INITIAL",
+                action_type="initial",
                 action_duration=0.0,
                 reward_val=0.0,
                 feature_vector=obs,
