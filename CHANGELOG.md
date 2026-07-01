@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+- ✨ Added CompilationTracer that collects detailed compilation information and exports it to a JSON file ([#714]) ([**@linus-hologram**])
+
 ### Changed
 
 - ♻️ Refactor RL passes into SDK-level action modules ([#680]) ([**@flowerthrower**])
@@ -27,7 +29,6 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
 
 - 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
 - ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360]) ([**@flowerthrower**])
-- ✨ Added CompilationTracer that collects detailed compilation information and exports it to a JSON file ([#714]) ([**@linus-hologram**])
 
 ### Changed
 

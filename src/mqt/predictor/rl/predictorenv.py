@@ -47,7 +47,7 @@ from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, 
 from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
 from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
-from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetrics, FOMMetric
+from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, FigureOfMeritMetrics
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -187,23 +187,23 @@ class PredictorEnv(Env):
             # Collect figures of merit
             try:
                 ef_val = expected_fidelity(self.state, self.device)
-                ef_metric = FOMMetric(value=ef_val, kind="exact")
+                ef_metric = FigureOfMeritMetric(value=ef_val, kind="exact")
             except KeyError:
-                ef_metric = FOMMetric(value=0.0, kind="unavailable")
+                ef_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
 
-            cd_metric = FOMMetric(value=crit_depth(self.state), kind="exact")
+            cd_metric = FigureOfMeritMetric(value=crit_depth(self.state), kind="exact")
 
             esp_metric = None
             if esp_data_available(self.device):
                 try:
                     esp_val = estimated_success_probability(self.state, self.device)
-                    esp_metric = FOMMetric(value=esp_val, kind="exact")
+                    esp_metric = FigureOfMeritMetric(value=esp_val, kind="exact")
                 except KeyError:
-                    esp_metric = FOMMetric(value=0.0, kind="unavailable")
+                    esp_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
 
             hd_metric = None
             if self.hellinger_model is not None:
-                hd_metric = FOMMetric(
+                hd_metric = FigureOfMeritMetric(
                     value=estimated_hellinger_distance(self.state, self.device, self.hellinger_model), kind="exact"
                 )
 
@@ -242,7 +242,7 @@ class PredictorEnv(Env):
                     out_path = out_path / f"trace_{safe_name}.json"
 
                 self.tracer.save_to_json(out_path)
-                logger.info("✅ TRACE EXPORTED SUCCESSFULLY to: %s", out_path.resolve())
+                logger.info("Trace exported to: %s", out_path.resolve())
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
@@ -258,7 +258,7 @@ class PredictorEnv(Env):
         """
         action_obj = self.action_set[action]
         action_name = str(action_obj.name)
-        action_type = str(action_obj.pass_type.name)
+        action_type = action_obj.pass_type.value
 
         start_time = time.perf_counter()
         try:

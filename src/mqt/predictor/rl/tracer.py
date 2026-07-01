@@ -60,7 +60,8 @@ class DeviceMetadata:
     Attributes:
         name: The name of the quantum device.
         device_qubits: The number of qubits available on the device.
-        native_gates: A set of gates native to this device.
+        native_gates: A list of gates native to this device.
+        topology: A list of TopologyEdge objects representing the topology of the device.
         calibration_data: The calibration data for this device per native instruction.
     """
 
@@ -72,7 +73,7 @@ class DeviceMetadata:
 
 
 @dataclass
-class FOMMetric:
+class FigureOfMeritMetric:
     """Represents a Figure of Merit metric value.
 
     Attributes:
@@ -95,10 +96,10 @@ class FigureOfMeritMetrics:
         success_probability: The success probability of the circuit, if available.
     """
 
-    expected_fidelity: FOMMetric
-    critical_depth: FOMMetric
-    hellinger_distance: FOMMetric | None
-    success_probability: FOMMetric | None
+    expected_fidelity: FigureOfMeritMetric
+    critical_depth: FigureOfMeritMetric
+    hellinger_distance: FigureOfMeritMetric | None
+    success_probability: FigureOfMeritMetric | None
 
 
 @dataclass
@@ -311,4 +312,4 @@ class CompilationTracer:
         """Safely extracts a float from a scalar or a 1D NumPy array to satisfy linter requirements."""
         if isinstance(val, int):
             return float(val)
-        return float(val[0])
+        return float(val.item())

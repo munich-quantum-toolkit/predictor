@@ -22,8 +22,8 @@ from mqt.predictor.rl.predictor import Predictor, rl_compile
 from mqt.predictor.rl.tracer import (
     CompilationStep,
     DeviceMetadata,
+    FigureOfMeritMetric,
     FigureOfMeritMetrics,
-    FOMMetric,
     GateCalibration,
     TopologyEdge,
 )
@@ -139,10 +139,10 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         esp_raw = fom_raw.get("success_probability")
 
         fom_metrics = FigureOfMeritMetrics(
-            expected_fidelity=FOMMetric(**fom_raw["expected_fidelity"]),
-            critical_depth=FOMMetric(**fom_raw["critical_depth"]),
-            hellinger_distance=FOMMetric(**hd_raw) if hd_raw is not None else None,
-            success_probability=FOMMetric(**esp_raw) if esp_raw is not None else None,
+            expected_fidelity=FigureOfMeritMetric(**fom_raw["expected_fidelity"]),
+            critical_depth=FigureOfMeritMetric(**fom_raw["critical_depth"]),
+            hellinger_distance=FigureOfMeritMetric(**hd_raw) if hd_raw is not None else None,
+            success_probability=FigureOfMeritMetric(**esp_raw) if esp_raw is not None else None,
         )
 
         step_args = step_data.copy()
