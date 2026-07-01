@@ -188,7 +188,6 @@ class PredictorEnv(Env):
                 ef_val = self.get_fom("expected_fidelity")
                 ef_metric = FigureOfMeritMetric(value=ef_val, kind="exact")
             except KeyError:
-                logger.warning("received key error for expected fidelity")
                 ef_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
 
             cd_metric = FigureOfMeritMetric(value=self.get_fom("critical_depth"), kind="exact")

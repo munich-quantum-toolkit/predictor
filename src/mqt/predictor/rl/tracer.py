@@ -238,6 +238,11 @@ class CompilationTracer:
         }
         total_gates = sum(present_ops_dict.values())
 
+        try:
+            qasm_string = qasm3.dumps(current_qc)
+        except Exception as e:  # noqa: BLE001
+            qasm_string = f"QASM 3 export failed: {e}"
+
         new_step = CompilationStep(
             step_index=step_index,
             action_name=action_name,
@@ -250,7 +255,7 @@ class CompilationTracer:
             total_gates=total_gates,
             figures_of_merit=figures_of_merit,
             is_terminal=done,
-            circuit_qasm3=qasm3.dumps(current_qc),
+            circuit_qasm3=qasm_string,
             program_communication=self._extract_float(features["program_communication"]),
             raw_critical_depth=self._extract_float(features["critical_depth"]),
             entanglement_ratio=self._extract_float(features["entanglement_ratio"]),
