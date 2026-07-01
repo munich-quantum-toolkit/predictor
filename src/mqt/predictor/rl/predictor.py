@@ -38,12 +38,16 @@ class Predictor:
         device: Target,
         path_training_circuits: Path | None = None,
         logger_level: int = logging.INFO,
+        tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the Predictor object."""
         logger.setLevel(logger_level)
 
         self.env = PredictorEnv(
-            reward_function=figure_of_merit, device=device, path_training_circuits=path_training_circuits
+            reward_function=figure_of_merit,
+            device=device,
+            path_training_circuits=path_training_circuits,
+            tracer_output_path=tracer_output_path,
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
@@ -51,11 +55,13 @@ class Predictor:
     def compile_as_predicted(
         self,
         qc: QuantumCircuit | str,
+        tracer_output_path: str | Path | None = None,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
+            tracer_output_path: Optional temporary path to export the compilation trace for this specific run.
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -63,26 +69,37 @@ class Predictor:
         Raises:
             RuntimeError: If an error occurs during compilation.
         """
-        trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
+        original_tracer_output_path = self.env.tracer_output_path
 
-        obs, _ = self.env.reset(qc, seed=0)
+        # Temporarily override singleton if a new path is explicitly provided
+        if tracer_output_path is not None:
+            self.env.tracer_output_path = tracer_output_path
 
-        used_compilation_passes = []
-        terminated = False
-        truncated = False
-        while not (terminated or truncated):
-            action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
-            action = int(action)
-            action_item = self.env.action_set[action]
-            used_compilation_passes.append(action_item.name)
-            obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+        try:
+            trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
 
-        if not self.env.error_occurred:
-            return self.env.state, used_compilation_passes
+            obs, _ = self.env.reset(qc, seed=0)
 
-        msg = "Error occurred during compilation."
-        raise RuntimeError(msg)
+            used_compilation_passes = []
+            terminated = False
+            truncated = False
+            while not (terminated or truncated):
+                action_masks = get_action_masks(self.env)
+                action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+                action = int(action)
+                action_item = self.env.action_set[action]
+                used_compilation_passes.append(action_item.name)
+                obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+
+            if not self.env.error_occurred:
+                return self.env.state, used_compilation_passes
+
+            msg = "Error occurred during compilation."
+            raise RuntimeError(msg)
+
+        finally:
+            # Restore original singleton path
+            self.env.tracer_output_path = original_tracer_output_path
 
     def train_model(
         self,
@@ -159,6 +176,7 @@ def rl_compile(
     device: Target | None,
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
+    tracer_output_path: str | Path | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -167,6 +185,7 @@ def rl_compile(
         device: The device to compile to.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
+        tracer_output_path: If provided, enables compiler tracing and exports the JSON log to the specified path.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -181,8 +200,7 @@ def rl_compile(
         if device is None:
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
-    else:
-        predictor = predictor_singleton
+        predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
+        return predictor.compile_as_predicted(qc)
 
-    return predictor.compile_as_predicted(qc)
+    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path)
