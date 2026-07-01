@@ -55,11 +55,13 @@ class Predictor:
     def compile_as_predicted(
         self,
         qc: QuantumCircuit | str,
+        tracer_output_path: str | Path | None = None,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
+            tracer_output_path: Optional temporary path to export the compilation trace for this specific run.
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -67,26 +69,37 @@ class Predictor:
         Raises:
             RuntimeError: If an error occurs during compilation.
         """
-        trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
+        original_tracer_output_path = self.env.tracer_output_path
 
-        obs, _ = self.env.reset(qc, seed=0)
+        # Temporarily override singleton if a new path is explicitly provided
+        if tracer_output_path is not None:
+            self.env.tracer_output_path = tracer_output_path
 
-        used_compilation_passes = []
-        terminated = False
-        truncated = False
-        while not (terminated or truncated):
-            action_masks = get_action_masks(self.env)
-            action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
-            action = int(action)
-            action_item = self.env.action_set[action]
-            used_compilation_passes.append(action_item.name)
-            obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+        try:
+            trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
 
-        if not self.env.error_occurred:
-            return self.env.state, used_compilation_passes
+            obs, _ = self.env.reset(qc, seed=0)
 
-        msg = "Error occurred during compilation."
-        raise RuntimeError(msg)
+            used_compilation_passes = []
+            terminated = False
+            truncated = False
+            while not (terminated or truncated):
+                action_masks = get_action_masks(self.env)
+                action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+                action = int(action)
+                action_item = self.env.action_set[action]
+                used_compilation_passes.append(action_item.name)
+                obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+
+            if not self.env.error_occurred:
+                return self.env.state, used_compilation_passes
+
+            msg = "Error occurred during compilation."
+            raise RuntimeError(msg)
+
+        finally:
+            # Restore original singleton path
+            self.env.tracer_output_path = original_tracer_output_path
 
     def train_model(
         self,
@@ -190,11 +203,4 @@ def rl_compile(
         predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
         return predictor.compile_as_predicted(qc)
 
-    # use singleton and restore tracer path afterward
-    predictor = predictor_singleton
-    original_tracer_output_path = predictor.env.tracer_output_path
-    predictor.env.tracer_output_path = tracer_output_path
-    try:
-        return predictor.compile_as_predicted(qc)
-    finally:
-        predictor.env.tracer_output_path = original_tracer_output_path
+    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path)

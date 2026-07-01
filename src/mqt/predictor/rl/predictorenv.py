@@ -90,8 +90,6 @@ class PredictorEnv(Env):
         # Tracer properties
         self.tracer_output_path = tracer_output_path
         self.tracer = None
-        self.episode_count = 0
-        self.current_circuit_name = "<unknown>"
 
         # check for uni-directional coupling map
         coupling_set = {tuple(pair) for pair in self.device.build_coupling_map()}
@@ -233,7 +231,7 @@ class PredictorEnv(Env):
                 out_path = Path(self.tracer_output_path)
                 if out_path.is_dir() or not out_path.suffix:
                     # Sanitize circuit name: replace anything not alphanumeric, dash, or underscore with an underscore
-                    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", self.current_circuit_name)
+                    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", self.tracer.circuit_name)
 
                     # Fallback just in case the name was entirely stripped
                     if not safe_name or not safe_name.strip("_"):
@@ -358,19 +356,18 @@ class PredictorEnv(Env):
         if isinstance(qc, QuantumCircuit):
             self.state = qc
             self.filename = ""
-            self.current_circuit_name = qc.name or "<unnamed>"
+            current_circuit_name = qc.name or "<unnamed>"
         elif qc:
             self.state = QuantumCircuit.from_qasm_file(str(qc))
             self.filename = str(qc)
-            self.current_circuit_name = Path(str(qc)).stem
+            current_circuit_name = Path(str(qc)).stem
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
-            self.current_circuit_name = Path(self.filename).stem
+            current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
-        self.episode_count += 1
 
         self.layout = None
         self.tracer = None
@@ -398,7 +395,7 @@ class PredictorEnv(Env):
 
             self.tracer = CompilationTracer.from_initial_state(
                 device=self.device,
-                circuit_name=self.current_circuit_name,
+                circuit_name=current_circuit_name,
                 figure_of_merit=self.reward_function,
                 mdp_policy="paper",  # Fallback since mdp refactoring is not yet implemented
             )
