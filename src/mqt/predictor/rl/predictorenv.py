@@ -161,6 +161,13 @@ class PredictorEnv(Env):
             "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
         }
+
+        # Step-level cache to prevent double-computation
+        self._current_synthesized = False
+        self._current_laid_out = False
+        self._current_routed = False
+        self._current_foms: dict[str, float] = {}
+
         self.observation_space = Dict(spaces)
         self.filename = ""
 
@@ -176,34 +183,27 @@ class PredictorEnv(Env):
     ) -> None:
         """Collects the current compilation state and sends it to the tracer."""
         if self.tracer is not None and self.tracer_output_path is not None:
-            synthesized = self.is_circuit_synthesized(self.state)
-            laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-            routed = (
-                self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
-            )
-
-            # Collect figures of merit
+            # Collect figures of merit using the cache
             try:
-                ef_val = expected_fidelity(self.state, self.device)
+                ef_val = self.get_fom("expected_fidelity")
                 ef_metric = FigureOfMeritMetric(value=ef_val, kind="exact")
             except KeyError:
+                logger.warning("received key error for expected fidelity")
                 ef_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
 
-            cd_metric = FigureOfMeritMetric(value=crit_depth(self.state), kind="exact")
+            cd_metric = FigureOfMeritMetric(value=self.get_fom("critical_depth"), kind="exact")
 
             esp_metric = None
             if esp_data_available(self.device):
                 try:
-                    esp_val = estimated_success_probability(self.state, self.device)
+                    esp_val = self.get_fom("estimated_success_probability")
                     esp_metric = FigureOfMeritMetric(value=esp_val, kind="exact")
                 except KeyError:
                     esp_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
 
             hd_metric = None
             if self.hellinger_model is not None:
-                hd_metric = FigureOfMeritMetric(
-                    value=estimated_hellinger_distance(self.state, self.device, self.hellinger_model), kind="exact"
-                )
+                hd_metric = FigureOfMeritMetric(value=self.get_fom("estimated_hellinger_distance"), kind="exact")
 
             metrics = FigureOfMeritMetrics(
                 expected_fidelity=ef_metric,
@@ -221,9 +221,9 @@ class PredictorEnv(Env):
                 current_qc=self.state,
                 figures_of_merit=metrics,
                 features=feature_vector,
-                synthesized=synthesized,
-                laid_out=laid_out,
-                routed=routed,
+                synthesized=self._current_synthesized,
+                laid_out=self._current_laid_out,
+                routed=self._current_routed,
                 done=done,
             )
 
@@ -292,6 +292,9 @@ class PredictorEnv(Env):
 
         self.state._layout = self.layout  # noqa: SLF001
 
+        # Clear the figure of merit cache for the new state
+        self._current_foms = {}
+
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
             msg = "No valid actions left."
@@ -319,18 +322,29 @@ class PredictorEnv(Env):
 
         return obs, reward_val, done, False, {}
 
+    def get_fom(self, fom_name: str) -> float:
+        """Gets a figure of merit, calculating it only if not already cached for the current step."""
+        if fom_name in self._current_foms:
+            return self._current_foms[fom_name]
+
+        if fom_name == "expected_fidelity":
+            val = expected_fidelity(self.state, self.device)
+        elif fom_name == "estimated_success_probability":
+            val = estimated_success_probability(self.state, self.device)
+        elif fom_name == "estimated_hellinger_distance":
+            val = estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
+        elif fom_name == "critical_depth":
+            val = crit_depth(self.state)
+        else:
+            msg = f"No implementation for reward function {fom_name}."
+            raise NotImplementedError(msg)
+
+        self._current_foms[fom_name] = val
+        return val
+
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
-        if self.reward_function == "expected_fidelity":
-            return expected_fidelity(self.state, self.device)
-        if self.reward_function == "estimated_success_probability":
-            return estimated_success_probability(self.state, self.device)
-        if self.reward_function == "estimated_hellinger_distance":
-            return estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
-        if self.reward_function == "critical_depth":
-            return crit_depth(self.state)
-        msg = f"No implementation for reward function {self.reward_function}."
-        raise NotImplementedError(msg)
+        return self.get_fom(self.reward_function)
 
     def render(self) -> None:
         """Renders the current state."""
@@ -372,14 +386,18 @@ class PredictorEnv(Env):
         self.layout = None
         self.tracer = None
 
+        # Reset caches and evaluate initial baseline state
+        self._current_foms = {}
+        self._current_synthesized = self.is_circuit_synthesized(self.state)
+        self._current_laid_out = False
+        self._current_routed = False
+
         self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
         self.error_occurred = False
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
-
-        self.episode_start_time = time.perf_counter()
 
         obs = create_feature_dict(self.state)
 
@@ -571,12 +589,18 @@ class PredictorEnv(Env):
         Returns:
             Action indices whose pass type can be attempted from the current state.
         """
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        self._current_synthesized = self.is_circuit_synthesized(self.state)
+        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        # routing is only allowed after layout
+        self._current_routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
+            if self._current_laid_out
+            else False
         )
+
+        synthesized = self._current_synthesized
+        laid_out = self._current_laid_out
+        routed = self._current_routed
 
         actions = []
 
