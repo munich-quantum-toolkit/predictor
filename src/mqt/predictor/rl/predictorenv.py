@@ -388,8 +388,12 @@ class PredictorEnv(Env):
         # Reset caches and evaluate initial baseline state
         self._current_foms = {}
         self._current_synthesized = self.is_circuit_synthesized(self.state)
-        self._current_laid_out = False
-        self._current_routed = False
+        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        self._current_routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
+            if self._current_laid_out
+            else False
+        )
 
         self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
