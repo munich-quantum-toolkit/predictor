@@ -115,22 +115,20 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
     return result
 
 
-from mqt.predictor.rl.actions import bqskit_actions as _bqskit_actions
-from mqt.predictor.rl.actions import qiskit_actions as _qiskit_actions
-from mqt.predictor.rl.actions import tket_actions as _tket_actions
+from mqt.predictor.rl.actions import bqskit_actions, qiskit_actions, tket_actions
 
 for _action in (
-    *_qiskit_actions.qiskit_optimization_actions(),
-    *_tket_actions.tket_optimization_actions(),
-    _qiskit_actions.qiskit_o3_action(),
-    _bqskit_actions.bqskit_optimization_action(),
-    _qiskit_actions.qiskit_final_optimization_action(),
-    *_qiskit_actions.qiskit_layout_actions(),
-    _tket_actions.tket_routing_action(),
-    _qiskit_actions.qiskit_mapping_action(),
-    _bqskit_actions.bqskit_mapping_action(),
-    _qiskit_actions.qiskit_synthesis_action(),
-    _bqskit_actions.bqskit_synthesis_action(),
+    *qiskit_actions.qiskit_optimization_actions(),
+    *tket_actions.tket_optimization_actions(),
+    qiskit_actions.qiskit_o3_action(),
+    bqskit_actions.bqskit_optimization_action(),
+    qiskit_actions.qiskit_final_optimization_action(),
+    *qiskit_actions.qiskit_layout_actions(),
+    tket_actions.tket_routing_action(),
+    qiskit_actions.qiskit_mapping_action(),
+    bqskit_actions.bqskit_mapping_action(),
+    qiskit_actions.qiskit_synthesis_action(),
+    bqskit_actions.bqskit_synthesis_action(),
     DeviceIndependentAction(
         "terminate",
         None,
@@ -146,6 +144,9 @@ __all__ = [
     "DeviceDependentAction",
     "DeviceIndependentAction",
     "PassType",
+    "bqskit_actions",
     "get_actions_by_pass_type",
+    "qiskit_actions",
     "register_action",
+    "tket_actions",
 ]
