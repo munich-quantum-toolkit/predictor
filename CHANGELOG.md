@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
 - ✨ Added CompilationTracer that collects detailed compilation information and exports it to a JSON file ([#714]) ([**@linus-hologram**])
 
 ### Changed
