@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench.targets.devices import get_device
+from qiskit import QuantumCircuit
 
+from mqt.predictor.rl.helper import create_feature_dict
 from mqt.predictor.rl.tracer import (
     CompilationStep,
     CompilationTracer,
@@ -55,55 +57,53 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         success_probability=FigureOfMeritMetric(value=0.88, kind="exact"),
     )
 
-    baseline_step = CompilationStep(
+    # 1. Create dummy Qiskit circuits for the tracer to parse
+    qc_baseline = QuantumCircuit(3)
+    qc_baseline.h(0)
+    qc_baseline.cx(0, 1)
+
+    qc_terminal = QuantumCircuit(3)
+    qc_terminal.h(0)
+    qc_terminal.cx(0, 1)
+    qc_terminal.cx(1, 2)
+    qc_terminal.rz(0.5, 2)
+
+    # 2. Mock the feature dictionaries that the RL environment normally passes
+    features_baseline = create_feature_dict(qc_baseline)
+    features_terminal = create_feature_dict(qc_terminal)
+
+    # 3. Use the actual `record_step` API instead of manually building CompilationSteps
+    tracer.record_step(
         step_index=0,
         action_name="Baseline",
         action_type="INITIAL",
         action_duration=0.0,
         reward=0.0,
-        current_depth=5,
-        num_qubits=3,
-        gates_per_operation={"cx": 2, "h": 1},
-        total_gates=3,
+        current_qc=qc_baseline,
         figures_of_merit=fom_metrics,
+        features=features_baseline,
         synthesized=True,
         laid_out=False,
         routed=False,
-        is_terminal=False,
-        circuit_qasm3='OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[3] q;\n',
-        program_communication=0.5,
-        raw_critical_depth=5.0,
-        entanglement_ratio=0.33,
-        parallelism=0.66,
-        liveness=0.8,
+        done=False,
     )
 
-    terminal_step = CompilationStep(
+    tracer.record_step(
         step_index=1,
         action_name="qiskit_routing_pass",
         action_type="ROUTING",
         action_duration=0.15,
         reward=1.234567,
-        current_depth=8,
-        num_qubits=3,
-        gates_per_operation={"cx": 4, "h": 1, "rz": 2},
-        total_gates=7,
+        current_qc=qc_terminal,
         figures_of_merit=fom_metrics,
+        features=features_terminal,
         synthesized=True,
         laid_out=True,
         routed=True,
-        is_terminal=True,
-        circuit_qasm3="// fully routed",
-        program_communication=0.2,
-        raw_critical_depth=8.0,
-        entanglement_ratio=0.5,
-        parallelism=0.4,
-        liveness=0.9,
+        done=True,
     )
 
-    tracer.steps.extend([baseline_step, terminal_step])
     tracer.total_duration = 0.15
-
     tracer.save_to_json(trace_file)
 
     assert trace_file.exists(), "Tracer JSON file was not generated."
@@ -129,10 +129,15 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert first_step["action_type"] == "INITIAL"
     assert first_step["action_duration"] == pytest.approx(0.0)
 
+    # Check that record_step correctly parsed the Qiskit circuit
+    assert first_step["num_qubits"] == 3
+    assert first_step["total_gates"] == 2
+
     # Validate Terminal Step (Last Step)
     last_step_data = trace_data["steps"][-1]
     assert last_step_data.get("is_terminal") is True
     assert last_step_data["action_duration"] == pytest.approx(0.15)
+    assert last_step_data["total_gates"] == 4
 
     # Re-Validation via Dataclasses
     # 1. DeviceMetadata
