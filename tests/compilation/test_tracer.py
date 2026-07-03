@@ -50,11 +50,19 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         mdp_policy="mock_policy",
     )
 
-    fom_metrics = FigureOfMeritMetrics(
+    fom_metrics_baseline = FigureOfMeritMetrics(
         expected_fidelity=FigureOfMeritMetric(value=0.95, kind="exact"),
         critical_depth=FigureOfMeritMetric(value=12.0, kind="exact"),
         hellinger_distance=FigureOfMeritMetric(value=0.05, kind="approx"),
         success_probability=FigureOfMeritMetric(value=0.88, kind="exact"),
+    )
+
+    # Setup terminal metrics as "unavailable" with 0.0 values to test carry-over logic
+    fom_metrics_terminal = FigureOfMeritMetrics(
+        expected_fidelity=FigureOfMeritMetric(value=0.0, kind="unavailable"),
+        critical_depth=FigureOfMeritMetric(value=0.0, kind="unavailable"),
+        hellinger_distance=FigureOfMeritMetric(value=0.0, kind="unavailable"),
+        success_probability=FigureOfMeritMetric(value=0.0, kind="unavailable"),
     )
 
     # 1. Create dummy Qiskit circuits for the tracer to parse
@@ -80,7 +88,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         action_duration=0.0,
         reward=0.0,
         current_qc=qc_baseline,
-        figures_of_merit=fom_metrics,
+        figures_of_merit=fom_metrics_baseline,
         features=features_baseline,
         synthesized=True,
         laid_out=False,
@@ -95,7 +103,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
         action_duration=0.15,
         reward=1.234567,
         current_qc=qc_terminal,
-        figures_of_merit=fom_metrics,
+        figures_of_merit=fom_metrics_terminal,
         features=features_terminal,
         synthesized=True,
         laid_out=True,
@@ -138,6 +146,17 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert last_step_data.get("is_terminal") is True
     assert last_step_data["action_duration"] == pytest.approx(0.15)
     assert last_step_data["total_gates"] == 4
+
+    # Verify that unavailable metrics successfully carried over the values from the previous step
+    terminal_fom = last_step_data["figures_of_merit"]
+    assert terminal_fom["expected_fidelity"]["value"] == pytest.approx(0.95)
+    assert terminal_fom["expected_fidelity"]["kind"] == "unavailable"
+    assert terminal_fom["critical_depth"]["value"] == pytest.approx(12.0)
+    assert terminal_fom["critical_depth"]["kind"] == "unavailable"
+    assert terminal_fom["hellinger_distance"]["value"] == pytest.approx(0.05)
+    assert terminal_fom["hellinger_distance"]["kind"] == "unavailable"
+    assert terminal_fom["success_probability"]["value"] == pytest.approx(0.88)
+    assert terminal_fom["success_probability"]["kind"] == "unavailable"
 
     # Re-Validation via Dataclasses
     # 1. DeviceMetadata

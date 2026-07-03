@@ -243,6 +243,30 @@ class CompilationTracer:
         except Exception as e:  # noqa: BLE001
             qasm_string = f"QASM 3 export failed: {e}"
 
+        # Carry over previous values (if available) for unavailable metrics to prevent chart drops in FlowViz or other visualization tools
+        if self.steps:
+            prev_foms = self.steps[-1].figures_of_merit
+
+            if figures_of_merit.expected_fidelity.kind == "unavailable":
+                figures_of_merit.expected_fidelity.value = prev_foms.expected_fidelity.value
+
+            if figures_of_merit.critical_depth.kind == "unavailable":
+                figures_of_merit.critical_depth.value = prev_foms.critical_depth.value
+
+            if (
+                figures_of_merit.success_probability is not None
+                and figures_of_merit.success_probability.kind == "unavailable"
+                and prev_foms.success_probability is not None
+            ):
+                figures_of_merit.success_probability.value = prev_foms.success_probability.value
+
+            if (
+                figures_of_merit.hellinger_distance is not None
+                and figures_of_merit.hellinger_distance.kind == "unavailable"
+                and prev_foms.hellinger_distance is not None
+            ):
+                figures_of_merit.hellinger_distance.value = prev_foms.hellinger_distance.value
+
         new_step = CompilationStep(
             step_index=step_index,
             action_name=action_name,
