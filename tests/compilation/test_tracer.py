@@ -53,16 +53,16 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     fom_metrics_baseline = FigureOfMeritMetrics(
         expected_fidelity=FigureOfMeritMetric(value=0.95, kind="exact"),
         critical_depth=FigureOfMeritMetric(value=12.0, kind="exact"),
-        hellinger_distance=FigureOfMeritMetric(value=0.05, kind="approx"),
-        success_probability=FigureOfMeritMetric(value=0.88, kind="exact"),
+        estimated_hellinger_distance=FigureOfMeritMetric(value=0.05, kind="approx"),
+        estimated_success_probability=FigureOfMeritMetric(value=0.88, kind="exact"),
     )
 
     # Setup terminal metrics as "unavailable" with 0.0 values to test carry-over logic
     fom_metrics_terminal = FigureOfMeritMetrics(
         expected_fidelity=FigureOfMeritMetric(value=0.0, kind="unavailable"),
         critical_depth=FigureOfMeritMetric(value=0.0, kind="unavailable"),
-        hellinger_distance=FigureOfMeritMetric(value=0.0, kind="unavailable"),
-        success_probability=FigureOfMeritMetric(value=0.0, kind="unavailable"),
+        estimated_hellinger_distance=FigureOfMeritMetric(value=0.0, kind="unavailable"),
+        estimated_success_probability=FigureOfMeritMetric(value=0.0, kind="unavailable"),
     )
 
     # 1. Create dummy Qiskit circuits for the tracer to parse
@@ -153,10 +153,10 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert terminal_fom["expected_fidelity"]["kind"] == "unavailable"
     assert terminal_fom["critical_depth"]["value"] == pytest.approx(12.0)
     assert terminal_fom["critical_depth"]["kind"] == "unavailable"
-    assert terminal_fom["hellinger_distance"]["value"] == pytest.approx(0.05)
-    assert terminal_fom["hellinger_distance"]["kind"] == "unavailable"
-    assert terminal_fom["success_probability"]["value"] == pytest.approx(0.88)
-    assert terminal_fom["success_probability"]["kind"] == "unavailable"
+    assert terminal_fom["estimated_hellinger_distance"]["value"] == pytest.approx(0.05)
+    assert terminal_fom["estimated_hellinger_distance"]["kind"] == "unavailable"
+    assert terminal_fom["estimated_success_probability"]["value"] == pytest.approx(0.88)
+    assert terminal_fom["estimated_success_probability"]["kind"] == "unavailable"
 
     # Re-Validation via Dataclasses
     # 1. DeviceMetadata
@@ -173,14 +173,14 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     # 2. CompilationStep
     for step_data in (first_step, last_step_data):
         fom_raw = step_data["figures_of_merit"]
-        hd_raw = fom_raw.get("hellinger_distance")
-        esp_raw = fom_raw.get("success_probability")
+        hd_raw = fom_raw.get("estimated_hellinger_distance")
+        esp_raw = fom_raw.get("estimated_success_probability")
 
         fom_metrics_obj = FigureOfMeritMetrics(
             expected_fidelity=FigureOfMeritMetric(**fom_raw["expected_fidelity"]),
             critical_depth=FigureOfMeritMetric(**fom_raw["critical_depth"]),
-            hellinger_distance=FigureOfMeritMetric(**hd_raw) if hd_raw is not None else None,
-            success_probability=FigureOfMeritMetric(**esp_raw) if esp_raw is not None else None,
+            estimated_hellinger_distance=FigureOfMeritMetric(**hd_raw) if hd_raw is not None else None,
+            estimated_success_probability=FigureOfMeritMetric(**esp_raw) if esp_raw is not None else None,
         )
 
         step_args = step_data.copy()

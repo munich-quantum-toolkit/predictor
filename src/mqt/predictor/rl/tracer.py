@@ -92,14 +92,14 @@ class FigureOfMeritMetrics:
     Attributes:
         expected_fidelity: The expected fidelity value of the circuit.
         critical_depth: The critical depth of the circuit.
-        hellinger_distance: The hellinger distance of the circuit, if available.
-        success_probability: The success probability of the circuit, if available.
+        estimated_hellinger_distance: The hellinger distance of the circuit, if available.
+        estimated_success_probability: The success probability of the circuit, if available.
     """
 
     expected_fidelity: FigureOfMeritMetric
     critical_depth: FigureOfMeritMetric
-    hellinger_distance: FigureOfMeritMetric | None
-    success_probability: FigureOfMeritMetric | None
+    estimated_hellinger_distance: FigureOfMeritMetric | None
+    estimated_success_probability: FigureOfMeritMetric | None
 
 
 @dataclass
@@ -254,18 +254,18 @@ class CompilationTracer:
                 figures_of_merit.critical_depth.value = prev_foms.critical_depth.value
 
             if (
-                figures_of_merit.success_probability is not None
-                and figures_of_merit.success_probability.kind == "unavailable"
-                and prev_foms.success_probability is not None
+                figures_of_merit.estimated_success_probability is not None
+                and figures_of_merit.estimated_success_probability.kind == "unavailable"
+                and prev_foms.estimated_success_probability is not None
             ):
-                figures_of_merit.success_probability.value = prev_foms.success_probability.value
+                figures_of_merit.estimated_success_probability.value = prev_foms.estimated_success_probability.value
 
             if (
-                figures_of_merit.hellinger_distance is not None
-                and figures_of_merit.hellinger_distance.kind == "unavailable"
-                and prev_foms.hellinger_distance is not None
+                figures_of_merit.estimated_hellinger_distance is not None
+                and figures_of_merit.estimated_hellinger_distance.kind == "unavailable"
+                and prev_foms.estimated_hellinger_distance is not None
             ):
-                figures_of_merit.hellinger_distance.value = prev_foms.hellinger_distance.value
+                figures_of_merit.estimated_hellinger_distance.value = prev_foms.estimated_hellinger_distance.value
 
         new_step = CompilationStep(
             step_index=step_index,

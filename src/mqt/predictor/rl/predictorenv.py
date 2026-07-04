@@ -206,9 +206,9 @@ class PredictorEnv(Env):
 
             metrics = FigureOfMeritMetrics(
                 expected_fidelity=ef_metric,
-                success_probability=esp_metric,
+                estimated_success_probability=esp_metric,
                 critical_depth=cd_metric,
-                hellinger_distance=hd_metric,
+                estimated_hellinger_distance=hd_metric,
             )
 
             self.tracer.record_step(
