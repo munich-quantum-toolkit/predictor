@@ -123,7 +123,7 @@ def test_warning_for_unidirectional_device() -> None:
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
     device = get_device("ibm_falcon_27")
-    env = PredictorEnv(device=device, max_steps=1)
+    env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
     qc = QuantumCircuit(1)
     qc.h(0)
     env.reset(qc)
@@ -139,7 +139,7 @@ def test_predictor_env_truncates_at_max_steps() -> None:
 def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that failed pass execution truncates the episode."""
     device = get_device("ibm_falcon_27")
-    env = PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device)
     env.reset(QuantumCircuit(1))
 
     def fail_action(_action: int) -> QuantumCircuit:
@@ -160,7 +160,7 @@ def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) ->
 def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that pass timeouts truncate the episode."""
     device = get_device("ibm_falcon_27")
-    env = PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device)
     env.reset(QuantumCircuit(1))
 
     def timeout_action(_action: int) -> QuantumCircuit:
