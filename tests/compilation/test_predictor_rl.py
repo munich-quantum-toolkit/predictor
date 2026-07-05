@@ -157,27 +157,6 @@ def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) ->
     assert "fake pass failure" in info["truncation_reason"]
 
 
-def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that pass timeouts truncate the episode."""
-    device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device)
-    env.reset(QuantumCircuit(1))
-
-    def timeout_action(_action: int) -> QuantumCircuit:
-        msg = "fake pass timeout"
-        raise TimeoutError(msg)
-
-    monkeypatch.setattr(env, "apply_action", timeout_action)
-
-    _, reward_val, terminated, truncated, info = env.step(env.valid_actions[0])
-
-    assert reward_val == 0
-    assert not terminated
-    assert truncated
-    assert env.error_occurred
-    assert "fake pass timeout" in info["truncation_reason"]
-
-
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
     """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
     device = get_device("ibm_falcon_27")

@@ -11,8 +11,6 @@
 from __future__ import annotations
 
 import logging
-import signal
-import sys
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -52,10 +50,6 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circu
 logger = logging.getLogger("mqt-predictor")
 
 
-class _PassTimeoutError(TimeoutError):
-    """Raised when applying an RL action exceeds the configured timeout."""
-
-
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -65,7 +59,6 @@ class PredictorEnv(Env):
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
         max_steps: int | None = 100,
-        pass_timeout: int | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -74,7 +67,6 @@ class PredictorEnv(Env):
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
-            pass_timeout: The timeout in seconds for applying a single pass. If None, no timeout is enforced. Defaults to None.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
@@ -83,7 +75,6 @@ class PredictorEnv(Env):
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
         self.max_steps = max_steps
-        self.pass_timeout = pass_timeout
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -165,35 +156,6 @@ class PredictorEnv(Env):
         }
         self.observation_space = Dict(spaces)
         self.filename = ""
-
-    def _apply_action_with_timeout(self, action: int) -> QuantumCircuit | None:
-        """Apply an action, enforcing the configured per-pass timeout if possible."""
-        if self.pass_timeout is None:
-            return self.apply_action(action)
-        if sys.platform == "win32":
-            warnings.warn("Pass timeout is not supported on Windows.", RuntimeWarning, stacklevel=2)
-            return self.apply_action(action)
-
-        def timeout_handler(_signum: int, _frame: Any) -> None:  # noqa: ANN401
-            msg = f"Pass exceeded timeout of {self.pass_timeout} seconds."
-            raise _PassTimeoutError(msg)
-
-        try:
-            previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
-        except ValueError:
-            warnings.warn(
-                "Pass timeout can only be used from the main thread; running without timeout.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return self.apply_action(action)
-
-        signal.alarm(self.pass_timeout)
-        try:
-            return self.apply_action(action)
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, previous_handler)
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
