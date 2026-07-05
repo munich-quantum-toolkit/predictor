@@ -171,7 +171,6 @@ def rl_compile(
     device: Target | None,
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
-    max_steps: int | None = 100,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -180,7 +179,6 @@ def rl_compile(
         device: The device to compile to.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
-        max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -198,15 +196,8 @@ def rl_compile(
         predictor = Predictor(
             figure_of_merit=figure_of_merit,
             device=device,
-            max_steps=max_steps,
         )
     else:
         predictor = predictor_singleton
-        original_max_steps = predictor.env.max_steps
-        predictor.env.max_steps = max_steps
-        try:
-            return predictor.compile_as_predicted(qc)
-        finally:
-            predictor.env.max_steps = original_max_steps
 
     return predictor.compile_as_predicted(qc)
