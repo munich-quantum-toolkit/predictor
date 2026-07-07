@@ -216,3 +216,25 @@ def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
         register_action(action)
+
+
+def test_qcompile_generates_trace_file(tmp_path: Path) -> None:
+    """Test that rl_compile correctly generates a trace JSON file when tracing is enabled."""
+    figure_of_merit = "expected_fidelity"
+    device = get_device("ibm_falcon_127")
+
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+
+    qc_compiled, compilation_information = rl_compile(
+        qc, device=device, figure_of_merit=figure_of_merit, tracer_output_path=tmp_path
+    )
+
+    assert qc_compiled is not None
+    assert compilation_information is not None
+
+    generated_json_files = list(tmp_path.glob("*.json"))
+    assert len(generated_json_files) == 1, f"Expected exactly 1 trace JSON file, but found {len(generated_json_files)}."
+
+    trace_file = generated_json_files[0]
+    assert trace_file.exists()
+    assert trace_file.is_file()

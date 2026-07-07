@@ -11,12 +11,13 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from gymnasium.spaces import Space
     from qiskit.transpiler import Layout, Target
 
@@ -46,6 +47,7 @@ from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, 
 from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
 from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
+from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, FigureOfMeritMetrics
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -59,6 +61,7 @@ class PredictorEnv(Env):
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
         max_steps: int | None = 100,
+        tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -67,6 +70,7 @@ class PredictorEnv(Env):
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+            tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
@@ -85,6 +89,10 @@ class PredictorEnv(Env):
         self.actions_final_optimization_indices = []  # TODO: currently not used; will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/666
         self.used_actions: list[str] = []
         self.device = device
+
+        # Tracer properties
+        self.tracer_output_path = tracer_output_path
+        self.tracer = None
 
         # check for uni-directional coupling map
         coupling_set = {tuple(pair) for pair in self.device.build_coupling_map()}
@@ -123,6 +131,7 @@ class PredictorEnv(Env):
         self.action_set[index] = action_dict[PassType.TERMINATE][0]
         self.action_terminate_index = index
 
+        self.hellinger_model = None
         if reward_function == "estimated_success_probability" and not esp_data_available(self.device):
             msg = f"Missing calibration data for ESP calculation on {self.device.description}."
             raise ValueError(msg)
@@ -132,6 +141,7 @@ class PredictorEnv(Env):
                 msg = f"Missing trained model for Hellinger distance estimates on {self.device.description}."
                 raise ValueError(msg)
             self.hellinger_model = load(hellinger_model_path)
+
         self.reward_function = reward_function
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
@@ -154,8 +164,85 @@ class PredictorEnv(Env):
             "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
         }
+
+        # Step-level cache to prevent double-computation
+        self._current_synthesized = False
+        self._current_laid_out = False
+        self._current_routed = False
+        self._current_foms: dict[str, float] = {}
+
         self.observation_space = Dict(spaces)
         self.filename = ""
+
+    def _collect_tracer_data(
+        self,
+        step_index: int,
+        action_name: str,
+        action_type: str,
+        action_duration: float,
+        reward_val: float,
+        feature_vector: dict[str, Any],
+        done: bool,
+    ) -> None:
+        """Collects the current compilation state and sends it to the tracer."""
+        if self.tracer is not None and self.tracer_output_path is not None:
+            # Collect figures of merit using the cache
+            try:
+                ef_val = self.get_fom("expected_fidelity")
+                ef_metric = FigureOfMeritMetric(value=ef_val, kind="exact")
+            except KeyError:
+                ef_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
+
+            cd_metric = FigureOfMeritMetric(value=self.get_fom("critical_depth"), kind="exact")
+
+            esp_metric = None
+            if esp_data_available(self.device):
+                try:
+                    esp_val = self.get_fom("estimated_success_probability")
+                    esp_metric = FigureOfMeritMetric(value=esp_val, kind="exact")
+                except KeyError:
+                    esp_metric = FigureOfMeritMetric(value=0.0, kind="unavailable")
+
+            hd_metric = None
+            if self.hellinger_model is not None:
+                hd_metric = FigureOfMeritMetric(value=self.get_fom("estimated_hellinger_distance"), kind="exact")
+
+            metrics = FigureOfMeritMetrics(
+                expected_fidelity=ef_metric,
+                estimated_success_probability=esp_metric,
+                critical_depth=cd_metric,
+                estimated_hellinger_distance=hd_metric,
+            )
+
+            self.tracer.record_step(
+                step_index=step_index,
+                action_name=action_name,
+                action_type=action_type,
+                action_duration=action_duration,
+                reward=reward_val,
+                current_qc=self.state,
+                figures_of_merit=metrics,
+                features=feature_vector,
+                synthesized=self._current_synthesized,
+                laid_out=self._current_laid_out,
+                routed=self._current_routed,
+                done=done,
+            )
+
+            if done:
+                out_path = Path(self.tracer_output_path)
+                if out_path.is_dir() or not out_path.suffix:
+                    # Sanitize circuit name: replace anything not alphanumeric, dash, or underscore with an underscore
+                    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", self.tracer.circuit_name)
+
+                    # Fallback just in case the name was entirely stripped
+                    if not safe_name or not safe_name.strip("_"):
+                        safe_name = "unknown_circuit"
+
+                    out_path = out_path / f"trace_{safe_name}.json"
+
+                self.tracer.save_to_json(out_path)
+                logger.info("Trace exported to: %s", out_path.resolve())
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
@@ -169,14 +256,33 @@ class PredictorEnv(Env):
         Raises:
             RuntimeError: If no valid actions are left.
         """
+        action_obj = self.action_set[action]
+        action_name = str(action_obj.name)
+        action_type = action_obj.pass_type.value
+
+        start_time = time.perf_counter()
         try:
-            self.used_actions.append(str(self.action_set[action].name))
+            self.used_actions.append(action_name)
             altered_qc = self.apply_action(action)
+            action_duration = time.perf_counter() - start_time
         except Exception as exc:  # noqa: BLE001
+            action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
+            obs = create_feature_dict(self.state)
+
+            # Trace the error before aborting
+            self._collect_tracer_data(
+                step_index=self.num_steps + 1,
+                action_name=action_name,
+                action_type=action_type,
+                action_duration=action_duration,
+                reward_val=0.0,
+                feature_vector=obs,
+                done=True,
+            )
             return (
-                create_feature_dict(self.state),  # features
+                obs,  # features
                 0,  # reward
                 False,  # terminated
                 True,  # truncated
@@ -187,6 +293,9 @@ class PredictorEnv(Env):
         self.num_steps += 1
 
         self.state._layout = self.layout  # noqa: SLF001
+
+        # Clear the figure of merit cache for the new state
+        self._current_foms = {}
 
         self.valid_actions = self.determine_valid_actions_for_state()
         if len(self.valid_actions) == 0:
@@ -203,20 +312,43 @@ class PredictorEnv(Env):
         obs = create_feature_dict(self.state)
         if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
             return obs, reward_val, False, True, {"truncation_reason": "max_steps_exceeded"}
+
+        # Trace the successful step
+        self._collect_tracer_data(
+            step_index=self.num_steps,
+            action_name=action_name,
+            action_type=action_type,
+            action_duration=action_duration,
+            reward_val=reward_val,
+            feature_vector=obs,
+            done=done,
+        )
+
         return obs, reward_val, done, False, {}
+
+    def get_fom(self, fom_name: str) -> float:
+        """Gets a figure of merit, calculating it only if not already cached for the current step."""
+        if fom_name in self._current_foms:
+            return self._current_foms[fom_name]
+
+        if fom_name == "expected_fidelity":
+            val = expected_fidelity(self.state, self.device)
+        elif fom_name == "estimated_success_probability":
+            val = estimated_success_probability(self.state, self.device)
+        elif fom_name == "estimated_hellinger_distance":
+            val = estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
+        elif fom_name == "critical_depth":
+            val = crit_depth(self.state)
+        else:
+            msg = f"No implementation for reward function {fom_name}."
+            raise NotImplementedError(msg)
+
+        self._current_foms[fom_name] = val
+        return val
 
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
-        if self.reward_function == "expected_fidelity":
-            return expected_fidelity(self.state, self.device)
-        if self.reward_function == "estimated_success_probability":
-            return estimated_success_probability(self.state, self.device)
-        if self.reward_function == "estimated_hellinger_distance":
-            return estimated_hellinger_distance(self.state, self.device, self.hellinger_model)
-        if self.reward_function == "critical_depth":
-            return crit_depth(self.state)
-        msg = f"No implementation for reward function {self.reward_function}."
-        raise NotImplementedError(msg)
+        return self.get_fom(self.reward_function)
 
     def render(self) -> None:
         """Renders the current state."""
@@ -241,16 +373,32 @@ class PredictorEnv(Env):
         super().reset(seed=seed)
         if isinstance(qc, QuantumCircuit):
             self.state = qc
+            self.filename = ""
+            current_circuit_name = qc.name or "<unnamed>"
         elif qc:
-            self.state = QuantumCircuit.from_qasm_file(qc)
+            self.state = QuantumCircuit.from_qasm_file(str(qc))
+            self.filename = str(qc)
+            current_circuit_name = Path(str(qc)).stem
         else:
             self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
+            current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
         self.num_steps = 0
         self.used_actions = []
 
         self.layout = None
+        self.tracer = None
+
+        # Reset caches and evaluate initial baseline state
+        self._current_foms = {}
+        self._current_synthesized = self.is_circuit_synthesized(self.state)
+        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        self._current_routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
+            if self._current_laid_out
+            else False
+        )
 
         self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
 
@@ -258,7 +406,38 @@ class PredictorEnv(Env):
 
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
-        return create_feature_dict(self.state), {}
+
+        obs = create_feature_dict(self.state)
+
+        # Setup tracer for the new episode
+        if self.tracer_output_path is not None:
+            logger.info("Tracing enabled for compilation...")
+
+            # Use a fallback for hellinger_model initialization in tracing if needed
+            if self.reward_function != "estimated_hellinger_distance" and self.hellinger_model is None:
+                h_path = get_hellinger_model_path(self.device)
+                if h_path.is_file():
+                    self.hellinger_model = load(h_path)
+
+            self.tracer = CompilationTracer.from_initial_state(
+                device=self.device,
+                circuit_name=current_circuit_name,
+                figure_of_merit=self.reward_function,
+                mdp_policy="paper",  # Fallback since mdp refactoring is not yet implemented
+            )
+
+            # Record baseline
+            self._collect_tracer_data(
+                step_index=0,
+                action_name="Baseline",
+                action_type="initial",
+                action_duration=0.0,
+                reward_val=0.0,
+                feature_vector=obs,
+                done=False,
+            )
+
+        return obs, {}
 
     def action_masks(self) -> list[bool]:
         """Build the boolean action mask exposed to the RL policy.
@@ -418,12 +597,18 @@ class PredictorEnv(Env):
         Returns:
             Action indices whose pass type can be attempted from the current state.
         """
-        synthesized = self.is_circuit_synthesized(self.state)
-        laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        # Routing is only allowed after layout
-        routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map())) if laid_out else False
+        self._current_synthesized = self.is_circuit_synthesized(self.state)
+        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
+        # routing is only allowed after layout
+        self._current_routed = (
+            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
+            if self._current_laid_out
+            else False
         )
+
+        synthesized = self._current_synthesized
+        laid_out = self._current_laid_out
+        routed = self._current_routed
 
         actions = []
 
