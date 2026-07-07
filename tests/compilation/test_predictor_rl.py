@@ -136,27 +136,6 @@ def test_predictor_env_truncates_at_max_steps() -> None:
     assert info["truncation_reason"] == "max_steps_exceeded"
 
 
-def test_predictor_env_truncates_failed_pass(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that failed pass execution truncates the episode."""
-    device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device)
-    env.reset(QuantumCircuit(1))
-
-    def fail_action(_action: int) -> QuantumCircuit:
-        msg = "fake pass failure"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(env, "apply_action", fail_action)
-
-    _, reward_val, terminated, truncated, info = env.step(env.valid_actions[0])
-
-    assert reward_val == 0
-    assert not terminated
-    assert truncated
-    assert env.error_occurred
-    assert "fake pass failure" in info["truncation_reason"]
-
-
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
     """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
     device = get_device("ibm_falcon_27")

@@ -193,10 +193,7 @@ def rl_compile(
         if device is None:
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        predictor = Predictor(
-            figure_of_merit=figure_of_merit,
-            device=device,
-        )
+        predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
     else:
         predictor = predictor_singleton
 
