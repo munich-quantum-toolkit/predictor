@@ -49,7 +49,7 @@ class Predictor:
             path_training_circuits: The path to the training circuits folder. Defaults to None.
             logger_level: The logger level. Defaults to logging.INFO.
             max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
-            tracer_output_path: Optional path to export the compilation trace.
+            tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
         """
         logger.setLevel(logger_level)
 
