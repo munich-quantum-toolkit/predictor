@@ -41,6 +41,7 @@ setup
 device_selection
 compilation
 figure_of_merit
+tracing
 references
 ```
 
