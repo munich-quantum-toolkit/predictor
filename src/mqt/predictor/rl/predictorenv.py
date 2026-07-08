@@ -311,6 +311,15 @@ class PredictorEnv(Env):
 
         obs = create_feature_dict(self.state)
         if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
+            self._collect_tracer_data(
+                step_index=self.num_steps,
+                action_name=action_name,
+                action_type=action_type,
+                action_duration=action_duration,
+                reward_val=reward_val,
+                feature_vector=obs,
+                done=True,
+            )
             return obs, reward_val, False, True, {"truncation_reason": "max_steps_exceeded"}
 
         # Trace the successful step
