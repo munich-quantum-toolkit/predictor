@@ -38,7 +38,7 @@ class Predictor:
         device: Target,
         path_training_circuits: Path | None = None,
         logger_level: int = logging.INFO,
-        max_steps: int | None = 100,
+        max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the Predictor object.
@@ -48,7 +48,7 @@ class Predictor:
             device: The target device to compile to.
             path_training_circuits: The path to the training circuits folder. Defaults to None.
             logger_level: The logger level. Defaults to logging.INFO.
-            max_steps: The maximum number of actions per episode. If None, no step limit is enforced. Defaults to 100.
+            max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
         """
         logger.setLevel(logger_level)
