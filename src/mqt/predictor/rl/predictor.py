@@ -38,15 +38,26 @@ class Predictor:
         device: Target,
         path_training_circuits: Path | None = None,
         logger_level: int = logging.INFO,
+        max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
     ) -> None:
-        """Initializes the Predictor object."""
+        """Initializes the Predictor object.
+
+        Arguments:
+            figure_of_merit: The figure of merit to optimize during compilation.
+            device: The target device to compile to.
+            path_training_circuits: The path to the training circuits folder. Defaults to None.
+            logger_level: The logger level. Defaults to logging.INFO.
+            max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
+            tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
+        """
         logger.setLevel(logger_level)
 
         self.env = PredictorEnv(
             reward_function=figure_of_merit,
             device=device,
             path_training_circuits=path_training_circuits,
+            max_steps=max_steps,
             tracer_output_path=tracer_output_path,
         )
         self.device_name = device.description

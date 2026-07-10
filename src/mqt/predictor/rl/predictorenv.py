@@ -60,6 +60,7 @@ class PredictorEnv(Env):
         device: Target,
         reward_function: figure_of_merit = "expected_fidelity",
         path_training_circuits: Path | None = None,
+        max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
@@ -68,6 +69,7 @@ class PredictorEnv(Env):
             device: The target device to be used for compilation.
             reward_function: The figure of merit to be used for the reward function. Defaults to "expected_fidelity".
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
+            max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
 
         Raises:
@@ -76,6 +78,7 @@ class PredictorEnv(Env):
         logger.info("Init env: " + reward_function)
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
+        self.max_steps = max_steps
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -307,6 +310,19 @@ class PredictorEnv(Env):
             done = False
 
         obs = create_feature_dict(self.state)
+
+        # Trace+truncate if step limit is reached
+        if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
+            self._collect_tracer_data(
+                step_index=self.num_steps,
+                action_name=action_name,
+                action_type=action_type,
+                action_duration=action_duration,
+                reward_val=reward_val,
+                feature_vector=obs,
+                done=True,
+            )
+            return obs, reward_val, False, True, {"truncation_reason": "max_steps_exceeded"}
 
         # Trace the successful step
         self._collect_tracer_data(
