@@ -6,6 +6,8 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [2.4.0]
+
 ### End of support for x86 macOS systems
 
 Starting with this release, MQT Predictor no longer supports x86 macOS systems.
@@ -36,5 +38,6 @@ updated accordingly.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.3.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/munich-quantum-toolkit/predictor/compare/v2.2.0...v2.3.0
