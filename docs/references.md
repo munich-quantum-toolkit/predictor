@@ -1,9 +1,10 @@
 # References
 
-_MQT Predictor_ has a strong foundation in peer‑reviewed research.
-Many of its built‑in algorithms are based on methods published in scientific journals and conferences.
-For an overview of _MQT Predictor_ and its features, see {cite:p}`quetschlich2023mqtbench`.
-If you want to cite this article, please use the following BibTeX entry:
+_MQT Predictor_ has a strong foundation in peer‑reviewed research. Many of its
+built‑in algorithms are based on methods published in scientific journals and
+conferences. For an overview of _MQT Predictor_ and its features, see
+{cite:p}`quetschlich2023mqtbench`. If you want to cite this article, please use
+the following BibTeX entry:
 
 ```bibtex
 @article{quetschlich2025mqtpredictor,
@@ -17,8 +18,9 @@ If you want to cite this article, please use the following BibTeX entry:
 }
 ```
 
-_MQT Predictor_ is part of the Munich Quantum Toolkit, which is described in {cite:p}`mqt`.
-If you want to cite the Munich Quantum Toolkit, please use the following BibTeX entry:
+_MQT Predictor_ is part of the Munich Quantum Toolkit, which is described in
+{cite:p}`mqt`. If you want to cite the Munich Quantum Toolkit, please use the
+following BibTeX entry:
 
 ```bibtex
 @inproceedings{mqt,
@@ -34,7 +36,8 @@ If you want to cite the Munich Quantum Toolkit, please use the following BibTeX 
 }
 ```
 
-If you are explicitly referring to the application-aware compilation scheme, please cite {cite:p}`quetschlich2024application_compilation`.
+If you are explicitly referring to the application-aware compilation scheme,
+please cite {cite:p}`quetschlich2024application_compilation`.
 
 A full list of references is given below.
 

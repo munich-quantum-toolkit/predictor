@@ -5,22 +5,27 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
-This project adheres to [Semantic Versioning], with the exception that minor releases may include breaking changes.
+This project adheres to [Semantic Versioning], with the exception that minor
+releases may include breaking changes.
 
 ## [Unreleased]
 
 ### Added
 
-- ✨ Added CompilationTracer that collects detailed compilation information and exports it to a JSON file ([#714]) ([**@linus-hologram**])
+- ✨ Added CompilationTracer that collects detailed compilation information and
+  exports it to a JSON file ([#714]) ([**@linus-hologram**])
 
 ### Changed
 
 - ✨ Add RL truncation ([#697]) ([**@flowerthrower**])
-- ♻️ Refactor RL passes into SDK-level action modules ([#680]) ([**@flowerthrower**])
+- ♻️ Refactor RL passes into SDK-level action modules ([#680])
+  ([**@flowerthrower**])
 - 🎨 Improve the RL state machine logic ([#677]) ([**@flowerthrower**])
-- 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679]) ([**@flowerthrower**])
+- 🐛 Support BQSKit conversion of IQM's native `r` gate ([#679])
+  ([**@flowerthrower**])
 - 🔧 Replace `mypy` with `ty` ([#572]) ([**@denialhaag**])
-- 🐛 Fix instruction duration unit in estimated success probability calculation ([#445]) ([**@Shaobo-Zhou**])
+- 🐛 Fix instruction duration unit in estimated success probability calculation
+  ([#445]) ([**@Shaobo-Zhou**])
 - ✨ Remove support for custom names of trained models ([#489]) ([**@bachase**])
 - 🔥 Drop support for x86 macOS systems ([#421]) ([**@denialhaag**])
 
@@ -30,21 +35,29 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
 
 ### Added
 
-- 📝 Add docstrings for raised errors for all methods ([#405]) ([**@nquetschlich**])
-- ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360]) ([**@flowerthrower**])
+- 📝 Add docstrings for raised errors for all methods ([#405])
+  ([**@nquetschlich**])
+- ✨ Add Estimated Hellinger Distance as a further Figure of Merit ([#360])
+  ([**@flowerthrower**])
 
 ### Changed
 
-- 🎨 Adjust the ESP reward calculation to become Qiskit v2 compatible ([#406]) ([**@nquetschlich**])
+- 🎨 Adjust the ESP reward calculation to become Qiskit v2 compatible ([#406])
+  ([**@nquetschlich**])
 - ✨ Improve the ML part and its usability ([#403]) ([**@nquetschlich**])
-- 📝 Migrate the documentation from .rst to .md files ([#403]) ([**@nquetschlich**])
-- ✨ Improve RL action handling by using dataclasses ([#401]) ([**@nquetschlich**])
-- ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices ([#393]) ([**@nquetschlich**])
+- 📝 Migrate the documentation from .rst to .md files ([#403])
+  ([**@nquetschlich**])
+- ✨ Improve RL action handling by using dataclasses ([#401])
+  ([**@nquetschlich**])
+- ✨ Support MQT Bench v2 and use Qiskit's Target to represent quantum devices
+  ([#393]) ([**@nquetschlich**])
 - 🚚 Move to MQT organization ([#385]) ([**@flowerthrower**])
 
 ## [2.2.0] - 2025-02-02
 
-_📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-toolkit/predictor/releases) for previous changelogs._
+_📚 Refer to the [GitHub Release
+Notes](https://github.com/munich-quantum-toolkit/predictor/releases) for
+previous changelogs._
 
 <!-- Version links -->
 
@@ -73,7 +86,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Contributor -->
 
-[**@burgholzer**]: https://github.com/burgholzer
 [**@nquetschlich**]: https://github.com/nquetschlich
 [**@flowerthrower**]: https://github.com/flowerthrower
 [**@denialhaag**]: https://github.com/denialhaag
@@ -86,4 +98,3 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[GitHub Release Notes]: https://github.com/munich-quantum-toolkit/predictor/releases
