@@ -17,8 +17,10 @@
 
 # MQT Predictor - Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing
 
-MQT Predictor is a framework that allows one to automatically select a suitable quantum device for a particular application and provides an optimized compiler for the selected device.
-It is part of the [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
+MQT Predictor is a framework that allows one to automatically select a suitable
+quantum device for a particular application and provides an optimized compiler
+for the selected device. It is part of the
+[_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/predictor">
@@ -28,16 +30,31 @@ It is part of the [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
 ## Key Features
 
-MQT Predictor supports end-users in navigating the vast landscape of choices by allowing them to mix-and-match compiler passes from various tools to create optimized compilers that transcend the individual tools.
-Evaluations on more than 500 quantum circuits and seven devices have shown that—compared to Qiskit's and TKET's most optimized compilation flows—the MQT Predictor yields circuits with an expected fidelity that is on par with the best possible result that could be achieved by trying out all combinations of devices and compilers and even achieves a similar performance when considering the critical depth as an alternative figure of merit.
+MQT Predictor supports end-users in navigating the vast landscape of choices by
+allowing them to mix-and-match compiler passes from various tools to create
+optimized compilers that transcend the individual tools. Evaluations on more
+than 500 quantum circuits and seven devices have shown that—compared to Qiskit's
+and TKET's most optimized compilation flows—the MQT Predictor yields circuits
+with an expected fidelity that is on par with the best possible result that
+could be achieved by trying out all combinations of devices and compilers and
+even achieves a similar performance when considering the critical depth as an
+alternative figure of merit.
 
 Therefore, MQT Predictor tackles this problem from two angles:
 
-1. It provides a method (based on Reinforcement Learning) that produces device-specific quantum circuit compilers by combining compilation passes from various compiler tools and learning optimized sequences of those passes with respect to a customizable figure of merit.
-   This mix-and-match of compiler passes from various tools allows one to eliminate vendor locks and to create optimized compilers that transcend the individual tools.
+1. It provides a method (based on Reinforcement Learning) that produces
+   device-specific quantum circuit compilers by combining compilation passes
+   from various compiler tools and learning optimized sequences of those passes
+   with respect to a customizable figure of merit. This mix-and-match of
+   compiler passes from various tools allows one to eliminate vendor locks and
+   to create optimized compilers that transcend the individual tools.
 
-2. It provides a prediction method (based on Supervised Machine Learning) that, without performing any compilation, automatically predicts the most suitable device for a given application.
-   This completely eliminates the manual and laborious task of determining a suitable target device and guides end-users through the vast landscape of choices without the need for quantum computing expertise.
+2. It provides a prediction method (based on Supervised Machine Learning) that,
+   without performing any compilation, automatically predicts the most suitable
+   device for a given application. This completely eliminates the manual and
+   laborious task of determining a suitable target device and guides end-users
+   through the vast landscape of choices without the need for quantum computing
+   expertise.
 
 <p align="center">
 <picture>
@@ -45,12 +62,20 @@ Therefore, MQT Predictor tackles this problem from two angles:
 </picture>
 </p>
 
-If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/predictor/discussions) or an [issue](https://github.com/munich-quantum-toolkit/predictor/issues) on [GitHub](https://github.com/munich-quantum-toolkit/predictor).
+If you have any questions, feel free to create a
+[discussion](https://github.com/munich-quantum-toolkit/predictor/discussions) or
+an [issue](https://github.com/munich-quantum-toolkit/predictor/issues) on
+[GitHub](https://github.com/munich-quantum-toolkit/predictor).
 
 ## Contributors and Supporters
 
-The _[Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io)_ is developed by the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the [Technical University of Munich](https://www.tum.de/) and supported by [MQSC](https://mq.sc).
-Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss) ecosystem, which is being developed as part of the [Munich Quantum Valley (MQV)](https://www.munich-quantum-valley.de) initiative.
+The _[Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io)_ is developed by
+the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the
+[Technical University of Munich](https://www.tum.de/) and supported by
+[MQSC](https://mq.sc). Among others, it is part of the
+[Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss)
+ecosystem, which is being developed as part of the
+[Munich Quantum Valley (MQV)](https://www.munich-quantum-valley.de) initiative.
 
 <p align="center">
   <picture>
@@ -67,17 +92,21 @@ Thank you to all the contributors who have helped make MQT Predictor a reality!
   </a>
 </p>
 
-The MQT will remain free, open-source, and permissively licensed—now and in the future.
-We are firmly committed to keeping it open and actively maintained for the quantum computing community.
+The MQT will remain free, open-source, and permissively licensed—now and in the
+future. We are firmly committed to keeping it open and actively maintained for
+the quantum computing community.
 
 To support this endeavor, please consider:
 
-- Starring and sharing our repositories: https://github.com/munich-quantum-toolkit
-- Contributing code, documentation, tests, or examples via issues and pull requests
+- Starring and sharing our repositories:
+  <https://github.com/munich-quantum-toolkit>
+- Contributing code, documentation, tests, or examples via issues and pull
+  requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))
-- Citing our research in your publications (see [References](https://mqt.readthedocs.io/projects/predictor/en/latest/references.html))
+- Citing our research in your publications (see
+  [References](https://mqt.readthedocs.io/projects/predictor/en/latest/references.html))
 - Using the MQT in research and teaching, and sharing feedback and use cases
-- Sponsoring us on GitHub: https://github.com/sponsors/munich-quantum-toolkit
+- Sponsoring us on GitHub: <https://github.com/sponsors/munich-quantum-toolkit>
 
 <p align="center">
   <a href="https://github.com/sponsors/munich-quantum-toolkit">
@@ -87,10 +116,11 @@ To support this endeavor, please consider:
 
 ## Getting Started
 
-`mqt.predictor` is available via [PyPI](https://pypi.org/project/mqt.predictor/).
+`mqt.predictor` is available via
+[PyPI](https://pypi.org/project/mqt.predictor/).
 
 ```console
-(.venv) $ pip install mqt.predictor
+uv pip install mqt.predictor
 ```
 
 The following code gives an example on the usage:
@@ -116,17 +146,21 @@ print(qc_compiled.draw())
 ```
 
 > [!NOTE]
-> To execute the code, respective machine learning models must be trained before.
-> Up until mqt.predictor v2.0.0, pre-trained models were provided.
-> However, this is not feasible anymore due to the increasing number of devices and figures of merits.
-> Instead, we now provide a detailed documentation on how to train and setup the MQT Predictor framework.
+> To execute the code, respective machine learning models must be trained
+> before. Up until mqt.predictor v2.0.0, pre-trained models were provided.
+> However, this is not feasible anymore due to the increasing number of devices
+> and figures of merits. Instead, we now provide a detailed documentation on how
+> to train and setup the MQT Predictor framework.
 
-**Detailed documentation and examples are available at [ReadTheDocs](https://mqt.readthedocs.io/projects/predictor).**
+**Detailed documentation and examples are available at
+[ReadTheDocs](https://mqt.readthedocs.io/projects/predictor).**
 
 ## System Requirements
 
-MQT Predictor can be installed on all major operating systems with all supported Python versions.
-Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+MQT Predictor can be installed on all major operating systems with all supported
+Python versions. Building (and running) is continuously tested under Linux,
+macOS, and Windows using the
+[latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
 
 ## Cite This
 
@@ -134,7 +168,8 @@ Please cite the work that best fits your use case.
 
 ### MQT Predictor (the tool)
 
-When citing the software itself or results produced with it, cite the MQT Predictor paper:
+When citing the software itself or results produced with it, cite the MQT
+Predictor paper:
 
 ```bibtex
 @article{quetschlich2025mqtpredictor,
@@ -170,7 +205,12 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
 
 ## Acknowledgements
 
-The Munich Quantum Toolkit has been supported by the European Research Council (ERC) under the European Union's Horizon 2020 research and innovation program (grant agreement No. 101001318), the Bavarian State Ministry for Science and Arts through the Distinguished Professorship Program, as well as the Munich Quantum Valley, which is supported by the Bavarian state government with funds from the Hightech Agenda Bayern Plus.
+The Munich Quantum Toolkit has been supported by the European Research Council
+(ERC) under the European Union's Horizon 2020 research and innovation program
+(grant agreement No. 101001318), the Bavarian State Ministry for Science and
+Arts through the Distinguished Professorship Program, as well as the Munich
+Quantum Valley, which is supported by the Bavarian state government with funds
+from the Hightech Agenda Bayern Plus.
 
 <p align="center">
   <picture>

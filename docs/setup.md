@@ -13,11 +13,14 @@ mystnb:
 
 # Framework Setup
 
-To use the MQT Predictor framework, you must first configure the devices and train the reinforcement learning and supervised machine learning models. This section outlines how to do that.
+To use the MQT Predictor framework, you must first configure the devices and
+train the reinforcement learning and supervised machine learning models. This
+section outlines how to do that.
 
 ## Step 1: Add Devices
 
-All devices supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are natively supported. Currently, the following devices are available:
+All devices supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are
+natively supported. Currently, the following devices are available:
 
 ```{code-cell} ipython3
 :tags: [hide-input]
@@ -27,11 +30,14 @@ for num, device_name in enumerate(get_available_device_names()):
     print(f"{num+1}: {device_name} with {get_device(device_name).num_qubits} qubits")
 ```
 
-Custom devices are also supported as long as they are defined as Qiskit `Target` objects.
+Custom devices are also supported as long as they are defined as Qiskit `Target`
+objects.
 
 ## Step 2: Train Reinforcement Learning Models
 
-For each device to be considered, a dedicated reinforcement learning (RL) model must be trained. This is based on a figure of merit and a set of training circuits in QASM format.
+For each device to be considered, a dedicated reinforcement learning (RL) model
+must be trained. This is based on a figure of merit and a set of training
+circuits in QASM format.
 
 ```python
 from mqt.predictor.rl import Predictor as RL_Predictor
@@ -52,7 +58,8 @@ print(figure_of_merit)
 
 Further figures of merit can be added to `mqt.predictor.reward`.
 
-To register additional compilation passes (e.g., from Qiskit, TKET, or BQSKit), use:
+To register additional compilation passes (e.g., from Qiskit, TKET, or BQSKit),
+use:
 
 ```python
 from mqt.predictor.rl.actions import (
@@ -72,11 +79,13 @@ action = DeviceIndependentAction(
 register_action(action)
 ```
 
-For other compilation sources, a new `CompilationOrigin` must be defined and conversions to/from Qiskit's `QuantumCircuit` must be implemented.
+For other compilation sources, a new `CompilationOrigin` must be defined and
+conversions to/from Qiskit's `QuantumCircuit` must be implemented.
 
 ## Step 3: Generate Training Data and Train ML Model
 
-Once the RL models are trained, generate the training data and train the supervised ML model using:
+Once the RL models are trained, generate the training data and train the
+supervised ML model using:
 
 ```python
 from mqt.predictor.ml import setup_device_predictor
@@ -99,11 +108,13 @@ This function will:
 - Generate training data from the compiled circuits.
 - Train and save a supervised model for device prediction.
 
-You can optionally specify custom paths for uncompiled and compiled QASM files using the `path_uncompiled_circuits` and `path_compiled_circuits` arguments.
+You can optionally specify custom paths for uncompiled and compiled QASM files
+using the `path_uncompiled_circuits` and `path_compiled_circuits` arguments.
 
 ## Step 4: Compile a Circuit with `qcompile`
 
-After setup, any quantum circuit can be compiled for the most suitable device with:
+After setup, any quantum circuit can be compiled for the most suitable device
+with:
 
 ```python
 from mqt.predictor import qcompile
@@ -119,4 +130,5 @@ This returns:
 - the compilation metadata, and
 - the selected device.
 
-`qcompile` combines automatic device selection with device-specific compilation based on the selected figure of merit.
+`qcompile` combines automatic device selection with device-specific compilation
+based on the selected figure of merit.

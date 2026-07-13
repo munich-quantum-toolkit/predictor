@@ -145,6 +145,7 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 # -- Options for HTML output -------------------------------------------------
+
 html_theme = "furo"
 html_static_path = ["_static"]
 html_theme_options = {
