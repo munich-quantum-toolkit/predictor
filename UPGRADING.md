@@ -8,6 +8,35 @@ of changes including minor and patch releases, please refer to the
 
 ## [2.4.0]
 
+### Trained RL model names
+
+`Predictor.train_model` no longer accepts `model_name`; models now always use
+`model_<figure_of_merit>_<device>`. Custom names were removed because
+`compile_as_predicted` expects this fixed name when loading a model.
+
+### Reproducible RL training
+
+`test=True` no longer sets a random seed implicitly. Pass `seed=0` explicitly if
+you require the previous deterministic behavior:
+
+```python
+predictor.train_model(timesteps=10, test=True, seed=0)
+```
+
+### Low-level RL modules
+
+The SDK-specific action and conversion helpers have moved out of
+`mqt.predictor.rl.actions` and `mqt.predictor.rl.parsing`:
+
+- Qiskit helpers now live in `mqt.predictor.rl.actions.qiskit_actions`.
+- TKET helpers now live in `mqt.predictor.rl.actions.tket_actions`.
+- BQSKit helpers now live in `mqt.predictor.rl.actions.bqskit_actions`.
+
+The shared action types and registry functions remain available from
+`mqt.predictor.rl.actions`. The `remove_action` function and the
+`CompilationOrigin.GENERAL` enum member have been removed. The termination
+action now uses `None` as its origin.
+
 ### End of support for x86 macOS systems
 
 Starting with this release, MQT Predictor no longer supports x86 macOS systems.
