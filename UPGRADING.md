@@ -6,6 +6,9 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+The composite BQSKit actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping`
+have been removed.
+
 ## [2.4.0]
 
 ### Trained RL model names
