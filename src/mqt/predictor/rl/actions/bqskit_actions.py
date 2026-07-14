@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, TypeAlias, cast
 
 import numpy as np
 from bqskit import MachineModel
-from bqskit import compile as bqskit_compile
 from bqskit.compiler import Compiler, Workflow
 from bqskit.compiler.compile import (
     build_multi_qudit_retarget_workflow,
     build_partitioning_workflow,
+    build_seqpam_mapping_optimization_workflow,
     build_single_qudit_retarget_workflow,
     get_instantiate_options,
 )
@@ -33,14 +33,13 @@ from bqskit.passes import (
     BlockZXZPass,
     ExtractMeasurements,
     FullBlockZXZPass,
+    FullQSDPass,
     GeneralizedSabreLayoutPass,
     GeneralizedSabreRoutingPass,
     GreedyPlacementPass,
     IfThenElsePass,
     LEAPSynthesisPass,
-    MGDPass,
     PassPredicate,
-    QSDPass,
     QSearchSynthesisPass,
     RestoreMeasurements,
     SetModelPass,
@@ -76,7 +75,7 @@ if TYPE_CHECKING:
 
 _BQSKIT_OPT_LEVEL = 1 if os.getenv("GITHUB_ACTIONS") == "true" else 2
 _BQSKIT_SYNTHESIS_EPSILON = 1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8
-_BQSKIT_MAX_SYNTHESIS_SIZE = 3
+_BQSKIT_BLOCK_SIZE = 4
 _BQSKIT_SEED = 10
 _BQSKIT_NUM_WORKERS = 1 if os.getenv("GITHUB_ACTIONS") == "true" else -1
 
@@ -119,7 +118,7 @@ def _run_bqskit_workflow(
     circuit: Circuit, workflow: Workflow, request_data: bool = False
 ) -> Circuit | tuple[Circuit, PassData]:
     """Compile ``circuit`` with a custom BQSKit workflow."""
-    compiler = Compiler()
+    compiler = Compiler(num_workers=_BQSKIT_NUM_WORKERS)
     try:
         result = compiler.compile(circuit, workflow, request_data=request_data)
     finally:
@@ -232,18 +231,18 @@ def _bqskit_partitioned_synthesis_factory(
             SetModelPass(model),
             build_partitioning_workflow(
                 synthesis_pass,
-                _BQSKIT_MAX_SYNTHESIS_SIZE,
+                block_size=_BQSKIT_BLOCK_SIZE,
                 replace_filter_method="less-than-respecting-fully",
             ),
             build_multi_qudit_retarget_workflow(
                 _BQSKIT_OPT_LEVEL,
                 _BQSKIT_SYNTHESIS_EPSILON,
-                _BQSKIT_MAX_SYNTHESIS_SIZE,
+                max_synthesis_size=_BQSKIT_BLOCK_SIZE,
             ),
             build_single_qudit_retarget_workflow(
                 _BQSKIT_OPT_LEVEL,
                 _BQSKIT_SYNTHESIS_EPSILON,
-                _BQSKIT_MAX_SYNTHESIS_SIZE,
+                max_synthesis_size=_BQSKIT_BLOCK_SIZE,
             ),
             RestoreMeasurements(),
         ])
@@ -282,85 +281,9 @@ def _bqskit_mapping_factory(
     return _compile
 
 
-def bqskit_optimization_action() -> Action:
-    """Returns the BQSKit optimization action."""
-    return DeviceDependentAction(
-        "BQSKitO2",
-        CompilationOrigin.BQSKIT,
-        PassType.OPT,
-        transpile_pass=lambda circuit: bqskit_compile(
-            circuit,
-            optimization_level=_BQSKIT_OPT_LEVEL,
-            synthesis_epsilon=_BQSKIT_SYNTHESIS_EPSILON,
-            max_synthesis_size=_BQSKIT_MAX_SYNTHESIS_SIZE,
-            seed=_BQSKIT_SEED,
-            num_workers=_BQSKIT_NUM_WORKERS,
-        ),
-        preserves_layout=True,
-        preserves_routing=True,
-        preserves_synthesis=False,
-    )
-
-
-def bqskit_optimization_actions() -> list[Action]:
-    """Returns the BQSKit optimization actions."""
-    return [bqskit_optimization_action()]
-
-
-def bqskit_mapping_action() -> Action:
-    """Returns the BQSKit mapping action."""
-    return DeviceDependentAction(
-        "BQSKitMapping",
-        CompilationOrigin.BQSKIT,
-        PassType.MAPPING,
-        transpile_pass=lambda device: (
-            lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(
-                    num_qudits=device.num_qubits,
-                    gate_set=get_bqskit_native_gates(device),
-                    coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
-                ),
-                with_mapping=True,
-                optimization_level=_BQSKIT_OPT_LEVEL,
-                synthesis_epsilon=_BQSKIT_SYNTHESIS_EPSILON,
-                max_synthesis_size=_BQSKIT_MAX_SYNTHESIS_SIZE,
-                seed=_BQSKIT_SEED,
-                num_workers=_BQSKIT_NUM_WORKERS,
-            )
-        ),
-    )
-
-
-def bqskit_mapping_actions() -> list[Action]:
-    """Returns the BQSKit mapping actions."""
-    return [bqskit_mapping_action()]
-
-
-def bqskit_synthesis_action() -> Action:
-    """Returns the BQSKit synthesis action."""
-    return DeviceDependentAction(
-        "BQSKitSynthesis",
-        CompilationOrigin.BQSKIT,
-        PassType.SYNTHESIS,
-        transpile_pass=lambda device: (
-            lambda bqskit_circuit: bqskit_compile(
-                bqskit_circuit,
-                model=MachineModel(bqskit_circuit.num_qudits, gate_set=get_bqskit_native_gates(device)),
-                optimization_level=_BQSKIT_OPT_LEVEL,
-                synthesis_epsilon=_BQSKIT_SYNTHESIS_EPSILON,
-                max_synthesis_size=_BQSKIT_MAX_SYNTHESIS_SIZE,
-                seed=_BQSKIT_SEED,
-                num_workers=_BQSKIT_NUM_WORKERS,
-            )
-        ),
-    )
-
-
 def bqskit_synthesis_actions() -> list[Action]:
     """Returns the BQSKit synthesis actions."""
     return [
-        bqskit_synthesis_action(),
         DeviceDependentAction(
             "QSearchSynthesisPass",
             CompilationOrigin.BQSKIT,
@@ -396,22 +319,22 @@ def bqskit_synthesis_actions() -> list[Action]:
             ),
         ),
         DeviceDependentAction(
-            "QSDPass",
+            "FullQSDPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
-            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, QSDPass()),
-        ),
-        DeviceDependentAction(
-            "MGDPass",
-            CompilationOrigin.BQSKIT,
-            PassType.SYNTHESIS,
-            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, MGDPass()),
+            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+                device,
+                FullQSDPass(min_qudit_size=2, perform_scan=False),
+            ),
         ),
         DeviceDependentAction(
             "BlockZXZPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
-            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, BlockZXZPass()),
+            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+                device,
+                BlockZXZPass(min_qudit_size=_BQSKIT_BLOCK_SIZE - 1),
+            ),
         ),
         DeviceDependentAction(
             "FullBlockZXZPass",
@@ -420,6 +343,44 @@ def bqskit_synthesis_actions() -> list[Action]:
             transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, FullBlockZXZPass()),
         ),
     ]
+
+
+def bqskit_pam_mapping_action() -> Action:
+    """Returns the BQSKit sequential permutation-aware mapping action."""
+
+    def _factory(device: Target) -> Callable[[Circuit], BQSKitMapping]:
+        def _compile(circuit: Circuit) -> BQSKitMapping:
+            model = MachineModel(
+                num_qudits=device.num_qubits,
+                gate_set=get_bqskit_native_gates(device),
+                coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
+            )
+            workflow = Workflow([
+                SetRandomSeedPass(_BQSKIT_SEED),
+                UnfoldPass(),
+                ExtractMeasurements(),
+                SetModelPass(model),
+                build_seqpam_mapping_optimization_workflow(
+                    _BQSKIT_OPT_LEVEL,
+                    _BQSKIT_SYNTHESIS_EPSILON,
+                    block_size=_BQSKIT_BLOCK_SIZE,
+                ),
+                RestoreMeasurements(),
+            ])
+            compiled_circuit, data = cast(
+                "tuple[Circuit, PassData]",
+                _run_bqskit_workflow(circuit, workflow, True),
+            )
+            return compiled_circuit, tuple(data.initial_mapping), tuple(data.final_mapping)
+
+        return _compile
+
+    return DeviceDependentAction(
+        "SeqPAMMapping",
+        CompilationOrigin.BQSKIT,
+        PassType.MAPPING,
+        transpile_pass=_factory,
+    )
 
 
 def bqskit_layout_actions() -> list[Action]:
@@ -615,13 +576,9 @@ def run_bqskit_action(
 
 __all__ = [
     "bqskit_layout_actions",
-    "bqskit_mapping_action",
-    "bqskit_mapping_actions",
-    "bqskit_optimization_action",
-    "bqskit_optimization_actions",
+    "bqskit_pam_mapping_action",
     "bqskit_routing_action",
     "bqskit_routing_actions",
-    "bqskit_synthesis_action",
     "bqskit_synthesis_actions",
     "bqskit_to_qiskit",
     "final_layout_bqskit_routing_to_qiskit",
