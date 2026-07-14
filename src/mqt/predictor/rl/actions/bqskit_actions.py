@@ -39,6 +39,7 @@ from bqskit.passes import (
     GreedyPlacementPass,
     IfThenElsePass,
     LEAPSynthesisPass,
+    ManyQuditGatesPredicate,
     PassPredicate,
     QSearchSynthesisPass,
     RestoreMeasurements,
@@ -324,7 +325,10 @@ def bqskit_synthesis_actions() -> list[Action]:
             PassType.SYNTHESIS,
             transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
                 device,
-                FullQSDPass(min_qudit_size=2, perform_scan=False),
+                IfThenElsePass(
+                    ManyQuditGatesPredicate(check_circuit=True, check_model=False),
+                    FullQSDPass(min_qudit_size=2, perform_scan=False),
+                ),
             ),
         ),
         DeviceDependentAction(
