@@ -1529,7 +1529,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bqskit", specifier = ">=1.2.0" },
+    { name = "bqskit", specifier = ">=1.2.1" },
     { name = "mqt-bench", specifier = ">=2.0.0" },
     { name = "numpy", specifier = ">=1.22" },
     { name = "numpy", marker = "python_full_version >= '3.11'", specifier = ">=1.24" },

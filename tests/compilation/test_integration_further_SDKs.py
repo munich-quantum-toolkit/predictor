@@ -179,6 +179,31 @@ def test_layout_actions_establish_layout(
         )
 
 
+def test_mapping_actions_establish_layout(
+    simple_circuit: QuantumCircuit,
+    env: PredictorEnv,
+) -> None:
+    """Invariant: every mapping action establishes a valid qubit assignment."""
+    synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
+    synthesized = synthesis_pm.run(simple_circuit.copy())
+    n_qubits = synthesized.num_qubits
+
+    for idx, action in env.action_set.items():
+        if action.pass_type != PassType.MAPPING:
+            continue
+        _setup_env(env, synthesized, None, n_qubits)
+        if not _is_available(env, idx):
+            continue
+        compiled = env.apply_action(idx)
+        assert env.layout is not None, (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: failed to establish layout"
+        )
+        assert env.is_circuit_laid_out(compiled, env.layout), (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
+            f"did not establish valid layout. Layout: {env.layout}"
+        )
+
+
 def test_routing_actions_route_circuit(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
