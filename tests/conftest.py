@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     import pytest
 
 
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # ruff:ignore[unused-function-argument]
     """Clean up trained RL and ML models after test session."""
     for model in rl_get_path_trained_model().glob("*.zip"):
         model.unlink()
