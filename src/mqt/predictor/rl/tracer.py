@@ -240,7 +240,7 @@ class CompilationTracer:
 
         try:
             qasm_string = qasm3.dumps(current_qc)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # ruff:ignore[blind-except]
             qasm_string = f"QASM 3 export failed: {e}"
 
         # Carry over previous values (if available) for unavailable metrics to prevent chart drops in FlowViz or other visualization tools

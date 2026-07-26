@@ -125,8 +125,13 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             exec_time_per_qubit[second_qubit_idx] += duration
 
     if qiskit_version < "2.0.0":
-        from qiskit.transpiler import InstructionDurations, Layout, PassManager, passes  # noqa: PLC0415
-        from qiskit.transpiler.passes import ApplyLayout, SetLayout  # noqa: PLC0415
+        from qiskit.transpiler import (  # ruff:ignore[import-outside-top-level]
+            InstructionDurations,
+            Layout,
+            PassManager,
+            passes,
+        )
+        from qiskit.transpiler.passes import ApplyLayout, SetLayout  # ruff:ignore[import-outside-top-level]
 
         if qc.qregs[0].name != "q":
             # create a layout that maps the (tket) 'node' registers to the (qiskit) 'q' registers
@@ -236,14 +241,14 @@ def esp_data_available(device: Target) -> bool:
         try:
             if device.qubit_properties is None or not device.qubit_properties[qubit].t1 >= 0:
                 msg = "No T1 qubit properties available"
-                raise ValueError(msg)  # noqa: TRY301
+                raise ValueError(msg)  # ruff:ignore[raise-within-try]
         except ValueError:
             logger.exception(message("T1", "idle", qubit))
             return False
         try:
             if device.qubit_properties is None or not device.qubit_properties[qubit].t2 >= 0:
                 msg = "No T2 qubit properties available"
-                raise ValueError(msg)  # noqa: TRY301
+                raise ValueError(msg)  # ruff:ignore[raise-within-try]
 
         except ValueError:
             logger.exception(message("T2", "idle", qubit))
@@ -252,7 +257,7 @@ def esp_data_available(device: Target) -> bool:
             error = device["measure"][qubit,].error
             if not (0 <= error <= 1):
                 msg = "Error rate must be between 0 and 1."
-                raise ValueError(msg)  # noqa: TRY301
+                raise ValueError(msg)  # ruff:ignore[raise-within-try]
         except ValueError:
             logger.exception(message("Error", "readout", qubit))
             return False
@@ -260,7 +265,7 @@ def esp_data_available(device: Target) -> bool:
             duration = device["measure"][qubit,].duration
             if not (duration >= 0):
                 msg = "Duration must be >=0."
-                raise ValueError(msg)  # noqa: TRY301
+                raise ValueError(msg)  # ruff:ignore[raise-within-try]
         except ValueError:
             logger.exception(message("Duration", "readout", qubit))
             return False
@@ -270,7 +275,7 @@ def esp_data_available(device: Target) -> bool:
                 error = device[gate][qubit,].error
                 if not (0 <= error <= 1):
                     msg = "Error rate must be between 0 and 1."
-                    raise ValueError(msg)  # noqa: TRY301
+                    raise ValueError(msg)  # ruff:ignore[raise-within-try]
             except ValueError:
                 logger.exception(message("Error", gate, qubit))
                 return False
@@ -278,7 +283,7 @@ def esp_data_available(device: Target) -> bool:
                 duration = device[gate][qubit,].duration
                 if not (duration >= 0):
                     msg = "Duration must be >=0."
-                    raise ValueError(msg)  # noqa: TRY301
+                    raise ValueError(msg)  # ruff:ignore[raise-within-try]
             except ValueError:
                 logger.exception(message("Duration", gate, qubit))
                 return False
@@ -289,7 +294,7 @@ def esp_data_available(device: Target) -> bool:
                 error = device[gate][edge[0], edge[1]].error
                 if not (0 <= error <= 1):
                     msg = "Error rate must be between 0 and 1."
-                    raise ValueError(msg)  # noqa: TRY301
+                    raise ValueError(msg)  # ruff:ignore[raise-within-try]
             except ValueError:
                 logger.exception(message("Error", gate, edge))
                 return False
@@ -297,7 +302,7 @@ def esp_data_available(device: Target) -> bool:
                 duration = device[gate][edge[0], edge[1]].duration
                 if not (duration >= 0):
                     msg = "Duration must be >=0."
-                    raise ValueError(msg)  # noqa: TRY301
+                    raise ValueError(msg)  # ruff:ignore[raise-within-try]
             except ValueError:
                 logger.exception(message("Duration", gate, edge))
                 return False

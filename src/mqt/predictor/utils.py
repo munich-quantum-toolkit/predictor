@@ -58,7 +58,7 @@ def timeout_watcher(
     class TimeoutExceptionError(Exception):  # Custom exception class
         pass
 
-    def timeout_handler(_signum: int, _frame: Any) -> None:  # noqa: ANN401
+    def timeout_handler(_signum: int, _frame: Any) -> None:  # ruff:ignore[any-type]
         raise TimeoutExceptionError
 
     # Change the behavior of SIGALRM

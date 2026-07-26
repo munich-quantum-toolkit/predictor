@@ -75,7 +75,7 @@ def bqskit_to_qiskit(circuit: Circuit) -> QuantumCircuit:
         custom_instructions=(
             *qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
             qasm2.CustomInstruction(
-                "r", 2, 1, cast("Callable[[tuple[int | float, ...]], Instruction]", _r_gate), builtin=True
+                "r", 2, 1, cast("Callable[[*tuple[int | float, ...]], Instruction]", _r_gate), builtin=True
             ),
         ),
     )
