@@ -127,7 +127,7 @@ for _action in (
     tket_actions.tket_routing_action(),
     bqskit_actions.bqskit_routing_action(),
     qiskit_actions.qiskit_mapping_action(),
-    bqskit_actions.bqskit_pam_mapping_action(),
+    bqskit_actions.bqskit_mapping_action(),
     qiskit_actions.qiskit_synthesis_action(),
     *bqskit_actions.bqskit_synthesis_actions(),
     DeviceIndependentAction(

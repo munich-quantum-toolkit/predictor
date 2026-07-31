@@ -352,7 +352,7 @@ def bqskit_synthesis_actions() -> list[Action]:
     ]
 
 
-def bqskit_pam_mapping_action() -> Action:
+def bqskit_mapping_action() -> Action:
     """Returns the BQSKit sequential permutation-aware mapping action."""
 
     def _factory(device: Target) -> Callable[[Circuit], BQSKitMapping]:
@@ -435,11 +435,6 @@ def bqskit_routing_action() -> Action:
             device, GeneralizedSabreRoutingPass(), apply_placement=False
         ),
     )
-
-
-def bqskit_routing_actions() -> list[Action]:
-    """Returns the BQSKit routing actions."""
-    return [bqskit_routing_action()]
 
 
 def final_layout_bqskit_to_qiskit(
@@ -583,9 +578,8 @@ def run_bqskit_action(
 
 __all__ = [
     "bqskit_layout_actions",
-    "bqskit_pam_mapping_action",
+    "bqskit_mapping_action",
     "bqskit_routing_action",
-    "bqskit_routing_actions",
     "bqskit_synthesis_actions",
     "bqskit_to_qiskit",
     "final_layout_bqskit_routing_to_qiskit",
