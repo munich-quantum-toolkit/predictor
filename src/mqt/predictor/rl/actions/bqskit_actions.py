@@ -76,7 +76,8 @@ if TYPE_CHECKING:
 
 _BQSKIT_OPT_LEVEL = 1 if os.getenv("GITHUB_ACTIONS") == "true" else 2
 _BQSKIT_SYNTHESIS_EPSILON = 1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1e-8
-_BQSKIT_BLOCK_SIZE = 4
+_BQSKIT_BLOCK_SIZE = 3
+_BQSKIT_SEARCH_MAX_LAYER = 3
 _BQSKIT_SEED = 10
 _BQSKIT_NUM_WORKERS = 1 if os.getenv("GITHUB_ACTIONS") == "true" else -1
 
@@ -293,6 +294,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 device,
                 QSearchSynthesisPass(
                     success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                    max_layer=_BQSKIT_SEARCH_MAX_LAYER,
                     instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
                 ),
             ),
@@ -305,6 +307,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 device,
                 LEAPSynthesisPass(
                     success_threshold=_BQSKIT_SYNTHESIS_EPSILON,
+                    max_layer=_BQSKIT_SEARCH_MAX_LAYER,
                     min_prefix_size=[3, 4][min(_BQSKIT_OPT_LEVEL, 2) - 1],
                     instantiate_options=get_instantiate_options(_BQSKIT_OPT_LEVEL),
                 ),
@@ -569,7 +572,7 @@ def run_bqskit_action(
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
-        output_qubits = layout._output_qubit_list  # noqa: SLF001
+        output_qubits = layout._output_qubit_list  # ruff:ignore[private-member-access]
         assert output_qubits is not None
         layout.final_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
         return compiled_qiskit_qc, layout

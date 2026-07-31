@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
+  ([**@flowerthrower**])
+
 ## [2.4.0] - 2026-07-13
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#240)._
@@ -73,6 +78,7 @@ previous changelogs._
 <!-- PR links -->
 
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
+[#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
 [#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
