@@ -265,7 +265,7 @@ class PredictorEnv(Env):
             self.used_actions.append(action_name)
             altered_qc = self.apply_action(action)
             action_duration = time.perf_counter() - start_time
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # ruff:ignore[blind-except]
             action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
@@ -292,7 +292,7 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
-        self.state._layout = self.layout  # noqa: SLF001
+        self.state._layout = self.layout  # ruff:ignore[private-member-access]
 
         # Clear the figure of merit cache for the new state
         self._current_foms = {}
@@ -369,7 +369,7 @@ class PredictorEnv(Env):
         self,
         qc: Path | str | QuantumCircuit | None = None,
         seed: int | None = None,
-        options: dict[str, Any] | None = None,  # noqa: ARG002
+        options: dict[str, Any] | None = None,  # ruff:ignore[unused-method-argument]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment to the given state or a random state.
 
@@ -544,7 +544,7 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            output_qubits = layout._output_qubit_list  # noqa: SLF001
+            output_qubits = layout._output_qubit_list  # ruff:ignore[private-member-access]
             if output_qubits is not None and all(q in output_qubits for q in circuit.qubits):
                 return True
             layout = layout.final_layout or layout.initial_layout
