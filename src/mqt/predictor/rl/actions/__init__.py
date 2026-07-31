@@ -118,17 +118,17 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
 from mqt.predictor.rl.actions import bqskit_actions, qiskit_actions, tket_actions
 
 for _action in (
-    *qiskit_actions.qiskit_optimization_actions(),
-    *tket_actions.tket_optimization_actions(),
-    qiskit_actions.qiskit_o3_action(),
-    qiskit_actions.qiskit_final_optimization_action(),
     *qiskit_actions.qiskit_layout_actions(),
-    *bqskit_actions.bqskit_layout_actions(),
-    tket_actions.tket_routing_action(),
-    bqskit_actions.bqskit_routing_action(),
     qiskit_actions.qiskit_mapping_action(),
-    bqskit_actions.bqskit_mapping_action(),
     qiskit_actions.qiskit_synthesis_action(),
+    qiskit_actions.qiskit_o3_action(),
+    *qiskit_actions.qiskit_optimization_actions(),
+    qiskit_actions.qiskit_final_optimization_action(),
+    tket_actions.tket_routing_action(),
+    *tket_actions.tket_optimization_actions(),
+    *bqskit_actions.bqskit_layout_actions(),
+    *bqskit_actions.bqskit_routing_actions(),
+    *bqskit_actions.bqskit_mapping_actions(),
     *bqskit_actions.bqskit_synthesis_actions(),
     DeviceIndependentAction(
         "terminate",

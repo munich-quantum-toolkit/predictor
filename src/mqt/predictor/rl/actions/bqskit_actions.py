@@ -352,8 +352,8 @@ def bqskit_synthesis_actions() -> list[Action]:
     ]
 
 
-def bqskit_mapping_action() -> Action:
-    """Returns the BQSKit sequential permutation-aware mapping action."""
+def bqskit_mapping_actions() -> list[Action]:
+    """Returns the BQSKit sequential permutation-aware mapping actions."""
 
     def _factory(device: Target) -> Callable[[Circuit], BQSKitMapping]:
         def _compile(circuit: Circuit) -> BQSKitMapping:
@@ -382,12 +382,14 @@ def bqskit_mapping_action() -> Action:
 
         return _compile
 
-    return DeviceDependentAction(
-        "SeqPAMMapping",
-        CompilationOrigin.BQSKIT,
-        PassType.MAPPING,
-        transpile_pass=_factory,
-    )
+    return [
+        DeviceDependentAction(
+            "SeqPAMMapping",
+            CompilationOrigin.BQSKIT,
+            PassType.MAPPING,
+            transpile_pass=_factory,
+        )
+    ]
 
 
 def bqskit_layout_actions() -> list[Action]:
@@ -425,16 +427,18 @@ def bqskit_layout_actions() -> list[Action]:
     ]
 
 
-def bqskit_routing_action() -> Action:
-    """Returns the BQSKit routing action."""
-    return DeviceDependentAction(
-        "GeneralizedSabreRoutingPass",
-        CompilationOrigin.BQSKIT,
-        PassType.ROUTING,
-        transpile_pass=lambda device: _bqskit_mapping_factory(
-            device, GeneralizedSabreRoutingPass(), apply_placement=False
-        ),
-    )
+def bqskit_routing_actions() -> list[Action]:
+    """Returns the BQSKit routing actions."""
+    return [
+        DeviceDependentAction(
+            "GeneralizedSabreRoutingPass",
+            CompilationOrigin.BQSKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: _bqskit_mapping_factory(
+                device, GeneralizedSabreRoutingPass(), apply_placement=False
+            ),
+        )
+    ]
 
 
 def final_layout_bqskit_to_qiskit(
