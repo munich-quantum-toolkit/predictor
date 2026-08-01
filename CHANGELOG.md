@@ -59,9 +59,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#230)._
 
 ## [2.2.0] - 2025-02-02
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/predictor/releases) for
-previous changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/predictor/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
