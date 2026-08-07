@@ -358,7 +358,7 @@ def bqskit_mapping_actions() -> list[Action]:
     """Returns the BQSKit mapping actions."""
     return [
         DeferredDeviceAction(
-            "SABREMapping",
+            "BQSKitSABREMapping",
             CompilationOrigin.BQSKIT,
             PassType.MAPPING,
             transpile_pass=lambda device: _bqskit_mapping_factory(
@@ -456,7 +456,7 @@ def final_layout_bqskit_to_qiskit(
     if bqskit_initial_layout != bqskit_final_layout:
         qiskit_final_layout = {}
         used_output_wires: set[int] = set()
-        for initial_position, final_position in zip(bqskit_initial_layout, bqskit_final_layout, strict=False):
+        for initial_position, final_position in zip(bqskit_initial_layout, bqskit_final_layout, strict=True):
             qiskit_final_layout[final_position] = compiled_qc.qubits[initial_position]
             used_output_wires.add(initial_position)
 
@@ -465,7 +465,7 @@ def final_layout_bqskit_to_qiskit(
             compiled_qc.qubits[i] for i in range(compiled_qc.num_qubits) if i not in used_output_wires
         ]
 
-        for physical_position, output_wire in zip(remaining_physical_positions, remaining_output_wires, strict=False):
+        for physical_position, output_wire in zip(remaining_physical_positions, remaining_output_wires, strict=True):
             qiskit_final_layout[physical_position] = output_wire
 
     return TranspileLayout(
@@ -522,12 +522,6 @@ def run_bqskit_action(
     """
     bqskit_qc = qiskit_to_bqskit(circuit)
 
-    # OPT actions don't take a device parameter
-    if action.pass_type == PassType.OPT:
-        transpile = cast("Callable[[Circuit], Circuit]", action.transpile_pass)
-        compiled_qc = transpile(bqskit_qc)
-        return bqskit_to_qiskit(compiled_qc), layout
-
     # SYNTHESIS actions use device factory
     if action.pass_type == PassType.SYNTHESIS:
         factory = cast("Callable[[Target], Callable[[Circuit], Circuit]]", action.transpile_pass)
@@ -547,9 +541,15 @@ def run_bqskit_action(
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
-        output_qubits = layout._output_qubit_list  # ruff:ignore[private-member-access]
+        output_qubits = layout._output_qubit_list  # noqa: SLF001
         assert output_qubits is not None
-        layout.final_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
+        routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
+        if routing_layout is not None:
+            layout.final_layout = (
+                routing_layout.compose(layout.final_layout, list(output_qubits))
+                if layout.final_layout is not None
+                else routing_layout
+            )
         return compiled_qiskit_qc, layout
 
     msg = f"Unhandled BQSKit action pass type: {action.pass_type}"

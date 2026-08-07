@@ -257,7 +257,7 @@ def qiskit_layout_actions() -> list[Action]:
 def qiskit_mapping_action() -> Action:
     """Returns the Qiskit mapping action."""
     return DeferredDeviceAction(
-        "SabreMapping",
+        "QiskitSabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         transpile_pass=lambda device: cast(

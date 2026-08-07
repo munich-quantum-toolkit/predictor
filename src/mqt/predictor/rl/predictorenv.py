@@ -292,7 +292,7 @@ class PredictorEnv(Env):
         self.state: QuantumCircuit = altered_qc
         self.num_steps += 1
 
-        self.state._layout = self.layout  # ruff:ignore[private-member-access]
+        self.state._layout = self.layout  # noqa: SLF001
 
         # Clear the figure of merit cache for the new state
         self._current_foms = {}
@@ -544,7 +544,7 @@ class PredictorEnv(Env):
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
         if isinstance(layout, TranspileLayout):
-            output_qubits = layout._output_qubit_list  # ruff:ignore[private-member-access]
+            output_qubits = layout._output_qubit_list  # noqa: SLF001
             if output_qubits is not None and all(q in output_qubits for q in circuit.qubits):
                 return True
             layout = layout.final_layout or layout.initial_layout
