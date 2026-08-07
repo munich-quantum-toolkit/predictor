@@ -21,7 +21,7 @@ from bqskit.compiler import Compiler, Workflow
 from bqskit.compiler.compile import (
     build_multi_qudit_retarget_workflow,
     build_partitioning_workflow,
-    build_seqpam_mapping_optimization_workflow,
+    build_sabre_mapping_workflow,
     build_single_qudit_retarget_workflow,
     get_instantiate_options,
 )
@@ -55,13 +55,13 @@ from qiskit.circuit import Instruction, QuantumRegister
 from qiskit.circuit.library import RGate
 from qiskit.transpiler import Layout, TranspileLayout
 
-from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, PassType
+from mqt.predictor.rl.actions import CompilationOrigin, DeferredDeviceAction, PassType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from bqskit import Circuit
-    from bqskit.compiler.basepass import BasePass as BQSKitBasePass
+    from bqskit.compiler.basepass import BasePass
     from bqskit.compiler.passdata import PassData
     from bqskit.compiler.workflow import WorkflowLike
     from bqskit.ir import Gate
@@ -255,7 +255,7 @@ def _bqskit_partitioned_synthesis_factory(
 
 def _bqskit_mapping_factory(
     device: Target,
-    *mapping_passes: BQSKitBasePass,
+    *mapping_passes: WorkflowLike,
     apply_placement: bool,
 ) -> Callable[[Circuit], BQSKitMapping]:
     """Create a BQSKit mapping callable for layout or routing actions."""
@@ -266,7 +266,9 @@ def _bqskit_mapping_factory(
             gate_set=get_bqskit_native_gates(device),
             coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
         )
-        workflow_passes = [*mapping_passes]
+        workflow_passes: list[BasePass] = [
+            workflow_pass for mapping_pass in mapping_passes for workflow_pass in Workflow(mapping_pass)
+        ]
         if apply_placement:
             workflow_passes.append(ApplyPlacement())
         workflow = Workflow([
@@ -286,7 +288,7 @@ def _bqskit_mapping_factory(
 def bqskit_synthesis_actions() -> list[Action]:
     """Returns the BQSKit synthesis actions."""
     return [
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "QSearchSynthesisPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -299,7 +301,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 ),
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "LEAPSynthesisPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -313,7 +315,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 ),
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "WalshDiagonalSynthesisPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -322,7 +324,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 IfThenElsePass(_DiagonalUnitaryPredicate(), WalshDiagonalSynthesisPass()),
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "FullQSDPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -334,7 +336,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 ),
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "BlockZXZPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -343,7 +345,7 @@ def bqskit_synthesis_actions() -> list[Action]:
                 BlockZXZPass(min_qudit_size=_BQSKIT_BLOCK_SIZE - 1),
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "FullBlockZXZPass",
             CompilationOrigin.BQSKIT,
             PassType.SYNTHESIS,
@@ -353,41 +355,15 @@ def bqskit_synthesis_actions() -> list[Action]:
 
 
 def bqskit_mapping_actions() -> list[Action]:
-    """Returns the BQSKit sequential permutation-aware mapping actions."""
-
-    def _factory(device: Target) -> Callable[[Circuit], BQSKitMapping]:
-        def _compile(circuit: Circuit) -> BQSKitMapping:
-            model = MachineModel(
-                num_qudits=device.num_qubits,
-                gate_set=get_bqskit_native_gates(device),
-                coupling_graph=[(edge[0], edge[1]) for edge in device.build_coupling_map()],
-            )
-            workflow = Workflow([
-                SetRandomSeedPass(_BQSKIT_SEED),
-                UnfoldPass(),
-                ExtractMeasurements(),
-                SetModelPass(model),
-                build_seqpam_mapping_optimization_workflow(
-                    _BQSKIT_OPT_LEVEL,
-                    _BQSKIT_SYNTHESIS_EPSILON,
-                    block_size=_BQSKIT_BLOCK_SIZE,
-                ),
-                RestoreMeasurements(),
-            ])
-            compiled_circuit, data = cast(
-                "tuple[Circuit, PassData]",
-                _run_bqskit_workflow(circuit, workflow, True),
-            )
-            return compiled_circuit, tuple(data.initial_mapping), tuple(data.final_mapping)
-
-        return _compile
-
+    """Returns the BQSKit mapping actions."""
     return [
-        DeviceDependentAction(
-            "SeqPAMMapping",
+        DeferredDeviceAction(
+            "SABREMapping",
             CompilationOrigin.BQSKIT,
             PassType.MAPPING,
-            transpile_pass=_factory,
+            transpile_pass=lambda device: _bqskit_mapping_factory(
+                device, build_sabre_mapping_workflow(), apply_placement=True
+            ),
         )
     ]
 
@@ -395,25 +371,25 @@ def bqskit_mapping_actions() -> list[Action]:
 def bqskit_layout_actions() -> list[Action]:
     """Returns the BQSKit layout actions."""
     return [
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "GreedyPlacementPass",
             CompilationOrigin.BQSKIT,
             PassType.LAYOUT,
             transpile_pass=lambda device: _bqskit_mapping_factory(device, GreedyPlacementPass(), apply_placement=True),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "TrivialPlacementPass",
             CompilationOrigin.BQSKIT,
             PassType.LAYOUT,
             transpile_pass=lambda device: _bqskit_mapping_factory(device, TrivialPlacementPass(), apply_placement=True),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "StaticPlacementPass",
             CompilationOrigin.BQSKIT,
             PassType.LAYOUT,
             transpile_pass=lambda device: _bqskit_mapping_factory(device, StaticPlacementPass(), apply_placement=True),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "GeneralizedSabreLayoutPass",
             CompilationOrigin.BQSKIT,
             PassType.LAYOUT,
@@ -430,7 +406,7 @@ def bqskit_layout_actions() -> list[Action]:
 def bqskit_routing_actions() -> list[Action]:
     """Returns the BQSKit routing actions."""
     return [
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "GeneralizedSabreRoutingPass",
             CompilationOrigin.BQSKIT,
             PassType.ROUTING,

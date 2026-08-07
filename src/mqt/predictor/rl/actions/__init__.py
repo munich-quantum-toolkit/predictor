@@ -70,8 +70,8 @@ class DeviceIndependentAction(Action):
 
 
 @dataclass
-class DeviceDependentAction(Action):
-    """Device-specific action that depends on a target device.
+class DeferredDeviceAction(Action):
+    """Action that defers construction of a device-specific pass.
 
     Attributes:
         do_while: Optional do-while predicate for pass-manager execution.
@@ -142,7 +142,7 @@ for _action in (
 __all__ = [
     "Action",
     "CompilationOrigin",
-    "DeviceDependentAction",
+    "DeferredDeviceAction",
     "DeviceIndependentAction",
     "PassType",
     "bqskit_actions",
