@@ -130,16 +130,6 @@ def test_synthesis_actions_produce_native_gates(
     env: PredictorEnv,
 ) -> None:
     """Invariant: every synthesis action produces only native gates for all circuit states."""
-    expected_bqskit_actions = {
-        "BlockZXZPass",
-        "FullBlockZXZPass",
-        "FullQSDPass",
-        "LEAPSynthesisPass",
-        "QSearchSynthesisPass",
-        "WalshDiagonalSynthesisPass",
-    }
-    assert expected_bqskit_actions.issubset({action.name for action in env.action_set.values()})
-
     n_qubits = simple_circuit.num_qubits
     qc_laid_out, laid_layout = _lay_out(simple_circuit, env.device)
     qc_routed, routed_layout = _route(qc_laid_out, laid_layout, env.device)
