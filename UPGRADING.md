@@ -6,8 +6,7 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-The composite BQSKit actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping`
-have been removed.
+The composite BQSKit actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` were replaced by more canonical actions.
 
 ## [2.4.0]
 
