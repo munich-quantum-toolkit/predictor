@@ -541,7 +541,7 @@ def run_bqskit_action(
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
-        output_qubits = layout._output_qubit_list  # noqa: SLF001
+        output_qubits = layout._output_qubit_list  # ruff: ignore[private-member-access]
         assert output_qubits is not None
         routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
         if routing_layout is not None:
