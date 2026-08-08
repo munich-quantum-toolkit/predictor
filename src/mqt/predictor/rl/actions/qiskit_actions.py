@@ -64,7 +64,7 @@ from qiskit.transpiler.preset_passmanagers import common
 
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
-    DeviceDependentAction,
+    DeferredDeviceAction,
     DeviceIndependentAction,
     PassType,
 )
@@ -170,7 +170,7 @@ def qiskit_optimization_actions() -> list[Action]:
 
 def qiskit_o3_action() -> Action:
     """Returns the Qiskit level-3 optimization action."""
-    return DeviceDependentAction(
+    return DeferredDeviceAction(
         "QiskitO3",
         CompilationOrigin.QISKIT,
         PassType.OPT,
@@ -205,7 +205,7 @@ def qiskit_o3_action() -> Action:
 
 def qiskit_final_optimization_action() -> Action:
     """Returns the Qiskit final layout optimization action."""
-    return DeviceDependentAction(
+    return DeferredDeviceAction(
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
@@ -216,7 +216,7 @@ def qiskit_final_optimization_action() -> Action:
 def qiskit_layout_actions() -> list[Action]:
     """Returns the Qiskit layout actions."""
     return [
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "DenseLayout",
             CompilationOrigin.QISKIT,
             PassType.LAYOUT,
@@ -230,7 +230,7 @@ def qiskit_layout_actions() -> list[Action]:
                 ],
             ),
         ),
-        DeviceDependentAction(
+        DeferredDeviceAction(
             "VF2Layout",
             CompilationOrigin.QISKIT,
             PassType.LAYOUT,
@@ -256,8 +256,8 @@ def qiskit_layout_actions() -> list[Action]:
 
 def qiskit_mapping_action() -> Action:
     """Returns the Qiskit mapping action."""
-    return DeviceDependentAction(
-        "SabreMapping",
+    return DeferredDeviceAction(
+        "QiskitSabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
         transpile_pass=lambda device: cast(
@@ -268,7 +268,7 @@ def qiskit_mapping_action() -> Action:
 
 def qiskit_synthesis_action() -> Action:
     """Returns the Qiskit synthesis action."""
-    return DeviceDependentAction(
+    return DeferredDeviceAction(
         "BasisTranslator",
         CompilationOrigin.QISKIT,
         PassType.SYNTHESIS,
@@ -347,7 +347,7 @@ def run_qiskit_action(
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     # Build the concrete Qiskit pass list for given action.
-    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+    if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
         passes = factory(device.operation_names, CouplingMap(device.build_coupling_map()) if layout else None)
     elif callable(action.transpile_pass):
@@ -356,7 +356,7 @@ def run_qiskit_action(
     else:
         passes = cast("list[Task]", action.transpile_pass)
 
-    if action.name == "QiskitO3" and isinstance(action, DeviceDependentAction):
+    if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         assert action.do_while is not None
         pm = PassManager([DoWhileController(passes, do_while=action.do_while)])
     else:

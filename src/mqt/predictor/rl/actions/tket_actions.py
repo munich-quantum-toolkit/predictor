@@ -22,7 +22,7 @@ from pytket.passes import CliffordSimp, FullPeepholeOptimise, PeepholeOptimise2Q
 from pytket.placement import place_with_map
 from qiskit.transpiler import Layout
 
-from mqt.predictor.rl.actions import CompilationOrigin, DeviceDependentAction, DeviceIndependentAction, PassType
+from mqt.predictor.rl.actions import CompilationOrigin, DeferredDeviceAction, DeviceIndependentAction, PassType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -93,7 +93,7 @@ def tket_optimization_actions() -> list[Action]:
 
 def tket_routing_action() -> Action:
     """Returns the TKET routing action."""
-    return DeviceDependentAction(
+    return DeferredDeviceAction(
         "RoutingPass",
         CompilationOrigin.TKET,
         PassType.ROUTING,
