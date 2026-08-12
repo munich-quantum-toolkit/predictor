@@ -52,6 +52,7 @@ class Action:
         preserves_layout: Whether action preserves existing layout.
         preserves_routing: Whether action preserves existing routing.
         preserves_synthesis: Whether action preserves synthesis state.
+        stochastic: Whether repeated execution can yield different results.
     """
 
     name: str
@@ -61,6 +62,7 @@ class Action:
     preserves_layout: bool = False
     preserves_routing: bool = False
     preserves_synthesis: bool = False
+    stochastic: bool = False
 
 
 @dataclass
