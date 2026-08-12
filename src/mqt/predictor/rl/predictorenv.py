@@ -34,7 +34,9 @@ from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
 from qiskit import QuantumCircuit
-from qiskit.transpiler import CouplingMap, TranspileLayout
+from qiskit.circuit import StandardEquivalenceLibrary
+from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler.passes import BasisTranslator
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
@@ -652,14 +654,17 @@ class PredictorEnv(Env):
 
     def _score_circuit(self, circuit: QuantumCircuit) -> float:
         """Calculate the configured figure of merit for an action candidate."""
+        scoring_circuit = PassManager(
+            [BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)]
+        ).run(circuit.copy())
         if self.reward_function == "expected_fidelity":
-            return expected_fidelity(circuit, self.device)
+            return expected_fidelity(scoring_circuit, self.device)
         if self.reward_function == "estimated_success_probability":
-            return estimated_success_probability(circuit, self.device)
+            return estimated_success_probability(scoring_circuit, self.device)
         if self.reward_function == "estimated_hellinger_distance":
-            return estimated_hellinger_distance(circuit, self.device, self.hellinger_model)
+            return estimated_hellinger_distance(scoring_circuit, self.device, self.hellinger_model)
         if self.reward_function == "critical_depth":
-            return crit_depth(circuit)
+            return crit_depth(scoring_circuit)
         msg = f"No implementation for reward function {self.reward_function}."
         raise NotImplementedError(msg)
 
