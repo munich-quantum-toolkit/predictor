@@ -50,6 +50,7 @@ from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, 
 from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
 from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, FigureOfMeritMetrics
+from mqt.predictor.utils import get_openqasm_gates_for_rl
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -185,9 +186,14 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
+        gate_spaces = {
+            gate: Box(low=0, high=1, shape=(1,), dtype=np.float32) for gate in get_openqasm_gates_for_rl()
+        }
         spaces: dict[str, Space] = {
             "num_qubits": Discrete(128),
             "depth": Discrete(1000000),
+            "measure": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            **gate_spaces,
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "critical_depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "entanglement_ratio": Box(low=0, high=1, shape=(1,), dtype=np.float32),
