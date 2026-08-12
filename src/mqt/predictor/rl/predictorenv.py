@@ -62,6 +62,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
+        mdp: str = "paper",
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -71,14 +72,23 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
+            mdp: The MDP transition policy. ``paper`` follows the original linear
+                compilation flow, ``flexible`` permits all pre-routing actions,
+                ``thesis`` preserves the compilation structure after layout, and
+                ``hybrid`` is flexible until layout has been established.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
         """
         logger.info("Init env: " + reward_function)
 
+        if mdp not in {"paper", "flexible", "thesis", "hybrid"}:
+            msg = f"Unsupported MDP policy: {mdp}."
+            raise ValueError(msg)
+
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
         self.max_steps = max_steps
+        self.mdp = mdp
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -86,7 +96,10 @@ class PredictorEnv(Env):
         self.actions_routing_indices = []
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
-        self.actions_final_optimization_indices = []  # TODO: currently not used; will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/666
+        self.actions_final_optimization_indices = []
+        self.actions_layout_preserving_indices = []
+        self.actions_routing_preserving_indices = []
+        self.actions_structure_preserving_indices = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -118,6 +131,12 @@ class PredictorEnv(Env):
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
+            if elem.preserves_layout:
+                self.actions_layout_preserving_indices.append(index)
+            if elem.preserves_layout and elem.preserves_routing:
+                self.actions_routing_preserving_indices.append(index)
+            if elem.preserves_layout and elem.preserves_routing and elem.preserves_synthesis:
+                self.actions_structure_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.MAPPING]:
             self.action_set[index] = elem
@@ -434,7 +453,7 @@ class PredictorEnv(Env):
                 device=self.device,
                 circuit_name=current_circuit_name,
                 figure_of_merit=self.reward_function,
-                mdp_policy="paper",  # Fallback since mdp refactoring is not yet implemented
+                mdp_policy=self.mdp,
             )
 
             # Record baseline
@@ -623,34 +642,62 @@ class PredictorEnv(Env):
 
         actions = []
 
-        # Initial state
-        if not synthesized and not laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
+        if self.mdp == "flexible":
+            if not laid_out:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+            elif not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+            else:
+                actions.extend(self.actions_synthesis_indices)
             actions.extend(self.actions_opt_indices)
+            if synthesized and laid_out and routed:
+                actions.append(self.action_terminate_index)
 
-        if synthesized and not laid_out and not routed:
-            actions.extend(self.actions_mapping_indices)
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_opt_indices)
+        elif self.mdp == "hybrid" or self.mdp == "thesis":
+            if not laid_out:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            elif not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_layout_preserving_indices)
+            else:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_preserving_indices)
+                if synthesized:
+                    actions.extend(self.actions_structure_preserving_indices)
+                    actions.extend(self.actions_final_optimization_indices)
+                    actions.append(self.action_terminate_index)
 
-        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
-        if not synthesized and laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_routing_indices)
-            actions.extend(self.actions_opt_indices)
+        else:
+            if not synthesized and not laid_out and not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
 
-        # Not *depicted* in paper; necessary because of layout-only passes
-        if synthesized and laid_out and not routed:
-            actions.extend(self.actions_routing_indices)
+            elif synthesized and not laid_out and not routed:
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
 
-        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
-        if not synthesized and laid_out and routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
+            elif not synthesized and laid_out and not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
 
-        # Final state
-        if synthesized and laid_out and routed:
-            actions.extend([self.action_terminate_index])
-            actions.extend(self.actions_opt_indices)
+            elif synthesized and laid_out and not routed:
+                actions.extend(self.actions_routing_indices)
+
+            elif not synthesized and laid_out and routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
+
+            elif synthesized and laid_out and routed:
+                actions.append(self.action_terminate_index)
+                actions.extend(self.actions_opt_indices)
 
         return actions
