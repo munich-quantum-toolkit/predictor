@@ -654,9 +654,9 @@ class PredictorEnv(Env):
 
     def _score_circuit(self, circuit: QuantumCircuit) -> float:
         """Calculate the configured figure of merit for an action candidate."""
-        scoring_circuit = PassManager(
-            [BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)]
-        ).run(circuit.copy())
+        scoring_circuit = PassManager([
+            BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)
+        ]).run(circuit.copy())
         if self.reward_function == "expected_fidelity":
             return expected_fidelity(scoring_circuit, self.device)
         if self.reward_function == "estimated_success_probability":
