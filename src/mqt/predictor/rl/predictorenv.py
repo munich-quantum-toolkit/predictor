@@ -66,6 +66,7 @@ class PredictorEnv(Env):
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
         mdp: MDPPolicy = "v3",
+        stochastic_action_trials: int = 20,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -80,6 +81,8 @@ class PredictorEnv(Env):
                 preserving the established compilation structure afterwards.
                 ``flexible`` provides the greatest freedom among all structurally
                 valid actions.
+            stochastic_action_trials: Number of attempts used to select the best
+                result from a stochastic action.
 
         Raises:
             ValueError: If ``mdp`` is unsupported, if the reward function is
@@ -93,10 +96,14 @@ class PredictorEnv(Env):
         if mdp not in MDP_POLICIES:
             msg = f"Unsupported MDP policy: {mdp}."
             raise ValueError(msg)
+        if stochastic_action_trials < 1:
+            msg = "stochastic_action_trials must be at least one."
+            raise ValueError(msg)
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
         self.max_steps = max_steps
         self.mdp = mdp
+        self.stochastic_action_trials = stochastic_action_trials
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -533,6 +540,8 @@ class PredictorEnv(Env):
                 device=self.device,
                 layout=self.layout,
                 input_qubit_count=self.num_qubits_uncompiled_circuit,
+                stochastic_action_trials=self.stochastic_action_trials,
+                score=self._score_circuit if action.stochastic else None,
             )
         elif action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(
@@ -553,6 +562,19 @@ class PredictorEnv(Env):
             raise ValueError(msg)
 
         return altered_qc
+
+    def _score_circuit(self, circuit: QuantumCircuit) -> float:
+        """Calculate the configured figure of merit for an action candidate."""
+        if self.reward_function == "expected_fidelity":
+            return expected_fidelity(circuit, self.device)
+        if self.reward_function == "estimated_success_probability":
+            return estimated_success_probability(circuit, self.device)
+        if self.reward_function == "estimated_hellinger_distance":
+            return estimated_hellinger_distance(circuit, self.device, self.hellinger_model)
+        if self.reward_function == "critical_depth":
+            return crit_depth(circuit)
+        msg = f"No implementation for reward function {self.reward_function}."
+        raise NotImplementedError(msg)
 
     def is_circuit_laid_out(self, circuit: QuantumCircuit, layout: TranspileLayout | Layout) -> bool:
         """True if every logical qubit in the circuit has a physical assignment."""
