@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from qiskit import QuantumCircuit
 
-from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -70,22 +70,32 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
+def dict_to_featurevector(gate_dict: dict[str, int]) -> dict[str, float]:
+    """Return normalized OpenQASM gate frequencies for an RL observation."""
+    feature_vector = dict.fromkeys(get_openqasm_gates_for_rl(), 0.0)
+    total = sum(value for gate, value in gate_dict.items() if gate != "barrier")
+    for gate, value in gate_dict.items():
+        if gate in feature_vector:
+            feature_vector[gate] = value / total if total else 0.0
+    return feature_vector
+
+
 def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
-    """Creates a feature dictionary for a given quantum circuit.
-
-    Arguments:
-        qc: The quantum circuit for which the feature dictionary is created.
-
-    Returns:
-        The feature dictionary for the given quantum circuit.
-    """
+    """Create a normalized feature dictionary for a quantum circuit."""
+    operation_counts = dict(qc.count_ops())
+    total_operations = sum(value for gate, value in operation_counts.items() if gate != "barrier")
+    gate_features = dict_to_featurevector(operation_counts)
     feature_dict: dict[str, int | NDArray[np.float32]] = {
+        **{gate: np.array([value], dtype=np.float32) for gate, value in gate_features.items()},
+        "measure": np.array(
+            [operation_counts.get("measure", 0) / total_operations if total_operations else 0.0],
+            dtype=np.float32,
+        ),
         "num_qubits": qc.num_qubits,
         "depth": qc.depth(),
     }
 
     supermarq_features = calc_supermarq_features(qc)
-    # for all dict values, put them in a list each
     feature_dict["program_communication"] = np.array([supermarq_features.program_communication], dtype=np.float32)
     feature_dict["critical_depth"] = np.array([supermarq_features.critical_depth], dtype=np.float32)
     feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)

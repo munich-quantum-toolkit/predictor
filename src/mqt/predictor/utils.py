@@ -144,3 +144,41 @@ def calc_supermarq_features(
         parallelism,
         liveness,
     )
+
+
+def get_openqasm_gates_for_rl() -> list[str]:
+    """Return the OpenQASM gates used as normalized RL features.
+
+    Generic unitary gates and gates acting on more than two qubits are excluded
+    because they are not meaningful features for the RL action space.
+    """
+    return [
+        "cx",
+        "id",
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "rx",
+        "ry",
+        "rz",
+        "sx",
+        "sxdg",
+        "cz",
+        "cy",
+        "swap",
+        "ch",
+        "crx",
+        "cry",
+        "crz",
+        "cp",
+        "cu3",
+        "csx",
+        "rxx",
+        "rzz",
+    ]
