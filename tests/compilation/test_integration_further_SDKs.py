@@ -161,12 +161,10 @@ def test_layout_actions_establish_layout(
     env: PredictorEnv,
 ) -> None:
     """Invariant: every layout action establishes a valid qubit assignment."""
-    n_qubits = simple_circuit.num_qubits
-
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.LAYOUT:
             continue
-        _setup_env(env, simple_circuit, None, n_qubits)
+        _setup_env(env, simple_circuit, None, simple_circuit.num_qubits)
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
@@ -179,19 +177,19 @@ def test_layout_actions_establish_layout(
         )
 
 
-def test_mapping_actions_establish_layout(
+def test_mapping_actions_establish_layout_and_route(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
 ) -> None:
-    """Invariant: every mapping action establishes a valid qubit assignment."""
+    """Invariant: every mapping action establishes a valid layout and routes the circuit."""
     synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
     synthesized = synthesis_pm.run(simple_circuit.copy())
-    n_qubits = synthesized.num_qubits
+    coupling_map = env.device.build_coupling_map()
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.MAPPING:
             continue
-        _setup_env(env, synthesized, None, n_qubits)
+        _setup_env(env, synthesized, None, synthesized.num_qubits)
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
@@ -201,6 +199,10 @@ def test_mapping_actions_establish_layout(
         assert env.is_circuit_laid_out(compiled, env.layout), (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
             f"did not establish valid layout. Layout: {env.layout}"
+        )
+        assert env.is_circuit_routed(compiled, coupling_map), (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
+            "did not route the circuit after establishing its layout"
         )
 
 

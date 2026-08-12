@@ -481,25 +481,20 @@ def final_layout_bqskit_routing_to_qiskit(
     bqskit_final_layout: tuple[int, ...],
     output_qubits: list[QiskitQubit],
 ) -> Layout | None:
-    """Convert a BQSKit routing permutation into a Qiskit final layout."""
+    """Convert BQSKit's input-to-output routing permutation to a Qiskit final layout."""
+    if len(bqskit_final_layout) != len(output_qubits) or set(bqskit_final_layout) != set(range(len(output_qubits))):
+        msg = "BQSKit final layout must be a permutation of the output qubit positions."
+        raise ValueError(msg)
+
     if bqskit_final_layout == tuple(range(len(bqskit_final_layout))):
         return None
 
-    qiskit_final_layout: dict[int, QiskitQubit] = {}
-    used_output_positions: set[int] = set()
-    for input_position, final_position in enumerate(bqskit_final_layout):
-        qiskit_final_layout[final_position] = output_qubits[input_position]
-        used_output_positions.add(input_position)
+    qiskit_final_layout = {
+        output_qubits[input_position]: final_position
+        for input_position, final_position in enumerate(bqskit_final_layout)
+    }
 
-    remaining_physical_positions = [i for i in range(len(output_qubits)) if i not in qiskit_final_layout]
-    remaining_output_positions = [i for i in range(len(output_qubits)) if i not in used_output_positions]
-
-    for physical_position, output_position in zip(
-        remaining_physical_positions, remaining_output_positions, strict=True
-    ):
-        qiskit_final_layout[physical_position] = output_qubits[output_position]
-
-    return Layout(input_dict=qiskit_final_layout)
+    return Layout(qiskit_final_layout)
 
 
 def run_bqskit_action(
@@ -546,7 +541,7 @@ def run_bqskit_action(
         routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
         if routing_layout is not None:
             layout.final_layout = (
-                routing_layout.compose(layout.final_layout, list(output_qubits))
+                layout.final_layout.compose(routing_layout, list(output_qubits))
                 if layout.final_layout is not None
                 else routing_layout
             )

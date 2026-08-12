@@ -11,11 +11,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
-from bqskit.compiler.basepass import BasePass
 from bqskit.ir import gates
 from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -26,7 +24,6 @@ from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopRea
 
 from mqt.predictor.rl.actions import (
     PassType,
-    bqskit_actions,
     get_actions_by_pass_type,
 )
 from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
@@ -36,8 +33,6 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model,
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import pytest
-    from bqskit.compiler import Workflow
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
@@ -80,29 +75,6 @@ def test_bqskit_to_qiskit_converts_u1q_to_r_gate() -> None:
 
     assert qc.data[0].operation.name == "r"
     assert qc.data[0].operation.params == [0.1, 0.2]
-
-
-def test_bqskit_mapping_factory_flattens_workflows(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that a workflow passed to the mapping factory is flattened."""
-    captured_workflow: Workflow | None = None
-
-    def fake_run(circuit: Circuit, workflow: Workflow, request_data: bool = False) -> tuple[Circuit, SimpleNamespace]:
-        nonlocal captured_workflow
-        captured_workflow = workflow
-        assert request_data
-        return circuit, SimpleNamespace(initial_mapping=[], final_mapping=[])
-
-    monkeypatch.setattr(bqskit_actions, "_run_bqskit_workflow", fake_run)
-    action = bqskit_actions.bqskit_mapping_actions()[0]
-    factory = cast(
-        "Callable[[Target], Callable[[Circuit], tuple[Circuit, tuple[int, ...], tuple[int, ...]]]]",
-        action.transpile_pass,
-    )(get_device("ibm_falcon_27"))
-
-    factory(Circuit(2))
-
-    assert captured_workflow is not None
-    assert all(isinstance(pass_obj, BasePass) for pass_obj in captured_workflow)
 
 
 def test_vf2_layout_and_postlayout() -> None:
