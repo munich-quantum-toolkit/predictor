@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from math import isclose
 import re
 import signal
 import threading
 import time
 import warnings
+from math import isclose
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
@@ -489,9 +489,9 @@ class PredictorEnv(Env):
 
     def _approximate_reward(self) -> float:
         """Estimate a reward from the average error of translated native gates."""
-        circuit = PassManager(
-            [BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)]
-        ).run(self.state.copy())
+        circuit = PassManager([
+            BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)
+        ]).run(self.state.copy())
         reward = 1.0
 
         for instruction in circuit.data:
@@ -504,9 +504,7 @@ class PredictorEnv(Env):
             except KeyError:
                 return 0.0
 
-            errors = [
-                property.error for property in properties if property is not None and property.error is not None
-            ]
+            errors = [property.error for property in properties if property is not None and property.error is not None]
             if not errors:
                 return 0.0
             reward *= 1 - float(np.mean(errors))
