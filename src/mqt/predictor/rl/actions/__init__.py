@@ -121,6 +121,7 @@ from mqt.predictor.rl.actions import bqskit_actions, qiskit_actions, tket_action
 
 for _action in (
     *qiskit_actions.qiskit_layout_actions(),
+    *qiskit_actions.qiskit_routing_actions(),
     qiskit_actions.qiskit_mapping_action(),
     qiskit_actions.qiskit_synthesis_action(),
     qiskit_actions.qiskit_o3_action(),
