@@ -283,7 +283,7 @@ def test_warning_for_unidirectional_device() -> None:
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
+    env = predictorenv_module.PredictorEnv(device=device, max_steps=1, intermediate_reward=False)
     qc = QuantumCircuit(1)
     qc.h(0)
     env.reset(qc)
