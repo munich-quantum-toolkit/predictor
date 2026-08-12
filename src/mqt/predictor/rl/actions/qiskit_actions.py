@@ -54,6 +54,7 @@ from qiskit.transpiler.passes import (
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
+    SabreSwap,
     Size,
     UnitarySynthesis,
     VF2Layout,
@@ -249,6 +250,20 @@ def qiskit_layout_actions() -> list[Action]:
                 ],
             ),
         ),
+    ]
+
+
+def qiskit_routing_actions() -> list[Action]:
+    """Return the Qiskit routing actions."""
+    return [
+        DeferredDeviceAction(
+            "SabreSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]", [SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay")]
+            ),
+        )
     ]
 
 
