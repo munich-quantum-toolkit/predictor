@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from math import isclose
 import re
 import time
 import warnings
@@ -70,6 +71,9 @@ class PredictorEnv(Env):
         tracer_output_path: str | Path | None = None,
         mdp: MDPPolicy = "v3",
         stochastic_action_trials: int = 20,
+        intermediate_reward: bool = True,
+        reward_scale: float = 1.0,
+        no_effect_penalty: float = -0.001,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -86,6 +90,11 @@ class PredictorEnv(Env):
                 valid actions.
             stochastic_action_trials: Number of attempts used to select the best
                 result from a stochastic action.
+            intermediate_reward: Whether to reward changes to the figure of merit
+                before termination.
+            reward_scale: Multiplier applied to intermediate reward changes.
+            no_effect_penalty: Reward for optimization actions that do not improve
+                the figure of merit.
 
         Raises:
             ValueError: If ``mdp`` is unsupported, if the reward function is
@@ -107,6 +116,9 @@ class PredictorEnv(Env):
         self.max_steps = max_steps
         self.mdp = mdp
         self.stochastic_action_trials = stochastic_action_trials
+        self.intermediate_reward = intermediate_reward
+        self.reward_scale = reward_scale
+        self.no_effect_penalty = no_effect_penalty
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -297,6 +309,11 @@ class PredictorEnv(Env):
         start_time = time.perf_counter()
         try:
             self.used_actions.append(action_name)
+            previous_reward = (
+                self._get_stepwise_reward()
+                if self.intermediate_reward and action != self.action_terminate_index
+                else None
+            )
             altered_qc = self.apply_action(action)
             action_duration = time.perf_counter() - start_time
         except Exception as exc:  # ruff:ignore[blind-except]
@@ -339,6 +356,9 @@ class PredictorEnv(Env):
         if action == self.action_terminate_index:
             reward_val = self.calculate_reward()
             done = True
+        elif previous_reward is not None:
+            reward_val = self._calculate_intermediate_reward(action, previous_reward)
+            done = False
         else:
             reward_val = 0
             done = False
@@ -394,6 +414,56 @@ class PredictorEnv(Env):
     def calculate_reward(self) -> float:
         """Calculates and returns the reward for the current state."""
         return self.get_fom(self.reward_function)
+
+    def _get_stepwise_reward(self) -> tuple[float, str]:
+        """Return the current reward and whether it is exact or approximate."""
+        if self.reward_function not in {"expected_fidelity", "estimated_success_probability"}:
+            return 0.0, "unavailable"
+
+        if self._current_synthesized and self._current_laid_out and self._current_routed:
+            return self.calculate_reward(), "exact"
+        return self._approximate_reward(), "approximate"
+
+    def _approximate_reward(self) -> float:
+        """Estimate a reward from the average error of translated native gates."""
+        circuit = PassManager(
+            [BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)]
+        ).run(self.state.copy())
+        reward = 1.0
+
+        for instruction in circuit.data:
+            gate_name = instruction.operation.name
+            if gate_name in {"barrier", "measure"}:
+                continue
+
+            try:
+                properties = self.device[gate_name].values()
+            except KeyError:
+                return 0.0
+
+            errors = [
+                property.error for property in properties if property is not None and property.error is not None
+            ]
+            if not errors:
+                return 0.0
+            reward *= 1 - float(np.mean(errors))
+
+        return reward
+
+    def _calculate_intermediate_reward(self, action: int, previous_reward: tuple[float, str]) -> float:
+        """Calculate the shaped reward for a non-terminal action."""
+        previous_value, previous_kind = previous_reward
+        current_value, current_kind = self._get_stepwise_reward()
+        if previous_kind != current_kind:
+            return 0.0
+
+        delta = current_value - previous_value
+        if not isclose(delta, 0.0, abs_tol=1e-12):
+            return self.reward_scale * delta
+
+        if self.action_set[action].pass_type in {PassType.OPT, PassType.FINAL_OPT}:
+            return self.no_effect_penalty
+        return 0.0
 
     def render(self) -> None:
         """Renders the current state."""
