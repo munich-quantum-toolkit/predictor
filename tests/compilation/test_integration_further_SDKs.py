@@ -107,15 +107,16 @@ def target() -> Target:
 def simple_circuit() -> QuantumCircuit:
     """Return a small circuit used to probe action invariants.
 
-    CX(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
+    RZZ(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
     (qubit 0 only connects to 1), so SabreSwap inserts at least one SWAP.
     This ensures the routed fixture carries a real SWAP so routing-preservation
-    checks are non-trivial.
+    checks are non-trivial. The circuit is diagonal to exercise diagonal synthesis
+    passes.
     """
     qc = QuantumCircuit(3)
-    qc.h(0)
-    qc.cx(0, 2)
-    qc.cx(1, 2)
+    qc.rz(0.5, 0)
+    qc.rzz(0.25, 0, 2)
+    qc.rzz(0.75, 1, 2)
     return qc
 
 
