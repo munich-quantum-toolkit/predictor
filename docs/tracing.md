@@ -2,7 +2,10 @@
 
 The MQT Predictor framework allows you to extract detailed, step-by-step
 information about the reinforcement learning agent's compilation process by
-generating a comprehensive JSON trace.
+generating a comprehensive JSON trace. The exported information can then be
+visualized using
+[MQT FlowViz](https://github.com/munich-quantum-toolkit/flowviz), an app
+allowing for in-depth analysis of compilation runs.
 
 ## Enabling the Tracer
 
