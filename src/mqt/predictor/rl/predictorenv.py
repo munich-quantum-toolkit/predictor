@@ -175,9 +175,7 @@ class PredictorEnv(Env):
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
 
-        gate_spaces = {
-            gate: Box(low=0, high=1, shape=(1,), dtype=np.float32) for gate in get_openqasm_gates_for_rl()
-        }
+        gate_spaces = {gate: Box(low=0, high=1, shape=(1,), dtype=np.float32) for gate in get_openqasm_gates_for_rl()}
         spaces: dict[str, Space] = {
             "num_qubits": Discrete(128),
             "depth": Discrete(1000000),
