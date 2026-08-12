@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from typing import TYPE_CHECKING, cast
 
@@ -358,6 +359,7 @@ def qiskit_mapping_action() -> Action:
         "QiskitSabreMapping",
         CompilationOrigin.QISKIT,
         PassType.MAPPING,
+        stochastic=True,
         transpile_pass=lambda device: cast(
             "list[Task]", [SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)]
         ),
@@ -442,9 +444,51 @@ def run_qiskit_action(
     device: Target,
     layout: TranspileLayout | None,
     input_qubit_count: int | None = None,
+    stochastic_action_trials: int = 1,
+    score: Callable[[QuantumCircuit], float] | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
-    """Apply a Qiskit action and return the updated circuit and layout metadata."""
-    # Build the concrete Qiskit pass list for given action.
+    """Apply a Qiskit action and return the updated circuit and layout metadata.
+
+    Stochastic actions are evaluated repeatedly when a score function is
+    supplied. The highest-scoring result is retained together with its layout.
+    """
+    attempts = stochastic_action_trials if action.stochastic and score is not None else 1
+    best_result: tuple[QuantumCircuit, TranspileLayout | None] | None = None
+    best_score: float | None = None
+
+    for _ in range(max(1, attempts)):
+        altered_qc, candidate_layout = _run_qiskit_action_once(
+            action,
+            circuit,
+            device,
+            deepcopy(layout),
+            input_qubit_count,
+        )
+        if score is None:
+            return altered_qc, candidate_layout
+
+        try:
+            candidate_score = score(altered_qc)
+        except Exception:  # ruff:ignore[blind-except]
+            logger.warning("Could not evaluate stochastic action %s; using swap count instead.", action.name)
+            candidate_score = -float(altered_qc.count_ops().get("swap", 0))
+        if best_score is None or candidate_score > best_score:
+            best_result = altered_qc, candidate_layout
+            best_score = candidate_score
+
+    assert best_result is not None
+    return best_result
+
+
+def _run_qiskit_action_once(
+    action: Action,
+    circuit: QuantumCircuit,
+    device: Target,
+    layout: TranspileLayout | None,
+    input_qubit_count: int | None,
+) -> tuple[QuantumCircuit, TranspileLayout | None]:
+    """Run one Qiskit action attempt and update its layout metadata."""
+    # Build the concrete Qiskit pass list for a single attempt.
     if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
         passes = factory(device.operation_names, CouplingMap(device.build_coupling_map()) if layout else None)
