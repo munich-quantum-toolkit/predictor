@@ -441,7 +441,11 @@ class PredictorEnv(Env):
             except KeyError:
                 return 0.0
 
-            errors = [property.error for property in properties if property is not None and property.error is not None]
+            errors = [
+                instruction_property.error
+                for instruction_property in properties
+                if instruction_property is not None and instruction_property.error is not None
+            ]
             if not errors:
                 return 0.0
             reward *= 1 - float(np.mean(errors))
