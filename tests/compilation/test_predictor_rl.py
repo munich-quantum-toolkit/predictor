@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -136,29 +137,103 @@ def test_predictor_env_truncates_at_max_steps() -> None:
     assert info["truncation_reason"] == "max_steps_exceeded"
 
 
-def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
-    """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
+@pytest.mark.parametrize(
+    ("synthesized", "laid_out", "routed"),
+    [
+        pytest.param(False, False, False, id="initial"),
+        pytest.param(True, False, False, id="synthesized"),
+        pytest.param(False, True, False, id="laid-out"),
+        pytest.param(True, True, False, id="synthesized-laid-out"),
+        pytest.param(False, True, True, id="laid-out-routed"),
+        pytest.param(True, True, True, id="final"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("mdp", "expected_action_groups_by_state"),
+    [
+        pytest.param(
+            "v2",
+            {
+                (False, False, False): ("synthesis", "optimization"),
+                (True, False, False): ("mapping", "layout", "optimization"),
+                (False, True, False): ("synthesis", "routing", "optimization"),
+                (True, True, False): ("routing",),
+                (False, True, True): ("synthesis", "optimization"),
+                (True, True, True): ("terminate", "optimization"),
+            },
+            id="v2",
+        ),
+        pytest.param(
+            "v3",
+            {
+                (False, False, False): ("synthesis", "mapping", "layout", "optimization"),
+                (True, False, False): ("mapping", "layout", "optimization"),
+                (False, True, False): ("synthesis", "routing", "structure-preserving"),
+                (True, True, False): ("routing", "structure-preserving"),
+                (False, True, True): ("synthesis", "structure-preserving"),
+                (True, True, True): ("terminate", "structure-preserving", "final-optimization"),
+            },
+            id="v3",
+        ),
+        pytest.param(
+            "flexible",
+            {
+                (False, False, False): ("synthesis", "mapping", "layout", "optimization"),
+                (True, False, False): ("mapping", "layout", "optimization"),
+                (False, True, False): ("synthesis", "routing", "optimization"),
+                (True, True, False): ("routing", "optimization"),
+                (False, True, True): ("synthesis", "optimization"),
+                (True, True, True): ("terminate", "optimization"),
+            },
+            id="flexible",
+        ),
+    ],
+)
+def test_predictor_env_actions_for_mdp_state(
+    monkeypatch: pytest.MonkeyPatch,
+    mdp: Literal["v2", "v3", "flexible"],
+    expected_action_groups_by_state: dict[tuple[bool, bool, bool], tuple[str, ...]],
+    synthesized: bool,
+    laid_out: bool,
+    routed: bool,
+) -> None:
+    """Test the exact valid actions for every reachable state of each MDP."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device, mdp=mdp)
     qc = QuantumCircuit(3)
     qc.h(0)
     qc.cx(0, 2)
     env.reset(qc)
 
-    env.layout = TranspileLayout(
-        initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
-        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
-        _output_qubit_list=qc.qubits,
-        _input_qubit_count=qc.num_qubits,
-    )
+    if laid_out:
+        env.layout = TranspileLayout(
+            initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
+            input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
+            final_layout=None,
+            _output_qubit_list=qc.qubits,
+            _input_qubit_count=qc.num_qubits,
+        )
+
+    monkeypatch.setattr(env, "is_circuit_synthesized", lambda _circuit: synthesized)
+    monkeypatch.setattr(env, "is_circuit_laid_out", lambda _circuit, _layout: laid_out)
+    monkeypatch.setattr(env, "is_circuit_routed", lambda _circuit, _coupling_map: routed)
+
+    action_groups = {
+        "synthesis": env.actions_synthesis_indices,
+        "mapping": env.actions_mapping_indices,
+        "layout": env.actions_layout_indices,
+        "routing": env.actions_routing_indices,
+        "optimization": env.actions_opt_indices,
+        "structure-preserving": env.actions_structure_preserving_indices,
+        "final-optimization": env.actions_final_optimization_indices,
+        "terminate": [env.action_terminate_index],
+    }
+    expected_action_groups = expected_action_groups_by_state[synthesized, laid_out, routed]
+    expected_actions = {action for group in expected_action_groups for action in action_groups[group]}
 
     valid_actions = env.determine_valid_actions_for_state()
 
-    assert set(env.actions_synthesis_indices).issubset(valid_actions)
-    assert set(env.actions_routing_indices).issubset(valid_actions)
-    assert set(env.actions_opt_indices).issubset(valid_actions)
-    assert env.action_terminate_index not in valid_actions
+    assert set(valid_actions) == expected_actions
 
 
 def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
