@@ -15,7 +15,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from gymnasium.spaces import Space
@@ -62,7 +62,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
-        mdp: str = "paper",
+        mdp: Literal["v2", "v3", "flexible"] = "v3",
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -72,17 +72,18 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
-            mdp: The MDP transition policy. ``paper`` follows the original linear
-                compilation flow. ``flexible`` permits optimization throughout,
-                ``thesis`` limits post-layout changes to structure-preserving passes,
-                and ``hybrid`` combines flexible early stages with that restriction.
+            mdp: The MDP transition policy. ``v3`` is the default and is flexible
+                before layout while preserving the established compilation structure
+                afterwards. ``v2`` is the original MQT Predictor strategy.
+                ``flexible`` provides the greatest freedom among all structurally
+                valid actions.
 
         Raises:
             ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
         """
         logger.info("Init env: " + reward_function)
 
-        if mdp not in {"paper", "flexible", "thesis", "hybrid"}:
+        if mdp not in {"v2", "v3", "flexible"}:
             msg = f"Unsupported MDP policy: {mdp}."
             raise ValueError(msg)
 
@@ -636,77 +637,8 @@ class PredictorEnv(Env):
 
         actions = []
 
-        if self.mdp == "flexible":
-            if not synthesized and not laid_out:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and not laid_out:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
-            else:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_opt_indices)
-
-        elif self.mdp == "hybrid":
-            if not synthesized and not laid_out:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and not laid_out:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            else:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_structure_preserving_indices)
-                actions.extend(self.actions_final_optimization_indices)
-
-        elif self.mdp == "thesis":
-            if not synthesized and not laid_out:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and not laid_out:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            else:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_structure_preserving_indices)
-                actions.extend(self.actions_final_optimization_indices)
-
-        else:
+        if self.mdp == "v2":
+            # Initial state
             if not synthesized and not laid_out and not routed:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
@@ -716,19 +648,72 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_layout_indices)
                 actions.extend(self.actions_opt_indices)
 
+            # Not *depicted* in paper; necessary because optimization can destroy the native gate set
             elif not synthesized and laid_out and not routed:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_routing_indices)
                 actions.extend(self.actions_opt_indices)
 
+            # Not *depicted* in paper; necessary because of layout-only passes
             elif synthesized and laid_out and not routed:
                 actions.extend(self.actions_routing_indices)
 
+            # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
             elif not synthesized and laid_out and routed:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_opt_indices)
 
+            # Final state
             elif synthesized and laid_out and routed:
+                actions.append(self.action_terminate_index)
+                actions.extend(self.actions_opt_indices)
+
+        elif self.mdp == "v3":
+            if not synthesized and not laid_out:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            elif synthesized and not laid_out:
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            elif not synthesized and laid_out and not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
+            elif synthesized and laid_out and not routed:
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_structure_preserving_indices)
+            elif not synthesized and laid_out and routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_structure_preserving_indices)
+            else:
+                actions.append(self.action_terminate_index)
+                actions.extend(self.actions_structure_preserving_indices)
+                actions.extend(self.actions_final_optimization_indices)
+
+        else:  # flexible
+            if not synthesized and not laid_out:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            elif synthesized and not laid_out:
+                actions.extend(self.actions_mapping_indices)
+                actions.extend(self.actions_layout_indices)
+                actions.extend(self.actions_opt_indices)
+            elif not synthesized and laid_out and not routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+            elif synthesized and laid_out and not routed:
+                actions.extend(self.actions_routing_indices)
+                actions.extend(self.actions_opt_indices)
+            elif not synthesized and laid_out and routed:
+                actions.extend(self.actions_synthesis_indices)
+                actions.extend(self.actions_opt_indices)
+            else:
                 actions.append(self.action_terminate_index)
                 actions.extend(self.actions_opt_indices)
 

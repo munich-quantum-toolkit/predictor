@@ -30,6 +30,11 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
+### Default RL MDP strategy
+
+`PredictorEnv` now uses the `v3` MDP strategy by default. To retain the original
+MQT Predictor behavior, pass `mdp="v2"` explicitly.
+
 ## [2.4.0]
 
 ### Trained RL model names
