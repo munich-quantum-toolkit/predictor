@@ -41,6 +41,11 @@ Starting with this release, MQT Predictor no longer supports Python 3.10. As a
 result, MQT Predictor is no longer tested under Python 3.10 and requires Python
 3.11 or later.
 
+### Default RL MDP strategy
+
+`PredictorEnv` now uses the `v3` MDP strategy by default. To retain the original
+MQT Predictor behavior, pass `mdp="v2"` explicitly.
+
 ## [2.4.0]
 
 ### Trained RL model names

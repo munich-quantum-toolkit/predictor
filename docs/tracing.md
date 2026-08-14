@@ -50,7 +50,7 @@ The root of the JSON file provides general context about the compilation run:
 - **`figure_of_merit`**: The primary metric the RL agent optimized for (e.g.,
   `expected_fidelity`).
 - **`mdp_policy`**: The Markov Decision Process (MDP) transition policy used
-  during the episode.
+  during the episode: `v2`, `v3`, or `flexible`.
 - **`schema_version`**: The version of the JSON schema (useful for ensuring
   compatibility with visualization tools like MQT FlowViz).
 - **`timestamp`**: The exact Unix timestamp when the compilation started.

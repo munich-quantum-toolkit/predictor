@@ -44,3 +44,13 @@ compiler:
 
 The trained model can then be used to compile any quantum circuit for the
 targeted device.
+
+## MDP Strategies
+
+The reinforcement learning environment supports three MDP strategies:
+
+- `v3` is the default. It uses the flexible strategy before layout and restricts
+  later optimization to actions that preserve the established compilation
+  structure.
+- `v2` is the original MQT Predictor strategy.
+- `flexible` provides the greatest freedom among all structurally valid actions.
