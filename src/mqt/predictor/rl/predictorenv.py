@@ -72,9 +72,9 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
-            mdp: The MDP transition policy. ``v3`` is the default and is flexible
-                before layout while preserving the established compilation structure
-                afterwards. ``v2`` is the original MQT Predictor strategy.
+            mdp: The MDP transition policy. ``v2`` is the original MQT Predictor
+                strategy. ``v3`` is the default and is flexible before layout while
+                preserving the established compilation structure afterwards.
                 ``flexible`` provides the greatest freedom among all structurally
                 valid actions.
 
@@ -417,15 +417,7 @@ class PredictorEnv(Env):
 
         # Reset caches and evaluate initial baseline state
         self._current_foms = {}
-        self._current_synthesized = self.is_circuit_synthesized(self.state)
-        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        self._current_routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
-            if self._current_laid_out
-            else False
-        )
-
-        self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.determine_valid_actions_for_state()
 
         self.error_occurred = False
 

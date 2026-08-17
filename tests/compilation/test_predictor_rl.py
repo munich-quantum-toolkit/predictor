@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -64,6 +64,43 @@ def test_predictor_env_hellinger_error() -> None:
         ValueError, match=re.escape("Missing trained model for Hellinger distance estimates on ibm_falcon_27.")
     ):
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
+
+
+def test_predictor_env_rejects_unsupported_mdp() -> None:
+    """Test that unsupported MDP policies are rejected at runtime."""
+    invalid_mdp = cast("Literal['v2', 'v3', 'flexible']", "unsupported")
+
+    with pytest.raises(ValueError, match=re.escape("Unsupported MDP policy: unsupported.")):
+        predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=invalid_mdp)
+
+
+@pytest.mark.parametrize(
+    ("mdp", "expected_action_groups"),
+    [
+        pytest.param("v2", ("synthesis", "optimization"), id="v2"),
+        pytest.param("v3", ("synthesis", "mapping", "layout", "optimization"), id="v3"),
+        pytest.param("flexible", ("synthesis", "mapping", "layout", "optimization"), id="flexible"),
+    ],
+)
+def test_predictor_env_reset_uses_mdp_initial_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    mdp: Literal["v2", "v3", "flexible"],
+    expected_action_groups: tuple[str, ...],
+) -> None:
+    """Test that reset initializes the action set for the selected MDP."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=mdp)
+    monkeypatch.setattr(env, "is_circuit_synthesized", lambda _circuit: False)
+
+    env.reset(QuantumCircuit(1))
+
+    action_groups = {
+        "synthesis": env.actions_synthesis_indices,
+        "mapping": env.actions_mapping_indices,
+        "layout": env.actions_layout_indices,
+        "optimization": env.actions_opt_indices,
+    }
+    expected_actions = {action for group in expected_action_groups for action in action_groups[group]}
+    assert set(env.valid_actions) == expected_actions
 
 
 def test_qcompile_with_newly_trained_models() -> None:
