@@ -49,8 +49,8 @@ targeted device.
 
 The reinforcement learning environment supports three MDP strategies:
 
+- `v2` is the original MQT Predictor strategy.
 - `v3` is the default. It uses the flexible strategy before layout and restricts
   later optimization to actions that preserve the established compilation
   structure.
-- `v2` is the original MQT Predictor strategy.
 - `flexible` provides the greatest freedom among all structurally valid actions.
