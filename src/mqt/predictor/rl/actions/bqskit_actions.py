@@ -536,15 +536,22 @@ def run_bqskit_action(
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
-        output_qubits = layout._output_qubit_list  # ruff: ignore[private-member-access]
-        assert output_qubits is not None
-        routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(output_qubits))
+        previous_output_qubits = layout._output_qubit_list  # ruff: ignore[private-member-access]
+        assert previous_output_qubits is not None
+        routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(previous_output_qubits))
         if routing_layout is not None:
             layout.final_layout = (
-                layout.final_layout.compose(routing_layout, list(output_qubits))
+                layout.final_layout.compose(routing_layout, list(previous_output_qubits))
                 if layout.final_layout is not None
                 else routing_layout
             )
+        if layout.final_layout is not None:
+            output_qubit_indices = {qubit: index for index, qubit in enumerate(previous_output_qubits)}
+            layout.final_layout = Layout({
+                compiled_qiskit_qc.qubits[output_qubit_indices[qubit]]: physical
+                for qubit, physical in layout.final_layout.get_virtual_bits().items()
+            })
+        layout._output_qubit_list = compiled_qiskit_qc.qubits  # ruff: ignore[private-member-access]
         return compiled_qiskit_qc, layout
 
     msg = f"Unhandled BQSKit action pass type: {action.pass_type}"

@@ -26,7 +26,7 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
-from mqt.predictor.rl.actions import PassType
+from mqt.predictor.rl.actions import CompilationOrigin, PassType
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -162,10 +162,13 @@ def test_layout_actions_establish_layout(
     env: PredictorEnv,
 ) -> None:
     """Invariant: every layout action establishes a valid qubit assignment."""
+    synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
+    synthesized = synthesis_pm.run(simple_circuit.copy())
+
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.LAYOUT:
             continue
-        _setup_env(env, simple_circuit, None, simple_circuit.num_qubits)
+        _setup_env(env, synthesized, None, synthesized.num_qubits)
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
@@ -186,6 +189,7 @@ def test_mapping_actions_establish_layout_and_route(
     synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
     synthesized = synthesis_pm.run(simple_circuit.copy())
     coupling_map = env.device.build_coupling_map()
+    applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.MAPPING:
@@ -194,6 +198,7 @@ def test_mapping_actions_establish_layout_and_route(
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
+        applied_actions += 1
         assert env.layout is not None, (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: failed to establish layout"
         )
@@ -205,6 +210,8 @@ def test_mapping_actions_establish_layout_and_route(
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
             "did not route the circuit after establishing its layout"
         )
+
+    assert applied_actions > 0
 
 
 def test_routing_actions_route_circuit(
@@ -226,6 +233,17 @@ def test_routing_actions_route_circuit(
         assert env.is_circuit_routed(routed, coupling_map), (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: circuit not properly routed after action"
         )
+        if action.origin == CompilationOrigin.BQSKIT:
+            assert env.layout is not None
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(routed.qubits)
+            assert env.layout._output_qubit_list == routed.qubits  # ruff: ignore[private-member-access]
+
+            _setup_env(env, routed, env.layout, n_qubits)
+            rerouted = env.apply_action(idx)
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
+            assert env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
 
 
 def test_optimization_actions_preserve_invariants(
