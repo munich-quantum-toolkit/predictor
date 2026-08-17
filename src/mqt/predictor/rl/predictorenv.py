@@ -79,7 +79,11 @@ class PredictorEnv(Env):
                 valid actions.
 
         Raises:
-            ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
+            ValueError: If ``mdp`` is unsupported, if the reward function is
+                "estimated_success_probability" and no calibration data is available
+                for the device, or if the reward function is
+                "estimated_hellinger_distance" and no trained model is available for
+                the device.
         """
         logger.info("Init env: " + reward_function)
 
