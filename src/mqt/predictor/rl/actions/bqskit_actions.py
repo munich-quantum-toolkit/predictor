@@ -481,7 +481,18 @@ def final_layout_bqskit_routing_to_qiskit(
     bqskit_final_layout: tuple[int, ...],
     output_qubits: list[QiskitQubit],
 ) -> Layout | None:
-    """Convert BQSKit's input-to-output routing permutation to a Qiskit final layout."""
+    """Convert BQSKit's input-to-output routing permutation to a Qiskit final layout.
+
+    Args:
+        bqskit_final_layout: Input-to-output qubit position permutation from BQSKit.
+        output_qubits: Qiskit qubits in output order.
+
+    Returns:
+        The equivalent Qiskit layout, or ``None`` for the identity permutation.
+
+    Raises:
+        ValueError: If the final layout is not a permutation of the output qubit positions.
+    """
     if len(bqskit_final_layout) != len(output_qubits) or set(bqskit_final_layout) != set(range(len(output_qubits))):
         msg = "BQSKit final layout must be a permutation of the output qubit positions."
         raise ValueError(msg)

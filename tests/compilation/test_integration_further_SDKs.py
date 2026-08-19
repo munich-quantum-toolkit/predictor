@@ -164,6 +164,7 @@ def test_layout_actions_establish_layout(
     """Invariant: every layout action establishes a valid qubit assignment."""
     synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
     synthesized = synthesis_pm.run(simple_circuit.copy())
+    applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.LAYOUT:
@@ -172,6 +173,7 @@ def test_layout_actions_establish_layout(
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
+        applied_actions += 1
         assert env.layout is not None, (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: failed to establish layout"
         )
@@ -179,6 +181,8 @@ def test_layout_actions_establish_layout(
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
             f"did not establish valid layout. Layout: {env.layout}"
         )
+
+    assert applied_actions > 0
 
 
 def test_mapping_actions_establish_layout_and_route(
@@ -222,6 +226,7 @@ def test_routing_actions_route_circuit(
     qc_laid_out, layout = _lay_out(simple_circuit, env.device)
     n_qubits = qc_laid_out.num_qubits
     coupling_map = env.device.build_coupling_map()
+    applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.ROUTING:
@@ -230,9 +235,11 @@ def test_routing_actions_route_circuit(
         if not _is_available(env, idx):
             continue
         routed = env.apply_action(idx)
+        applied_actions += 1
         assert env.is_circuit_routed(routed, coupling_map), (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: circuit not properly routed after action"
         )
+        # Check BQSKit routing translates its output permutation into Qiskit layout bookkeeping correctly.
         if action.origin == CompilationOrigin.BQSKIT:
             assert env.layout is not None
             assert env.layout.final_layout is not None
@@ -244,6 +251,8 @@ def test_routing_actions_route_circuit(
             assert env.layout.final_layout is not None
             assert set(env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
             assert env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
+
+    assert applied_actions > 0
 
 
 def test_optimization_actions_preserve_invariants(
