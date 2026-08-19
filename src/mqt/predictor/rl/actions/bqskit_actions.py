@@ -15,7 +15,6 @@ import re
 from functools import cache
 from typing import TYPE_CHECKING, TypeAlias, cast
 
-import numpy as np
 from bqskit import MachineModel
 from bqskit.compiler import Compiler, Workflow
 from bqskit.compiler.compile import (
@@ -40,7 +39,6 @@ from bqskit.passes import (
     IfThenElsePass,
     LEAPSynthesisPass,
     ManyQuditGatesPredicate,
-    PassPredicate,
     QSearchSynthesisPass,
     RestoreMeasurements,
     SetModelPass,
@@ -50,6 +48,7 @@ from bqskit.passes import (
     UnfoldPass,
     WalshDiagonalSynthesisPass,
 )
+from bqskit.passes.control.predicates.diagonal import DiagonalPredicate
 from qiskit import qasm2
 from qiskit.circuit import Instruction, QuantumRegister
 from qiskit.circuit.library import RGate
@@ -100,20 +99,6 @@ def bqskit_to_qiskit(circuit: Circuit) -> QuantumCircuit:
             ),
         ),
     )
-
-
-class _DiagonalUnitaryPredicate(PassPredicate):
-    """Return ``True`` when the current BQSKit block unitary is diagonal."""
-
-    def __init__(self, atol: float = 1e-9) -> None:
-        self.atol = atol
-
-    def get_truth_value(self, circuit: Circuit, data: PassData) -> bool:
-        """Check whether ``circuit`` represents a diagonal unitary."""
-        del data
-        unitary = np.asarray(circuit.get_unitary())
-        diagonal = np.diag(np.diag(unitary))
-        return np.allclose(unitary, diagonal, atol=self.atol)
 
 
 def _run_bqskit_workflow(
@@ -321,7 +306,7 @@ def bqskit_synthesis_actions() -> list[Action]:
             PassType.SYNTHESIS,
             transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
                 device,
-                IfThenElsePass(_DiagonalUnitaryPredicate(), WalshDiagonalSynthesisPass()),
+                IfThenElsePass(DiagonalPredicate(1e-9), WalshDiagonalSynthesisPass()),
             ),
         ),
         DeferredDeviceAction(
