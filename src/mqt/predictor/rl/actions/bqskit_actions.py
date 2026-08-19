@@ -510,6 +510,9 @@ def run_bqskit_action(
 
     Returns:
         Tuple of (compiled circuit, updated layout).
+
+    Raises:
+        ValueError: If a routing action is applied without a layout or output-qubit metadata.
     """
     bqskit_qc = qiskit_to_bqskit(circuit)
 
@@ -528,12 +531,16 @@ def run_bqskit_action(
 
     # ROUTING actions require existing layout
     if action.pass_type == PassType.ROUTING:
-        assert layout is not None, "BQSKit routing requires an existing layout."
+        if layout is None:
+            msg = "BQSKit routing requires an existing layout."
+            raise ValueError(msg)
         factory = cast("Callable[[Target], Callable[[Circuit], BQSKitMapping]]", action.transpile_pass)
         compiled_qc, _initial, final = factory(device)(bqskit_qc)
         compiled_qiskit_qc = bqskit_to_qiskit(compiled_qc)
         previous_output_qubits = layout._output_qubit_list  # ruff: ignore[private-member-access]
-        assert previous_output_qubits is not None
+        if previous_output_qubits is None:
+            msg = "BQSKit routing requires layout output-qubit metadata."
+            raise ValueError(msg)
         routing_layout = final_layout_bqskit_routing_to_qiskit(final, list(previous_output_qubits))
         if routing_layout is not None:
             layout.final_layout = (

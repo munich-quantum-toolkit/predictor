@@ -223,14 +223,14 @@ def test_routing_actions_route_circuit(
     env: PredictorEnv,
 ) -> None:
     """Invariant: every routing action produces a circuit where all 2-qubit gates respect the coupling map."""
-    qc_laid_out, layout = _lay_out(simple_circuit, env.device)
-    n_qubits = qc_laid_out.num_qubits
     coupling_map = env.device.build_coupling_map()
     applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.ROUTING:
             continue
+        qc_laid_out, layout = _lay_out(simple_circuit, env.device)
+        n_qubits = qc_laid_out.num_qubits
         _setup_env(env, qc_laid_out, layout, n_qubits)
         if not _is_available(env, idx):
             continue
