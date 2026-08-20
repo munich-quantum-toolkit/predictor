@@ -86,13 +86,11 @@ def test_predictor_env_rejects_unsupported_mdp() -> None:
     ],
 )
 def test_predictor_env_reset_uses_mdp_initial_actions(
-    monkeypatch: pytest.MonkeyPatch,
     mdp: MDPPolicy,
     expected_action_groups: tuple[str, ...],
 ) -> None:
     """Test that reset initializes the action set for the selected MDP."""
     env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=mdp)
-    monkeypatch.setattr(env, "is_circuit_synthesized", lambda _circuit: False)
 
     env.reset(QuantumCircuit(1))
 
@@ -117,14 +115,12 @@ def test_qcompile_with_newly_trained_models() -> None:
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_name = predictor.model_name
     model_path = Path(get_path_trained_model() / (model_name + ".zip"))
     if not model_path.exists():
         with pytest.raises(
             FileNotFoundError,
-            match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-            ),
+            match=re.escape(f"The RL model '{model_name}' is not trained yet. Please train the model before using it."),
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 

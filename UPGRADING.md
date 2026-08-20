@@ -36,9 +36,9 @@ for details about the individual passes.
 default. To retain the original MQT Predictor behavior, pass `mdp="v2"`
 explicitly.
 
-Models trained with `mdp="v2"` must be retrained before use with `mdp="v3"`
-because the valid-action set and transition dynamics differ. Existing models can
-continue to use the original behavior with `mdp="v2"`.
+All existing RL models must be retrained for this release, including models used
+with `mdp="v2"`. Model artifact names now include the selected policy as
+`model_<figure_of_merit>_<device>_<mdp>`.
 
 ## [2.4.0]
 
