@@ -66,6 +66,7 @@ class Predictor:
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
+        self.model_name = f"model_{self.figure_of_merit}_{self.device_name}_{mdp}"
 
     def compile_as_predicted(
         self,
@@ -91,7 +92,7 @@ class Predictor:
             self.env.tracer_output_path = tracer_output_path
 
         try:
-            trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
+            trained_rl_model = load_model(self.model_name)
 
             obs, _ = self.env.reset(qc, seed=0)
 
@@ -152,7 +153,7 @@ class Predictor:
             MaskableMultiInputActorCriticPolicy,
             self.env,
             verbose=verbose,
-            tensorboard_log="./model_" + self.figure_of_merit + "_" + self.device_name,
+            tensorboard_log=f"./{self.model_name}",
             gamma=0.98,
             n_steps=n_steps,
             batch_size=batch_size,
@@ -162,7 +163,7 @@ class Predictor:
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
         model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
-        model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
+        model.save(get_path_trained_model() / self.model_name)
 
 
 def load_model(model_name: str) -> MaskablePPO:

@@ -425,6 +425,15 @@ class PredictorEnv(Env):
         # Reset caches and evaluate initial baseline state
         self._current_foms = {}
         self.valid_actions = self.determine_valid_actions_for_state()
+        if self.mdp == "v2":
+            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        else:
+            self.valid_actions = (
+                self.actions_synthesis_indices
+                + self.actions_mapping_indices
+                + self.actions_layout_indices
+                + self.actions_opt_indices
+            )
 
         self.error_occurred = False
 
