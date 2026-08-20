@@ -8,6 +8,8 @@
 
 """Actions (i.e. compiler passes) available in the reinforcement learning environment."""
 
+# ruff: file-ignore[non-empty-init-module]
+
 from __future__ import annotations
 
 from collections import defaultdict
