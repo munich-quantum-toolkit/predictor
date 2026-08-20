@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
@@ -20,7 +20,7 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.helper import get_path_trained_model, logger
-from mqt.predictor.rl.predictorenv import PredictorEnv
+from mqt.predictor.rl.predictorenv import MDPPolicy, PredictorEnv
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -40,7 +40,7 @@ class Predictor:
         logger_level: int = logging.INFO,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
-        mdp: Literal["v2", "v3", "flexible"] = "v3",
+        mdp: MDPPolicy = "v3",
     ) -> None:
         """Initializes the Predictor object.
 
@@ -192,7 +192,7 @@ def rl_compile(
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
     tracer_output_path: str | Path | None = None,
-    mdp: Literal["v2", "v3", "flexible"] = "v3",
+    mdp: MDPPolicy = "v3",
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -204,7 +204,8 @@ def rl_compile(
         tracer_output_path: If provided, enables compiler tracing and exports the JSON log to the specified path.
         mdp: The MDP transition policy used when constructing a predictor. ``v2``
             is the original strategy, ``v3`` is the default, and ``flexible``
-            provides the greatest freedom.
+            provides the greatest freedom. When ``predictor_singleton`` is
+            provided, its configured policy is used instead.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.

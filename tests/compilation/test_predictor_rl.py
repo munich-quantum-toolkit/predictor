@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -36,6 +36,9 @@ from mqt.predictor.rl.actions import (
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from mqt.predictor.rl.predictorenv import MDPPolicy
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -69,7 +72,7 @@ def test_predictor_env_hellinger_error() -> None:
 
 def test_predictor_env_rejects_unsupported_mdp() -> None:
     """Test that unsupported MDP policies are rejected at runtime."""
-    invalid_mdp = cast("Literal['v2', 'v3', 'flexible']", "unsupported")
+    invalid_mdp = cast("MDPPolicy", "unsupported")
 
     with pytest.raises(ValueError, match=re.escape("Unsupported MDP policy: unsupported.")):
         predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=invalid_mdp)
@@ -85,7 +88,7 @@ def test_predictor_env_rejects_unsupported_mdp() -> None:
 )
 def test_predictor_env_reset_uses_mdp_initial_actions(
     monkeypatch: pytest.MonkeyPatch,
-    mdp: Literal["v2", "v3", "flexible"],
+    mdp: MDPPolicy,
     expected_action_groups: tuple[str, ...],
 ) -> None:
     """Test that reset initializes the action set for the selected MDP."""
@@ -222,7 +225,7 @@ def test_predictor_env_truncates_at_max_steps() -> None:
                 (False, True, False): ("synthesis", "routing", "optimization"),
                 (True, True, False): ("routing", "optimization"),
                 (False, True, True): ("synthesis", "optimization"),
-                (True, True, True): ("terminate", "optimization"),
+                (True, True, True): ("terminate", "optimization", "final-optimization"),
             },
             id="flexible",
         ),
@@ -230,7 +233,7 @@ def test_predictor_env_truncates_at_max_steps() -> None:
 )
 def test_predictor_env_actions_for_mdp_state(
     monkeypatch: pytest.MonkeyPatch,
-    mdp: Literal["v2", "v3", "flexible"],
+    mdp: MDPPolicy,
     expected_action_groups_by_state: dict[tuple[bool, bool, bool], tuple[str, ...]],
     synthesized: bool,
     laid_out: bool,
