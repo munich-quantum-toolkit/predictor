@@ -15,7 +15,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 if TYPE_CHECKING:
     from gymnasium.spaces import Space
@@ -51,6 +51,9 @@ from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, Figu
 
 logger = logging.getLogger("mqt-predictor")
 
+MDPPolicy = Literal["v2", "v3", "flexible"]
+MDP_POLICIES: frozenset[str] = frozenset(get_args(MDPPolicy))
+
 
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
@@ -62,7 +65,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
-        mdp: Literal["v2", "v3", "flexible"] = "v3",
+        mdp: MDPPolicy = "v3",
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -85,9 +88,9 @@ class PredictorEnv(Env):
                 "estimated_hellinger_distance" and no trained model is available for
                 the device.
         """
-        logger.info("Init env: " + reward_function)
+        logger.info("Init env: %s", reward_function)
 
-        if mdp not in {"v2", "v3", "flexible"}:
+        if mdp not in MDP_POLICIES:
             msg = f"Unsupported MDP policy: {mdp}."
             raise ValueError(msg)
 
@@ -689,7 +692,7 @@ class PredictorEnv(Env):
                 actions.extend(self.actions_structure_preserving_indices)
                 actions.extend(self.actions_final_optimization_indices)
 
-        else:  # flexible
+        elif self.mdp == "flexible":
             if not synthesized and not laid_out:
                 actions.extend(self.actions_synthesis_indices)
                 actions.extend(self.actions_mapping_indices)
@@ -712,5 +715,6 @@ class PredictorEnv(Env):
             else:
                 actions.append(self.action_terminate_index)
                 actions.extend(self.actions_opt_indices)
+                actions.extend(self.actions_final_optimization_indices)
 
         return actions

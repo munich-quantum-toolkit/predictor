@@ -54,3 +54,6 @@ The reinforcement learning environment supports three MDP strategies:
   later optimization to actions that preserve the established compilation
   structure.
 - `flexible` provides the greatest freedom among all structurally valid actions.
+
+Select a strategy with the `mdp` parameter of `PredictorEnv`, `Predictor`, or
+`rl_compile`, for example `mdp="v2"`.

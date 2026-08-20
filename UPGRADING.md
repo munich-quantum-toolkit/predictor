@@ -32,8 +32,13 @@ for details about the individual passes.
 
 ### Default RL MDP strategy
 
-`PredictorEnv` now uses the `v3` MDP strategy by default. To retain the original
-MQT Predictor behavior, pass `mdp="v2"` explicitly.
+`PredictorEnv`, `Predictor`, and `rl_compile` now use the `v3` MDP strategy by
+default. To retain the original MQT Predictor behavior, pass `mdp="v2"`
+explicitly.
+
+Models trained with `mdp="v2"` must be retrained before use with `mdp="v3"`
+because the valid-action set and transition dynamics differ. Existing models can
+continue to use the original behavior with `mdp="v2"`.
 
 ## [2.4.0]
 
