@@ -104,4 +104,4 @@ def test_get_prepared_training_data_false_input() -> None:
     """Test the retrieval of prepared training data."""
     pred = Predictor(devices=[], figure_of_merit="expected_fidelity")
     with pytest.raises(FileNotFoundError, match=re.escape("Training data not found.")):
-        pred._get_prepared_training_data()  # ruff:ignore[private-member-access]
+        pred._get_prepared_training_data()  # ruff: ignore[private-member-access]

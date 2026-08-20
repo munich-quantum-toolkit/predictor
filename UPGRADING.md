@@ -6,6 +6,30 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Atomic BQSKit compilation actions
+
+The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
+longer available. Each of them ran several compilation steps at once. They have
+been replaced by smaller actions for individual BQSKit passes, allowing the RL
+predictor to choose layout, routing, mapping, and synthesis steps independently.
+
+Code that selects actions by name must use the new pass-specific names. Existing
+RL models must also be retrained because the available action space has changed.
+The new actions include:
+
+- the `GreedyPlacementPass`, `TrivialPlacementPass`, `StaticPlacementPass`, and
+  `GeneralizedSabreLayoutPass` layout actions;
+- the `GeneralizedSabreRoutingPass` routing action;
+- the `BQSKitSABREMapping` mapping action; and
+- the `QSearchSynthesisPass`, `LEAPSynthesisPass`, `WalshDiagonalSynthesisPass`,
+  `FullQSDPass`, `BlockZXZPass`, and `FullBlockZXZPass` synthesis actions.
+
+See the
+[framework setup](docs/setup.md#step-2-train-reinforcement-learning-models) for
+how RL actions are used and the
+[BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
+for details about the individual passes.
+
 ## [2.4.0]
 
 ### Trained RL model names

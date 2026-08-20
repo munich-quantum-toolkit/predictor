@@ -26,7 +26,7 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
-from mqt.predictor.rl.actions import PassType
+from mqt.predictor.rl.actions import CompilationOrigin, PassType
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -107,15 +107,16 @@ def target() -> Target:
 def simple_circuit() -> QuantumCircuit:
     """Return a small circuit used to probe action invariants.
 
-    CX(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
+    RZZ(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
     (qubit 0 only connects to 1), so SabreSwap inserts at least one SWAP.
     This ensures the routed fixture carries a real SWAP so routing-preservation
-    checks are non-trivial.
+    checks are non-trivial. The circuit is diagonal to exercise diagonal synthesis
+    passes.
     """
     qc = QuantumCircuit(3)
-    qc.h(0)
-    qc.cx(0, 2)
-    qc.cx(1, 2)
+    qc.rz(0.5, 0)
+    qc.rzz(0.25, 0, 2)
+    qc.rzz(0.75, 1, 2)
     return qc
 
 
@@ -161,15 +162,18 @@ def test_layout_actions_establish_layout(
     env: PredictorEnv,
 ) -> None:
     """Invariant: every layout action establishes a valid qubit assignment."""
-    n_qubits = simple_circuit.num_qubits
+    synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
+    synthesized = synthesis_pm.run(simple_circuit.copy())
+    applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.LAYOUT:
             continue
-        _setup_env(env, simple_circuit, None, n_qubits)
+        _setup_env(env, synthesized, None, synthesized.num_qubits)
         if not _is_available(env, idx):
             continue
         compiled = env.apply_action(idx)
+        applied_actions += 1
         assert env.layout is not None, (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: failed to establish layout"
         )
@@ -178,26 +182,77 @@ def test_layout_actions_establish_layout(
             f"did not establish valid layout. Layout: {env.layout}"
         )
 
+    assert applied_actions > 0
+
+
+def test_mapping_actions_establish_layout_and_route(
+    simple_circuit: QuantumCircuit,
+    env: PredictorEnv,
+) -> None:
+    """Invariant: every mapping action establishes a valid layout and routes the circuit."""
+    synthesis_pm = PassManager([BasisTranslator(StandardEquivalenceLibrary, target_basis=env.device.operation_names)])
+    synthesized = synthesis_pm.run(simple_circuit.copy())
+    coupling_map = env.device.build_coupling_map()
+    applied_actions = 0
+
+    for idx, action in env.action_set.items():
+        if action.pass_type != PassType.MAPPING:
+            continue
+        _setup_env(env, synthesized, None, synthesized.num_qubits)
+        if not _is_available(env, idx):
+            continue
+        compiled = env.apply_action(idx)
+        applied_actions += 1
+        assert env.layout is not None, (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: failed to establish layout"
+        )
+        assert env.is_circuit_laid_out(compiled, env.layout), (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
+            f"did not establish valid layout. Layout: {env.layout}"
+        )
+        assert env.is_circuit_routed(compiled, coupling_map), (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: "
+            "did not route the circuit after establishing its layout"
+        )
+
+    assert applied_actions > 0
+
 
 def test_routing_actions_route_circuit(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
 ) -> None:
     """Invariant: every routing action produces a circuit where all 2-qubit gates respect the coupling map."""
-    qc_laid_out, layout = _lay_out(simple_circuit, env.device)
-    n_qubits = qc_laid_out.num_qubits
     coupling_map = env.device.build_coupling_map()
+    applied_actions = 0
 
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.ROUTING:
             continue
+        qc_laid_out, layout = _lay_out(simple_circuit, env.device)
+        n_qubits = qc_laid_out.num_qubits
         _setup_env(env, qc_laid_out, layout, n_qubits)
         if not _is_available(env, idx):
             continue
         routed = env.apply_action(idx)
+        applied_actions += 1
         assert env.is_circuit_routed(routed, coupling_map), (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: circuit not properly routed after action"
         )
+        # Check BQSKit routing translates its output permutation into Qiskit layout bookkeeping correctly.
+        if action.origin == CompilationOrigin.BQSKIT:
+            assert env.layout is not None
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(routed.qubits)
+            assert env.layout._output_qubit_list == routed.qubits  # ruff: ignore[private-member-access]
+
+            _setup_env(env, routed, env.layout, n_qubits)
+            rerouted = env.apply_action(idx)
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
+            assert env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
+
+    assert applied_actions > 0
 
 
 def test_optimization_actions_preserve_invariants(
