@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "v3 experiment: setup",
+      "type": "shell",
+      "command": "uv sync",
+      "problemMatcher": []
+    },
+    {
+      "label": "v3 experiment: train smoke model",
+      "type": "shell",
+      "command": "uv run python experiments/train_v3_smoke.py",
+      "dependsOn": "v3 experiment: setup",
+      "problemMatcher": []
+    },
+    {
+      "label": "v3 experiment: tensorboard",
+      "type": "shell",
+      "command": "uv run tensorboard --logdir /tmp/${env:USER}/mqt-predictor-v3 --host 127.0.0.1 --port 6006",
+      "dependsOn": "v3 experiment: setup",
+      "problemMatcher": []
+    }
+  ]
+}

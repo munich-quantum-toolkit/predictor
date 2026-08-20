@@ -4,6 +4,7 @@
 !.idea/runConfigurations
 !.idea/cmake.xml
 .vscode/*
+!.vscode/tasks.json
 *~
 
 __pycache__/
