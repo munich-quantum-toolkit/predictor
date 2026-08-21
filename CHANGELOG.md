@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and
+  use the selected strategy in compilation traces and model artifact names
+  ([#755]) ([**@flowerthrower**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
   ([**@flowerthrower**])
 
@@ -77,6 +80,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
