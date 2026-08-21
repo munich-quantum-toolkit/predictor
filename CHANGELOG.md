@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add Qiskit's `SabreSwap` pass to the RL routing actions ([#759])
+  ([**@flowerthrower**])
 - ✨ Expand and compact the RL observation with normalized OpenQASM operation
   frequencies and one-element `float32` qubit-count and depth arrays, and
   include measurements in the shared ML feature schema ([#758])
@@ -104,6 +106,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
