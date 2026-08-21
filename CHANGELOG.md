@@ -23,6 +23,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ✨ Enable configurable intermediate rewards for RL training by default
+  ([#760]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
@@ -93,6 +95,7 @@ for previous changelogs._
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#760]: https://github.com/munich-quantum-toolkit/predictor/pull/760
 [#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755

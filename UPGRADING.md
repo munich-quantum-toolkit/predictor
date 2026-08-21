@@ -6,6 +6,15 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Intermediate RL rewards
+
+`PredictorEnv` now enables intermediate rewards by default. For
+`expected_fidelity` and `estimated_success_probability`, comparable non-terminal
+steps are rewarded from changes in the exact or approximate figure of merit.
+Optimization actions with no measurable change receive `-0.001`. Set
+`intermediate_reward=False` to retain the previous terminal-only reward
+behavior; use `reward_scale` and `no_effect_penalty` to tune reward shaping.
+
 ### Qiskit SABRE routing action
 
 The RL action space now includes Qiskit's stochastic `SabreSwap` routing pass.
