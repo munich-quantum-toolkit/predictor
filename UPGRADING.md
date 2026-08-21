@@ -40,6 +40,14 @@ Starting with this release, MQT Predictor no longer supports Python 3.10. As a
 result, MQT Predictor is no longer tested under Python 3.10 and requires Python
 3.11 or later.
 
+### Repeated stochastic Qiskit actions
+
+The stochastic `QiskitSabreMapping` action now evaluates 20 candidates by
+default and retains the candidate with the best configured figure of merit. This
+can increase compilation time and change the selected circuit. Set
+`stochastic_action_trials=1` when constructing `PredictorEnv` to retain the
+previous single-attempt behavior.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
