@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Qiskit SABRE routing action
+
+The RL action space now includes Qiskit's stochastic `SabreSwap` routing pass.
+Existing RL models must be retrained because the action-space size and the
+indices of later actions have changed. Code that persists or selects actions by
+numeric index must be updated.
+
 ### RL observation features
 
 The RL observation now includes normalized frequencies for supported OpenQASM
