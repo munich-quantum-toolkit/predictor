@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Qiskit SABRE routing action
+
+The RL action space now includes Qiskit's `SabreSwap` routing pass. Existing RL
+models must be retrained because the action-space size and the indices of later
+actions have changed. Code that persists or selects actions by numeric index
+must be updated.
+
 ### Compact scalar RL observations
 
 The `num_qubits` and `depth` entries in RL observations are now one-element
