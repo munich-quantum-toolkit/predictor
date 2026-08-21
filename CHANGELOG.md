@@ -23,6 +23,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⚡ Replace the one-hot `num_qubits` and `depth` RL observations with
+  normalized scalar values ([#770]) ([**@flowerthrower**])
 - ✨ Enable configurable intermediate rewards for RL training by default
   ([#760]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -94,6 +96,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
+[#770]: https://github.com/munich-quantum-toolkit/predictor/pull/770
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#760]: https://github.com/munich-quantum-toolkit/predictor/pull/760
 [#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
