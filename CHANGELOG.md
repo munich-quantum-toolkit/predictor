@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add Qiskit's stochastic `SabreSwap` pass to the RL routing actions ([#759])
+  ([**@flowerthrower**])
 - ✨ Extend the RL observation with normalized OpenQASM gate and measurement
   frequencies ([#758]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
@@ -91,6 +93,7 @@ for previous changelogs._
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
