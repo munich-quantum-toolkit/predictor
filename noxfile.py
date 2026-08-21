@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import nox
@@ -35,6 +37,28 @@ nox.options.default_venv_backend = "uv"
 # TODO(denialhaag): Add 3.14 when all dependencies support it
 #   https://github.com/munich-quantum-toolkit/predictor/issues/420
 PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13"]
+PYTHON_LATEST_VERSION = PYTHON_ALL_VERSIONS[-1]
+
+
+def _is_draft_pull_request() -> bool:
+    """Determine whether GitHub Actions is running for a draft pull request."""
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if os.environ.get("GITHUB_EVENT_NAME") != "pull_request" or event_path is None:
+        return False
+
+    with Path(event_path).open(encoding="utf-8") as event_file:
+        event = json.load(event_file)
+    return bool(event.get("pull_request", {}).get("draft", False))
+
+
+IS_DRAFT_PULL_REQUEST = _is_draft_pull_request()
+PYTHON_TEST_VERSIONS = PYTHON_ALL_VERSIONS[-1:] if IS_DRAFT_PULL_REQUEST else PYTHON_ALL_VERSIONS
+
+RL_MODEL_TESTS = (
+    "tests/compilation/test_predictor_rl.py::test_qcompile_with_newly_trained_models",
+    "tests/compilation/test_predictor_rl.py::test_qcompile_generates_trace_file",
+    "tests/hellinger_distance/test_estimated_hellinger_distance.py::test_train_and_qcompile_with_hellinger_model",
+)
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
@@ -66,8 +90,17 @@ def _run_tests(
     install_args: Sequence[str] = (),
     extra_command: Sequence[str] = (),
     pytest_run_args: Sequence[str] = (),
+    run_rl_training: bool = False,
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+
+    if os.environ.get("GITHUB_ACTIONS") == "true" and not (
+        run_rl_training
+        and not IS_DRAFT_PULL_REQUEST
+        and os.environ.get("RUNNER_OS") == "Linux"
+        and session.python == PYTHON_LATEST_VERSION
+    ):
+        pytest_run_args = (*pytest_run_args, *(f"--deselect={test}" for test in RL_MODEL_TESTS))
 
     if extra_command:
         session.run(*extra_command, env=env)
@@ -86,13 +119,13 @@ def _run_tests(
     )
 
 
-@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
+@nox.session(python=PYTHON_TEST_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session)
+    _run_tests(session, run_rl_training=True)
 
 
-@nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
+@nox.session(python=PYTHON_TEST_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
 def minimums(session: nox.Session) -> None:
     """Test the minimum versions of dependencies."""
     with preserve_lockfile():
