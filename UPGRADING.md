@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Gate-frequency RL observations
+
+The RL observation now includes normalized frequencies for supported OpenQASM
+gates and measurements. This changes the observation space. Existing RL models
+must be retrained, and code that consumes `PredictorEnv` observations directly
+must accept the additional keys.
+
 ### End of support for Python 3.10
 
 Starting with this release, MQT Predictor no longer supports Python 3.10. As a
