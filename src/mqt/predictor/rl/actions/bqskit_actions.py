@@ -54,7 +54,7 @@ from qiskit.circuit import Instruction, QuantumRegister
 from qiskit.circuit.library import RGate
 from qiskit.transpiler import Layout, TranspileLayout
 
-from mqt.predictor.rl.actions import CompilationOrigin, DeferredDeviceAction, PassType
+from mqt.predictor.rl.actions.base import CompilationOrigin, DeferredDeviceAction, PassType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,7 +68,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import Qubit as QiskitQubit
     from qiskit.transpiler import Target
 
-    from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.actions.base import Action
 
     BQSKitMapping: TypeAlias = tuple[Circuit, tuple[int, ...], tuple[int, ...]]
 
