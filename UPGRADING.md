@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Compact RL observations
+
+The `num_qubits` and `depth` observation entries are now one-element `float32`
+arrays in `[0, 1]` instead of discrete integers. The qubit count is linearly
+scaled and capped at 127; the depth is `log1p`-scaled and capped at 999,999.
+Code that consumes `PredictorEnv` observations directly must handle the new
+array values, and existing RL models must be retrained.
+
 ### Intermediate RL rewards
 
 `PredictorEnv` now enables intermediate rewards by default. For

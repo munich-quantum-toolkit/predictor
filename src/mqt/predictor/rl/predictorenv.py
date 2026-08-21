@@ -191,8 +191,8 @@ class PredictorEnv(Env):
 
         gate_spaces = {gate: Box(low=0, high=1, shape=(1,), dtype=np.float32) for gate in get_openqasm_gates_for_rl()}
         spaces: dict[str, Space] = {
-            "num_qubits": Discrete(128),
-            "depth": Discrete(1000000),
+            "num_qubits": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            "depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "measure": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             **gate_spaces,
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
