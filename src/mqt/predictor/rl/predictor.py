@@ -51,8 +51,8 @@ class Predictor:
             logger_level: The logger level. Defaults to logging.INFO.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
-            mdp: The MDP transition policy. ``v2`` is the original strategy,
-                ``v3`` is the default, and ``flexible`` provides the greatest freedom.
+            mdp: The MDP transition policy. ``v2`` is the original strategy and
+                ``v3`` is the default.
         """
         logger.setLevel(logger_level)
 
@@ -204,9 +204,8 @@ def rl_compile(
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
         tracer_output_path: If provided, enables compiler tracing and exports the JSON log to the specified path.
         mdp: The MDP transition policy used when constructing a predictor. ``v2``
-            is the original strategy, ``v3`` is the default, and ``flexible``
-            provides the greatest freedom. When ``predictor_singleton`` is
-            provided, its configured policy is used instead.
+            is the original strategy and ``v3`` is the default. When
+            ``predictor_singleton`` is provided, its configured policy is used instead.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.

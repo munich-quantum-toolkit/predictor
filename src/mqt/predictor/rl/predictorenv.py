@@ -51,7 +51,7 @@ from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, Figu
 
 logger = logging.getLogger("mqt-predictor")
 
-MDPPolicy = Literal["v2", "v3", "flexible"]
+MDPPolicy = Literal["v2", "v3"]
 MDP_POLICIES: frozenset[str] = frozenset(get_args(MDPPolicy))
 
 
@@ -76,10 +76,8 @@ class PredictorEnv(Env):
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
             mdp: The MDP transition policy. ``v2`` is the original MQT Predictor
-                strategy. ``v3`` is the default and is flexible before layout while
+                strategy. ``v3`` is the default and is permissive before layout while
                 preserving the established compilation structure afterwards.
-                ``flexible`` provides the greatest freedom among all structurally
-                valid actions.
 
         Raises:
             ValueError: If ``mdp`` is unsupported, if the reward function is
@@ -677,38 +675,6 @@ class PredictorEnv(Env):
             *self.actions_final_optimization_indices,
         ]
 
-    def _valid_actions_flexible(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
-        """Return valid action indices for the flexible MDP policy."""
-        if not synthesized and not laid_out:
-            return [
-                *self.actions_synthesis_indices,
-                *self.actions_mapping_indices,
-                *self.actions_layout_indices,
-                *self.actions_opt_indices,
-            ]
-
-        if synthesized and not laid_out:
-            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
-
-        if not synthesized and laid_out and not routed:
-            return [
-                *self.actions_synthesis_indices,
-                *self.actions_routing_indices,
-                *self.actions_opt_indices,
-            ]
-
-        if synthesized and laid_out and not routed:
-            return [*self.actions_routing_indices, *self.actions_opt_indices]
-
-        if not synthesized and laid_out and routed:
-            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
-
-        return [
-            self.action_terminate_index,
-            *self.actions_opt_indices,
-            *self.actions_final_optimization_indices,
-        ]
-
     def determine_valid_actions_for_state(self) -> list[int]:
         """Select structurally valid action indices for the current circuit state.
 
@@ -737,7 +703,4 @@ class PredictorEnv(Env):
         if self.mdp == "v2":
             return self._valid_actions_v2(synthesized, laid_out, routed)
 
-        if self.mdp == "v3":
-            return self._valid_actions_v3(synthesized, laid_out, routed)
-
-        return self._valid_actions_flexible(synthesized, laid_out, routed)
+        return self._valid_actions_v3(synthesized, laid_out, routed)

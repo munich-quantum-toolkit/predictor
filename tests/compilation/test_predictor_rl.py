@@ -82,7 +82,6 @@ def test_predictor_env_rejects_unsupported_mdp() -> None:
     [
         pytest.param("v2", ("synthesis", "optimization"), id="v2"),
         pytest.param("v3", ("synthesis", "mapping", "layout", "optimization"), id="v3"),
-        pytest.param("flexible", ("synthesis", "mapping", "layout", "optimization"), id="flexible"),
     ],
 )
 def test_predictor_env_reset_uses_mdp_initial_actions(
@@ -210,18 +209,6 @@ def test_predictor_env_truncates_at_max_steps() -> None:
                 (True, True, True): ("terminate", "structure-preserving", "final-optimization"),
             },
             id="v3",
-        ),
-        pytest.param(
-            "flexible",
-            {
-                (False, False, False): ("synthesis", "mapping", "layout", "optimization"),
-                (True, False, False): ("mapping", "layout", "optimization"),
-                (False, True, False): ("synthesis", "routing", "optimization"),
-                (True, True, False): ("routing", "optimization"),
-                (False, True, True): ("synthesis", "optimization"),
-                (True, True, True): ("terminate", "optimization", "final-optimization"),
-            },
-            id="flexible",
         ),
     ],
 )
