@@ -618,6 +618,97 @@ class PredictorEnv(Env):
                     return False
         return True
 
+    def _valid_actions_v2(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
+        """Return valid action indices for the v2 MDP policy."""
+        # Initial state
+        if not synthesized and not laid_out and not routed:
+            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
+
+        if synthesized and not laid_out and not routed:
+            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
+
+        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
+        if not synthesized and laid_out and not routed:
+            return [*self.actions_synthesis_indices, *self.actions_routing_indices, *self.actions_opt_indices]
+
+        # Not *depicted* in paper; necessary because of layout-only passes
+        if synthesized and laid_out and not routed:
+            return [*self.actions_routing_indices]
+
+        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
+        if not synthesized and laid_out and routed:
+            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
+
+        # Final state
+        if synthesized and laid_out and routed:
+            return [self.action_terminate_index, *self.actions_opt_indices]
+
+        return []
+
+    def _valid_actions_v3(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
+        """Return valid action indices for the v3 MDP policy."""
+        if not synthesized and not laid_out:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_mapping_indices,
+                *self.actions_layout_indices,
+                *self.actions_opt_indices,
+            ]
+
+        if synthesized and not laid_out:
+            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
+
+        if not synthesized and laid_out and not routed:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_routing_indices,
+                *self.actions_structure_preserving_indices,
+            ]
+
+        if synthesized and laid_out and not routed:
+            return [*self.actions_routing_indices, *self.actions_structure_preserving_indices]
+
+        if not synthesized and laid_out and routed:
+            return [*self.actions_synthesis_indices, *self.actions_structure_preserving_indices]
+
+        return [
+            self.action_terminate_index,
+            *self.actions_structure_preserving_indices,
+            *self.actions_final_optimization_indices,
+        ]
+
+    def _valid_actions_flexible(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
+        """Return valid action indices for the flexible MDP policy."""
+        if not synthesized and not laid_out:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_mapping_indices,
+                *self.actions_layout_indices,
+                *self.actions_opt_indices,
+            ]
+
+        if synthesized and not laid_out:
+            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
+
+        if not synthesized and laid_out and not routed:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_routing_indices,
+                *self.actions_opt_indices,
+            ]
+
+        if synthesized and laid_out and not routed:
+            return [*self.actions_routing_indices, *self.actions_opt_indices]
+
+        if not synthesized and laid_out and routed:
+            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
+
+        return [
+            self.action_terminate_index,
+            *self.actions_opt_indices,
+            *self.actions_final_optimization_indices,
+        ]
+
     def determine_valid_actions_for_state(self) -> list[int]:
         """Select structurally valid action indices for the current circuit state.
 
@@ -643,87 +734,10 @@ class PredictorEnv(Env):
         laid_out = self._current_laid_out
         routed = self._current_routed
 
-        actions = []
-
         if self.mdp == "v2":
-            # Initial state
-            if not synthesized and not laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
+            return self._valid_actions_v2(synthesized, laid_out, routed)
 
-            elif synthesized and not laid_out and not routed:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
+        if self.mdp == "v3":
+            return self._valid_actions_v3(synthesized, laid_out, routed)
 
-            # Not *depicted* in paper; necessary because optimization can destroy the native gate set
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
-
-            # Not *depicted* in paper; necessary because of layout-only passes
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-
-            # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
-
-            # Final state
-            elif synthesized and laid_out and routed:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_opt_indices)
-
-        elif self.mdp == "v3":
-            if not synthesized and not laid_out:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and not laid_out:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_structure_preserving_indices)
-            else:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_structure_preserving_indices)
-                actions.extend(self.actions_final_optimization_indices)
-
-        elif self.mdp == "flexible":
-            if not synthesized and not laid_out:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and not laid_out:
-                actions.extend(self.actions_mapping_indices)
-                actions.extend(self.actions_layout_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and not routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
-            elif synthesized and laid_out and not routed:
-                actions.extend(self.actions_routing_indices)
-                actions.extend(self.actions_opt_indices)
-            elif not synthesized and laid_out and routed:
-                actions.extend(self.actions_synthesis_indices)
-                actions.extend(self.actions_opt_indices)
-            else:
-                actions.append(self.action_terminate_index)
-                actions.extend(self.actions_opt_indices)
-                actions.extend(self.actions_final_optimization_indices)
-
-        return actions
+        return self._valid_actions_flexible(synthesized, laid_out, routed)
