@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Split RL actions package into `base` and `registry` modules ([#769])
+  ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
   ([**@flowerthrower**])
 
@@ -77,6 +79,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
