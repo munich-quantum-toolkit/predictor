@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager import PropertySet
 
 
-class CompilationOrigin(str, Enum):
+class CompilationOrigin(StrEnum):
     """Enumeration of the origin of the compilation action."""
 
     QISKIT = "qiskit"
@@ -28,7 +28,7 @@ class CompilationOrigin(str, Enum):
     BQSKIT = "bqskit"
 
 
-class PassType(str, Enum):
+class PassType(StrEnum):
     """Enumeration of the type of compilation pass."""
 
     OPT = "optimization"
