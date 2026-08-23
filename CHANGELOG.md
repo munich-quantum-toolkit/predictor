@@ -16,6 +16,7 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
@@ -83,6 +84,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
