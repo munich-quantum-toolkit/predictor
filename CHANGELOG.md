@@ -10,8 +10,15 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
+
 ### Changed
 
+- 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
+- ♻️ Split RL actions package into `base` and `registry` modules ([#769])
+  ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
   ([**@flowerthrower**])
 
@@ -77,6 +84,8 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
+[#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
@@ -85,6 +94,7 @@ for previous changelogs._
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
+[#488]: https://github.com/munich-quantum-toolkit/predictor/pull/488
 [#445]: https://github.com/munich-quantum-toolkit/predictor/pull/445
 [#421]: https://github.com/munich-quantum-toolkit/predictor/pull/421
 [#406]: https://github.com/munich-quantum-toolkit/predictor/pull/406

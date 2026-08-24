@@ -6,6 +6,12 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### End of support for Python 3.10
+
+Starting with this release, MQT Predictor no longer supports Python 3.10. As a
+result, MQT Predictor is no longer tested under Python 3.10 and requires Python
+3.11 or later.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no

@@ -22,7 +22,6 @@ from qiskit.qasm2 import dump
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
-import mqt.predictor.rl.actions as actions_module
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
@@ -33,6 +32,7 @@ from mqt.predictor.rl.actions import (
     qiskit_actions,
     register_action,
 )
+from mqt.predictor.rl.actions import registry as actions_registry_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 
@@ -205,7 +205,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
-    actions_registry = vars(actions_module)
+    actions_registry = vars(actions_registry_module)
     monkeypatch.setitem(actions_registry, "_ACTIONS", actions_registry["_ACTIONS"].copy())
     action = DeviceIndependentAction(
         name="test_action", pass_type=PassType.OPT, transpile_pass=[], origin=CompilationOrigin.QISKIT

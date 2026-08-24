@@ -22,7 +22,7 @@ from pytket.passes import CliffordSimp, FullPeepholeOptimise, PeepholeOptimise2Q
 from pytket.placement import place_with_map
 from qiskit.transpiler import Layout
 
-from mqt.predictor.rl.actions import CompilationOrigin, DeferredDeviceAction, DeviceIndependentAction, PassType
+from mqt.predictor.rl.actions.base import CompilationOrigin, DeferredDeviceAction, DeviceIndependentAction, PassType
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target, TranspileLayout
 
-    from mqt.predictor.rl.actions import Action
+    from mqt.predictor.rl.actions.base import Action
 
 
 class PreProcessTKETRoutingAfterQiskitLayout:
