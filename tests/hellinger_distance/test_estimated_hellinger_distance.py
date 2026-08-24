@@ -182,6 +182,7 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     assert np.isclose(trained_model.predict([feature_vector]), distance_label)
 
 
+@pytest.mark.model_training
 def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"
