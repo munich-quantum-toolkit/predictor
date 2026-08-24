@@ -8,6 +8,8 @@
 
 """MQT Predictor - Automatic Device Selection with Device-Specific Circuit Compilation for Quantum Computing."""
 
+# ruff: file-ignore[non-empty-init-module]
+
 from __future__ import annotations
 
 import logging

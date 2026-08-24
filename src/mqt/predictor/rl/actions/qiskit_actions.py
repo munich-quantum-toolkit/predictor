@@ -62,7 +62,7 @@ from qiskit.transpiler.passes import (
 from qiskit.transpiler.passes.layout.vf2_layout import VF2LayoutStopReason
 from qiskit.transpiler.preset_passmanagers import common
 
-from mqt.predictor.rl.actions import (
+from mqt.predictor.rl.actions.base import (
     CompilationOrigin,
     DeferredDeviceAction,
     DeviceIndependentAction,
@@ -77,9 +77,7 @@ if TYPE_CHECKING:
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Layout, Target
 
-    from mqt.predictor.rl.actions import (
-        Action,
-    )
+    from mqt.predictor.rl.actions.base import Action
 
 logger = logging.getLogger("mqt-predictor")
 
