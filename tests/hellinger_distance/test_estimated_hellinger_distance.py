@@ -152,6 +152,7 @@ def test_hellinger_distance_error() -> None:
         hellinger_distance(p=invalid, q=valid)
 
 
+@pytest.mark.model_training
 def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
