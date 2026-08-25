@@ -35,6 +35,7 @@ def path_compiled_circuits() -> Path:
     return Path("./test_compiled_circuits")
 
 
+@pytest.mark.model_training
 def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
     """Test the full training pipeline and prediction using a mock device."""
     if not path_uncompiled_circuits.exists():
@@ -90,6 +91,7 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
                 file.unlink()
 
 
+@pytest.mark.model_training
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
     """Test the prediction of the device for a given figure of merit with a wrong device name."""
     num_qubits = 130
