@@ -103,6 +103,7 @@ def test_predictor_env_reset_uses_mdp_initial_actions(
     assert set(env.valid_actions) == expected_actions
 
 
+@pytest.mark.model_training
 def test_qcompile_with_newly_trained_models() -> None:
     """Test the qcompile function with a newly trained model.
 
@@ -316,6 +317,7 @@ def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
         register_action(action)
 
 
+@pytest.mark.model_training
 def test_qcompile_generates_trace_file(tmp_path: Path) -> None:
     """Test that rl_compile correctly generates a trace JSON file when tracing is enabled."""
     figure_of_merit = "expected_fidelity"

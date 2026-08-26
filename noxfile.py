@@ -32,6 +32,7 @@ nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
 
 PYTHON_ALL_VERSIONS = ["3.11", "3.12", "3.13", "3.14"]
+PYTHON_LATEST_VERSION = PYTHON_ALL_VERSIONS[-1]
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
@@ -86,7 +87,7 @@ def _run_tests(
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session)
+    _run_tests(session, pytest_run_args=["-m", "not model_training"])
 
 
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)
@@ -96,10 +97,16 @@ def minimums(session: nox.Session) -> None:
         _run_tests(
             session,
             install_args=["--resolution=lowest-direct"],
-            pytest_run_args=["-Wdefault"],
+            pytest_run_args=["-Wdefault", "-m", "not model_training"],
         )
         env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
         session.run("uv", "tree", "--frozen", env=env)
+
+
+@nox.session(name="model-training", python=PYTHON_LATEST_VERSION, reuse_venv=True)
+def model_training(session: nox.Session) -> None:
+    """Run tests that train models."""
+    _run_tests(session, pytest_run_args=["-m", "model_training"])
 
 
 @nox.session(reuse_venv=True)
