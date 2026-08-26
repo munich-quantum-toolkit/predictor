@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 def test_predictor_env_reset_from_string() -> None:
     """Test the reset function of the predictor environment with a quantum circuit given as a string as input."""
-    device = get_device("ibm_falcon_27")
+    device = get_device("ibm_eagle_127")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
