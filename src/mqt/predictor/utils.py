@@ -192,24 +192,3 @@ def get_openqasm_gates() -> list[str]:
         "c3sqrtx",
         "c4x",
     ]
-
-
-def get_openqasm_gates_for_rl() -> list[str]:
-    """Return the OpenQASM gates used as normalized RL features."""
-    excluded_gates = {
-        "u3",
-        "u2",
-        "u1",
-        "u0",
-        "u",
-        "ccx",
-        "cswap",
-        "cu1",
-        "cu",
-        "rccx",
-        "rc3x",
-        "c3x",
-        "c3sqrtx",
-        "c4x",
-    }
-    return [gate for gate in get_openqasm_gates() if gate not in excluded_gates]

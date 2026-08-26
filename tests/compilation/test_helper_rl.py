@@ -39,9 +39,10 @@ if TYPE_CHECKING:
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
-    qc = QuantumCircuit(2)
+    qc = QuantumCircuit(3)
     qc.h(0)
     qc.cx(0, 1)
+    qc.ccx(0, 1, 2)
     qc.measure_all()
 
     features = create_feature_dict(qc)
@@ -50,11 +51,12 @@ def test_create_feature_dict() -> None:
         assert isinstance(feature, np.ndarray)
         assert feature.dtype == np.float32
 
-    np.testing.assert_allclose(features["h"], [0.25])
-    np.testing.assert_allclose(features["cx"], [0.25])
+    np.testing.assert_allclose(features["h"], [1 / 6])
+    np.testing.assert_allclose(features["cx"], [1 / 6])
+    np.testing.assert_allclose(features["ccx"], [1 / 6])
     np.testing.assert_allclose(features["measure"], [0.5])
     np.testing.assert_allclose(features["x"], [0])
-    np.testing.assert_allclose(features["num_qubits"], [2 / 127])
+    np.testing.assert_allclose(features["num_qubits"], [3 / 127])
     np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
 
 
