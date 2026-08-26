@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from mqt.bench import BenchmarkLevel, get_benchmark
+from qiskit import QuantumCircuit
 
 from mqt.predictor.ml.helper import (
     create_feature_vector,
@@ -23,9 +23,12 @@ from mqt.predictor.ml.helper import (
 
 def test_create_feature_vector() -> None:
     """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    qc = QuantumCircuit(1, 1)
+    qc.measure(0, 0)
     feature_vector = create_feature_vector(qc)
-    assert feature_vector is not None
+    measure_index = get_openqasm_gates().index("measure")
+
+    assert feature_vector[measure_index] == 1
 
 
 def test_get_openqasm_gates() -> None:

@@ -147,7 +147,7 @@ def calc_supermarq_features(
 
 
 def get_openqasm_gates() -> list[str]:
-    """Return the gates from the OpenQASM 2.0 standard header."""
+    """Return the canonical operation names from the OpenQASM standard libraries."""
     return [
         "u3",
         "u2",
@@ -191,4 +191,5 @@ def get_openqasm_gates() -> list[str]:
         "c3x",
         "c3sqrtx",
         "c4x",
+        "measure",
     ]
