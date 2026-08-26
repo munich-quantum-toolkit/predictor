@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Expand and compact the RL observation with normalized OpenQASM gate and
+  measurement frequencies and scalar qubit-count and depth values ([#758])
+  ([**@flowerthrower**])
 - ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and
   use the selected strategy in compilation traces and model artifact names
   ([#755]) ([**@flowerthrower**])
@@ -96,6 +99,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
+[#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
