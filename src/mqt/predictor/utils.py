@@ -144,3 +144,72 @@ def calc_supermarq_features(
         parallelism,
         liveness,
     )
+
+
+def get_openqasm_gates() -> list[str]:
+    """Return the gates from the OpenQASM 2.0 standard header."""
+    return [
+        "u3",
+        "u2",
+        "u1",
+        "cx",
+        "id",
+        "u0",
+        "u",
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "rx",
+        "ry",
+        "rz",
+        "sx",
+        "sxdg",
+        "cz",
+        "cy",
+        "swap",
+        "ch",
+        "ccx",
+        "cswap",
+        "crx",
+        "cry",
+        "crz",
+        "cu1",
+        "cp",
+        "cu3",
+        "csx",
+        "cu",
+        "rxx",
+        "rzz",
+        "rccx",
+        "rc3x",
+        "c3x",
+        "c3sqrtx",
+        "c4x",
+    ]
+
+
+def get_openqasm_gates_for_rl() -> list[str]:
+    """Return the OpenQASM gates used as normalized RL features."""
+    excluded_gates = {
+        "u3",
+        "u2",
+        "u1",
+        "u0",
+        "u",
+        "ccx",
+        "cswap",
+        "cu1",
+        "cu",
+        "rccx",
+        "rc3x",
+        "c3x",
+        "c3sqrtx",
+        "c4x",
+    }
+    return [gate for gate in get_openqasm_gates() if gate not in excluded_gates]
