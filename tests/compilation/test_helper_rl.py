@@ -45,7 +45,8 @@ def test_create_feature_dict() -> None:
     qc.ccx(0, 1, 2)
     qc.measure_all()
 
-    features = create_feature_dict(qc)
+    max_num_qubits = 20
+    features = create_feature_dict(qc, max_num_qubits)
 
     for feature in features.values():
         assert isinstance(feature, np.ndarray)
@@ -56,7 +57,7 @@ def test_create_feature_dict() -> None:
     np.testing.assert_allclose(features["ccx"], [1 / 6])
     np.testing.assert_allclose(features["measure"], [0.5])
     np.testing.assert_allclose(features["x"], [0])
-    np.testing.assert_allclose(features["num_qubits"], [3 / 127])
+    np.testing.assert_allclose(features["num_qubits"], [3 / max_num_qubits])
     np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
 
 

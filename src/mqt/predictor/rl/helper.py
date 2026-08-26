@@ -29,9 +29,8 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
-MAX_NUM_QUBITS = 127
 MAX_CIRCUIT_DEPTH = 999_999
-OBSERVATION_OPERATIONS = (*get_openqasm_gates(), "measure")
+OBSERVATION_OPERATIONS = tuple(get_openqasm_gates())
 
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
@@ -75,11 +74,11 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
-def create_feature_dict(qc: QuantumCircuit) -> dict[str, NDArray[np.float32]]:
+def create_feature_dict(qc: QuantumCircuit, max_num_qubits: int) -> dict[str, NDArray[np.float32]]:
     """Create a normalized feature dictionary for a quantum circuit."""
     operation_counts = dict(qc.count_ops())
     total_operations = sum(value for gate, value in operation_counts.items() if gate != "barrier")
-    normalized_num_qubits = min(qc.num_qubits, MAX_NUM_QUBITS) / MAX_NUM_QUBITS
+    normalized_num_qubits = min(qc.num_qubits, max_num_qubits) / max_num_qubits
     normalized_depth = log1p(min(qc.depth(), MAX_CIRCUIT_DEPTH)) / log1p(MAX_CIRCUIT_DEPTH)
     feature_dict = {
         **{
