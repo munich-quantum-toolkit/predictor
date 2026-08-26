@@ -18,7 +18,7 @@ from bqskit.ir import gates
 from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import transpile
+from qiskit import QuantumCircuit, transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
@@ -39,10 +39,23 @@ if TYPE_CHECKING:
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    qc = QuantumCircuit(2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure_all()
+
     features = create_feature_dict(qc)
+
     for feature in features.values():
-        assert isinstance(feature, np.ndarray | int)
+        assert isinstance(feature, np.ndarray)
+        assert feature.dtype == np.float32
+
+    np.testing.assert_allclose(features["h"], [0.25])
+    np.testing.assert_allclose(features["cx"], [0.25])
+    np.testing.assert_allclose(features["measure"], [0.5])
+    np.testing.assert_allclose(features["x"], [0])
+    np.testing.assert_allclose(features["num_qubits"], [2 / 127])
+    np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
 
 
 def test_get_path_trained_model() -> None:
