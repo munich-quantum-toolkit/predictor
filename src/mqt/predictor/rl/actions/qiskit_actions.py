@@ -37,6 +37,7 @@ from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
+    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
     CollectCliffords,
@@ -46,18 +47,24 @@ from qiskit.transpiler.passes import (
     Decompose,
     DenseLayout,
     Depth,
+    ElidePermutations,
     EnlargeWithAncilla,
     FixedPoint,
     FullAncillaAllocation,
+    GateDirection,
     GatesInBasis,
     InverseCancellation,
+    LookaheadSwap,
     MinimumPoint,
     Optimize1qGatesDecomposition,
+    Optimize1qGatesSimpleCommutation,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
+    RemoveIdentityEquivalent,
     SabreLayout,
     SabreSwap,
     Size,
+    TrivialLayout,
     UnitarySynthesis,
     UnrollCustomDefinitions,
     VF2Layout,
@@ -171,6 +178,32 @@ def qiskit_optimization_actions() -> list[Action]:
             preserves_routing=True,
             preserves_synthesis=False,
         ),
+        DeviceIndependentAction(
+            "RemoveIdentityEquivalent",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            [RemoveIdentityEquivalent()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
+        ),
+        DeferredDeviceAction(
+            "Optimize1qGatesSimpleCommutation",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    Optimize1qGatesSimpleCommutation(
+                        basis=device.operation_names,
+                        run_to_completion=True,
+                    )
+                ],
+            ),
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
+        ),
     ]
 
 
@@ -257,6 +290,35 @@ def qiskit_layout_actions() -> list[Action]:
                 ],
             ),
         ),
+        DeferredDeviceAction(
+            "TrivialLayout",
+            CompilationOrigin.QISKIT,
+            PassType.LAYOUT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+            ),
+        ),
+        DeferredDeviceAction(
+            "ElidePermutations",
+            CompilationOrigin.QISKIT,
+            PassType.LAYOUT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    ElidePermutations(),
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+            ),
+        ),
     ]
 
 
@@ -270,7 +332,39 @@ def qiskit_routing_actions() -> list[Action]:
             transpile_pass=lambda device: cast(
                 "list[Task]", [SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay")]
             ),
-        )
+        ),
+        DeferredDeviceAction(
+            "BasicSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]", [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))]
+            ),
+        ),
+        DeferredDeviceAction(
+            "LookaheadSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    LookaheadSwap(
+                        coupling_map=CouplingMap(device.build_coupling_map()),
+                        search_depth=1,
+                        search_width=1,
+                    )
+                ],
+            ),
+        ),
+        DeferredDeviceAction(
+            "GateDirection",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [GateDirection(coupling_map=CouplingMap(device.build_coupling_map()), target=device)],
+            ),
+        ),
     ]
 
 
@@ -401,11 +495,21 @@ def run_qiskit_action(
     if altered_qc.count_ops().get("unitary"):
         # Custom "unitary" gates can not be processed further by other passes
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
+    if altered_qc.count_ops().get("clifford"):
+        altered_qc = altered_qc.decompose(gates_to_decompose="clifford")
 
     return altered_qc, layout
 
 
-def is_qiskit_action_available(action: Action, device: Target) -> bool:
+def is_qiskit_action_available(action: Action, circuit: QuantumCircuit, device: Target) -> bool:
     """Return whether a Qiskit action is available for the current device."""
+    if action.name == "GateDirection":
+        undirected_edges = {frozenset(edge) for edge in device.build_coupling_map().get_edges()}
+        return all(
+            frozenset(circuit.find_bit(qubit).index for qubit in instruction.qubits) in undirected_edges
+            for instruction in circuit.data
+            if len(instruction.qubits) == 2
+        )
+
     # Only allow VF2PostLayout if "ibm" is in the device name # TODO: Why?
     return action.name != "VF2PostLayout" or "ibm" in device.description
