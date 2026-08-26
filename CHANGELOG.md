@@ -87,15 +87,15 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
-[#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
+[#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
+[#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
-[#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
+[#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#488]: https://github.com/munich-quantum-toolkit/predictor/pull/488
