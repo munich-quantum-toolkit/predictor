@@ -149,15 +149,32 @@ def test_qcompile_with_false_input() -> None:
         rl_compile(qc, device=None, figure_of_merit="expected_fidelity")
 
 
-def test_warning_for_unidirectional_device() -> None:
-    """Test the warning for a unidirectional device."""
+def test_unidirectional_device_warning_and_gate_direction() -> None:
+    """Test warning and gate-direction routing for a unidirectional device."""
     target = Target()
     target.add_instruction(CXGate(), {(0, 1): InstructionProperties()})
     target.description = "uni-directional device"
 
     msg = "The connectivity of the device 'uni-directional device' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
     with pytest.warns(UserWarning, match=re.escape(msg)):
-        Predictor(figure_of_merit="expected_fidelity", device=target)
+        predictor = Predictor(figure_of_merit="expected_fidelity", device=target)
+
+    env = predictor.env
+    qc = QuantumCircuit(2)
+    qc.cx(1, 0)
+    env.reset(qc)
+    env.layout = TranspileLayout(
+        initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
+        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
+        final_layout=None,
+        _output_qubit_list=qc.qubits,
+        _input_qubit_count=qc.num_qubits,
+    )
+    env.valid_actions = env.determine_valid_actions_for_state()
+    action_index = next(index for index in env.actions_routing_indices if env.action_set[index].name == "GateDirection")
+
+    assert env.action_masks()[action_index]
+    assert env.is_circuit_routed(env.apply_action(action_index), target.build_coupling_map())
 
 
 def test_predictor_env_truncates_at_max_steps() -> None:
