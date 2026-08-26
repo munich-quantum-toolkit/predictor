@@ -6,9 +6,21 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Qiskit SABRE routing action
+### Expanded Qiskit action set
 
-The RL action space now includes Qiskit's stochastic `SabreSwap` routing pass.
+The RL action space now includes the following Qiskit passes:
+
+- the `TrivialLayout` and `ElidePermutations` layout actions;
+- the `SabreSwap`, `BasicSwap`, `LookaheadSwap`, and `GateDirection` routing
+  actions; and
+- the `RemoveIdentityEquivalent` and `Optimize1qGatesSimpleCommutation`
+  optimization actions.
+
+`ElidePermutations` establishes a trivial layout in the same action so its
+output permutation remains part of the canonical layout. `OptimizeCliffords` now
+collects standard Clifford gates before optimizing and decomposes the result for
+subsequent passes.
+
 Existing RL models must be retrained because the action-space size and the
 indices of later actions have changed. Code that persists or selects actions by
 numeric index must be updated.

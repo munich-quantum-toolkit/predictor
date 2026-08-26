@@ -515,7 +515,7 @@ class PredictorEnv(Env):
                 action_mask.append(True)
                 continue
             if action.origin == CompilationOrigin.QISKIT:
-                action_mask.append(is_qiskit_action_available(action, self.device))
+                action_mask.append(is_qiskit_action_available(action, self.state, self.device))
             elif action.origin == CompilationOrigin.TKET:
                 action_mask.append(is_tket_action_available(action=action, has_layout=has_layout))
             elif action.origin == CompilationOrigin.BQSKIT:
