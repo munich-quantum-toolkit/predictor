@@ -12,7 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add Qiskit's `SabreSwap` pass to the RL routing actions ([#759])
+- ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
+  `BasicSwap`, `LookaheadSwap`, `GateDirection`, `RemoveIdentityEquivalent`, and
+  `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#759])
   ([**@flowerthrower**])
 - ✨ Expand and compact the RL observation with normalized OpenQASM operation
   frequencies and one-element `float32` qubit-count and depth arrays, and
@@ -25,6 +27,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🐛 Make the `OptimizeCliffords` RL action collect standard Clifford gates
+  before optimizing them ([#759]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])

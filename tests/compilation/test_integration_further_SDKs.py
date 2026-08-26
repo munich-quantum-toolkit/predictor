@@ -10,13 +10,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
-from qiskit.transpiler import PassManager, TranspileLayout
+from qiskit.circuit.library import CXGate, HGate
+from qiskit.transpiler import PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
@@ -28,9 +27,6 @@ from qiskit.transpiler.passes import (
 
 from mqt.predictor.rl.actions import CompilationOrigin, PassType
 from mqt.predictor.rl.predictorenv import PredictorEnv
-
-if TYPE_CHECKING:
-    from qiskit.transpiler import Target
 
 
 def _setup_env(env: PredictorEnv, circuit: QuantumCircuit, layout: TranspileLayout | None, n_qubits: int) -> None:
@@ -44,6 +40,11 @@ def _is_available(env: PredictorEnv, idx: int) -> bool:
     """Return whether action idx is structurally and SDK-valid for the current env state."""
     env.valid_actions = env.determine_valid_actions_for_state()
     return env.action_masks()[idx]
+
+
+def _action_index(env: PredictorEnv, name: str) -> int:
+    """Return the index of an action with the given name."""
+    return next(idx for idx, action in env.action_set.items() if action.name == name)
 
 
 def _lay_out(circuit: QuantumCircuit, target: Target) -> tuple[QuantumCircuit, TranspileLayout]:
@@ -124,6 +125,69 @@ def simple_circuit() -> QuantumCircuit:
 def env(target: Target) -> PredictorEnv:
     """Create a PredictorEnv for state-based invariant checking."""
     return PredictorEnv(device=target, reward_function="expected_fidelity")
+
+
+def test_requested_qiskit_passes_are_registered(env: PredictorEnv) -> None:
+    """All requested individual Qiskit passes are exposed as RL actions."""
+    action_names = {action.name for action in env.action_set.values()}
+    assert {
+        "BasicSwap",
+        "ElidePermutations",
+        "GateDirection",
+        "LookaheadSwap",
+        "Optimize1qGatesSimpleCommutation",
+        "RemoveIdentityEquivalent",
+        "TrivialLayout",
+    } <= action_names
+
+
+def test_elide_permutations_tracks_output_permutation(env: PredictorEnv) -> None:
+    """Eliding a SWAP keeps its output permutation in the established layout."""
+    circuit = QuantumCircuit(3)
+    circuit.swap(0, 1)
+    circuit.x(0)
+    _setup_env(env, circuit, None, circuit.num_qubits)
+
+    compiled = env.apply_action(_action_index(env, "ElidePermutations"))
+
+    assert "swap" not in compiled.count_ops()
+    assert [
+        (instruction.operation.name, compiled.find_bit(instruction.qubits[0]).index) for instruction in compiled.data
+    ] == [("x", 1)]
+    assert env.layout is not None
+    assert env.layout.final_index_layout() == [1, 0, 2]
+
+
+def test_gate_direction_routes_adjacent_directional_gate() -> None:
+    """GateDirection is available once only edge direction remains to be fixed."""
+    directional_target = Target(num_qubits=2, description="directional test target")
+    directional_target.add_instruction(HGate(), {(0,): None, (1,): None})
+    directional_target.add_instruction(CXGate(), {(0, 1): None})
+    with pytest.warns(UserWarning, match="uni-directional"):
+        directional_env = PredictorEnv(device=directional_target, reward_function="expected_fidelity")
+
+    circuit = QuantumCircuit(2)
+    circuit.cx(1, 0)
+    laid_out, layout = _lay_out(circuit, directional_target)
+    _setup_env(directional_env, laid_out, layout, circuit.num_qubits)
+    action_index = _action_index(directional_env, "GateDirection")
+
+    assert _is_available(directional_env, action_index)
+    compiled = directional_env.apply_action(action_index)
+
+    assert directional_env.is_circuit_routed(compiled, directional_target.build_coupling_map())
+
+
+def test_optimize_cliffords_collects_standard_clifford_gates(env: PredictorEnv) -> None:
+    """OptimizeCliffords first collects ordinary gates and decomposes its result."""
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+    circuit.h(0)
+    _setup_env(env, circuit, None, circuit.num_qubits)
+
+    compiled = env.apply_action(_action_index(env, "OptimizeCliffords"))
+
+    assert not compiled.data
 
 
 def test_synthesis_actions_produce_native_gates(
