@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from qiskit import QuantumCircuit
 
-from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates_for_rl
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -31,7 +31,7 @@ logger = logging.getLogger("mqt-predictor")
 
 MAX_NUM_QUBITS = 127
 MAX_CIRCUIT_DEPTH = 999_999
-OBSERVATION_OPERATIONS = (*get_openqasm_gates_for_rl(), "measure")
+OBSERVATION_OPERATIONS = (*get_openqasm_gates(), "measure")
 
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
