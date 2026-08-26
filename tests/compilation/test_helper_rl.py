@@ -18,7 +18,7 @@ from bqskit.ir import gates
 from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import QuantumCircuit, transpile
+from qiskit import transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
@@ -29,6 +29,7 @@ from mqt.predictor.rl.actions import (
 from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
 from mqt.predictor.rl.actions.qiskit_actions import postprocess_vf2postlayout
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
+from mqt.predictor.utils import get_openqasm_gates
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,26 +40,31 @@ if TYPE_CHECKING:
 
 def test_create_feature_dict() -> None:
     """Test the creation of a feature dictionary."""
-    qc = QuantumCircuit(3)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.ccx(0, 1, 2)
-    qc.measure_all()
-
-    max_num_qubits = 20
-    features = create_feature_dict(qc, max_num_qubits)
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    device = get_device("ibm_eagle_127")
+    features = create_feature_dict(qc, device.num_qubits)
 
     for feature in features.values():
         assert isinstance(feature, np.ndarray)
         assert feature.dtype == np.float32
 
-    np.testing.assert_allclose(features["h"], [1 / 6])
-    np.testing.assert_allclose(features["cx"], [1 / 6])
-    np.testing.assert_allclose(features["ccx"], [1 / 6])
-    np.testing.assert_allclose(features["measure"], [0.5])
-    np.testing.assert_allclose(features["x"], [0])
-    np.testing.assert_allclose(features["num_qubits"], [3 / max_num_qubits])
-    np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
+    expected_features = dict.fromkeys(get_openqasm_gates(), 0.0)
+    expected_features.update({
+        "x": 1 / 9,
+        "h": 5 / 9,
+        "measure": 2 / 9,
+        "num_qubits": 3 / device.num_qubits,
+        "depth": np.log1p(5) / np.log1p(999_999),
+        "program_communication": 0.0,
+        "critical_depth": 0.0,
+        "entanglement_ratio": 0.0,
+        "parallelism": 1 / 5,
+        "liveness": 11 / 15,
+    })
+
+    assert features.keys() == expected_features.keys()
+    for name, expected in expected_features.items():
+        np.testing.assert_allclose(features[name], [expected])
 
 
 def test_get_path_trained_model() -> None:
