@@ -35,7 +35,9 @@ from gymnasium import Env
 from gymnasium.spaces import Box, Dict, Discrete
 from joblib import load
 from qiskit import QuantumCircuit
-from qiskit.transpiler import CouplingMap, TranspileLayout
+from qiskit.circuit import StandardEquivalenceLibrary
+from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler.passes import BasisTranslator
 
 from mqt.predictor.hellinger import get_hellinger_model_path
 from mqt.predictor.reward import (
