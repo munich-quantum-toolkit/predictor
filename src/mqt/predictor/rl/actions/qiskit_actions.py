@@ -512,12 +512,25 @@ def _postprocess_layout_action(
     return altered_qc, layout
 
 
+def _seed_randomized_passes(passes: list[Task], seed: int) -> None:
+    """Seed randomized Qiskit passes with CPU-independent trial counts."""
+    for transpiler_pass in passes:
+        if isinstance(transpiler_pass, (SabreLayout, SabreSwap, VF2Layout, VF2PostLayout)):
+            transpiler_pass.seed = seed
+        if isinstance(transpiler_pass, SabreLayout):
+            transpiler_pass.layout_trials = 1
+            transpiler_pass.swap_trials = 1
+        elif isinstance(transpiler_pass, SabreSwap):
+            transpiler_pass.trials = 1
+
+
 def run_qiskit_action(
     action: Action,
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
     input_qubit_count: int | None = None,
+    seed: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     # Build the concrete Qiskit pass list for given action.
@@ -529,6 +542,9 @@ def run_qiskit_action(
         passes = factory(device)
     else:
         passes = cast("list[Task]", action.transpile_pass)
+
+    if seed is not None:
+        _seed_randomized_passes(passes, seed)
 
     if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         assert action.do_while is not None

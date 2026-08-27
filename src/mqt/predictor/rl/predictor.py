@@ -86,6 +86,7 @@ class Predictor:
             RuntimeError: If an error occurs during compilation.
         """
         original_tracer_output_path = self.env.tracer_output_path
+        original_seed_qiskit_actions = self.env.configure_qiskit_action_seeding(enabled=False)
 
         # Temporarily override singleton if a new path is explicitly provided
         if tracer_output_path is not None:
@@ -94,7 +95,7 @@ class Predictor:
         try:
             trained_rl_model = load_model(self.model_name)
 
-            obs, _ = self.env.reset(qc, seed=0)
+            obs, _ = self.env.reset(qc)
 
             used_compilation_passes = []
             terminated = False
@@ -116,6 +117,7 @@ class Predictor:
         finally:
             # Restore original singleton path
             self.env.tracer_output_path = original_tracer_output_path
+            self.env.configure_qiskit_action_seeding(enabled=original_seed_qiskit_actions)
 
     def train_model(
         self,
@@ -133,6 +135,7 @@ class Predictor:
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
         """
+        self.env.configure_qiskit_action_seeding(enabled=seed is not None)
         if seed is not None:
             set_random_seed(seed)
         if test:
