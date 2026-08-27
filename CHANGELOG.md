@@ -39,6 +39,9 @@ releases may include breaking changes.
   ([#831]) ([**@flowerthrower**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
+- 🐛 Restore nondeterministic RL circuit sampling without a seed and make
+  explicitly seeded sampling and randomized Qiskit actions reproducible ([#797])
+  ([**@flowerthrower**])
 - 🐛 Mask TKET layout and routing actions for circuits containing operations
   wider than two qubits ([#796]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -114,6 +117,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#797]: https://github.com/munich-quantum-toolkit/predictor/pull/797
 [#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
