@@ -94,9 +94,7 @@ def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
 def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that a pass timeout truncates the current episode."""
-    env = predictorenv_module.PredictorEnv(
-        device=get_device("ibm_falcon_27"), pass_timeout=0.01, intermediate_reward=False
-    )
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=0.01)
     qc = QuantumCircuit(1)
     env.reset(qc)
     monkeypatch.setattr(env, "apply_action", lambda _action: time.sleep(1))
