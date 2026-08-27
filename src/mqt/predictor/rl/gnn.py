@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import import_module
 from math import cos, pi
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 import gymnasium as gym
@@ -21,7 +20,6 @@ import numpy as np
 import torch
 import torch.nn.functional as functional
 from gymnasium import spaces
-from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag
 from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import PassManager
@@ -42,7 +40,10 @@ GraphNorm = _torch_geometric_nn.GraphNorm
 SAGEConv = _torch_geometric_nn.SAGEConv
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from numpy.typing import NDArray
+    from qiskit import QuantumCircuit
     from stable_baselines3.common.type_aliases import Schedule
     from torch.optim import Optimizer
 
@@ -224,7 +225,9 @@ def _create_sparse_dag(
         raw_parameters = list(getattr(node.op, "params", ()))
         parameters = [_safe_float(value) for value in raw_parameters[:3]]
         parameters.extend([0.0] * (3 - len(parameters)))
-        node_scalars[index, :6] = [value for parameter in parameters for value in (np.sin(parameter), np.cos(parameter))]
+        node_scalars[index, :6] = [
+            value for parameter in parameters for value in (np.sin(parameter), np.cos(parameter))
+        ]
         node_scalars[index, 6] = len(node.qargs)
         node_scalars[index, 7] = getattr(node.op, "num_ctrl_qubits", 0)
         node_scalars[index, 8] = len(raw_parameters)
@@ -309,16 +312,14 @@ def create_graph_observation(
 
 
 def _graph_observation_space(max_nodes: int, max_edges: int) -> spaces.Dict:
-    return spaces.Dict(
-        {
-            _GATE_INDICES: spaces.Box(0, len(NODE_OPERATION_NAMES) - 1, (max_nodes,), dtype=np.int32),
-            _NODE_SCALARS: spaces.Box(-np.inf, np.inf, (max_nodes, NODE_SCALAR_DIM), dtype=np.float32),
-            _EDGE_INDEX: spaces.Box(0, max_nodes - 1, (2, max_edges), dtype=np.int32),
-            _NUM_NODES: spaces.Box(0, max_nodes, (1,), dtype=np.int32),
-            _NUM_EDGES: spaces.Box(0, max_edges, (1,), dtype=np.int32),
-            _GLOBAL_FEATURES: spaces.Box(-np.inf, np.inf, (GLOBAL_FEATURE_DIM,), dtype=np.float32),
-        }
-    )
+    return spaces.Dict({
+        _GATE_INDICES: spaces.Box(0, len(NODE_OPERATION_NAMES) - 1, (max_nodes,), dtype=np.int32),
+        _NODE_SCALARS: spaces.Box(-np.inf, np.inf, (max_nodes, NODE_SCALAR_DIM), dtype=np.float32),
+        _EDGE_INDEX: spaces.Box(0, max_nodes - 1, (2, max_edges), dtype=np.int32),
+        _NUM_NODES: spaces.Box(0, max_nodes, (1,), dtype=np.int32),
+        _NUM_EDGES: spaces.Box(0, max_edges, (1,), dtype=np.int32),
+        _GLOBAL_FEATURES: spaces.Box(-np.inf, np.inf, (GLOBAL_FEATURE_DIM,), dtype=np.float32),
+    })
 
 
 def _graph_capacities(observation_space: spaces.Space[Any]) -> tuple[int, int]:
@@ -379,9 +380,7 @@ class GNNObservationWrapper(gym.Wrapper):
         observation, info = predictor_env.reset(qc, seed=seed, options=options)
         return self.observation(observation), info
 
-    def step(
-        self, action: Any
-    ) -> tuple[dict[str, NDArray[np.generic]], float, bool, bool, dict[str, Any]]:
+    def step(self, action: Any) -> tuple[dict[str, NDArray[np.generic]], float, bool, bool, dict[str, Any]]:
         """Step the underlying predictor and return a graph observation."""
         observation, reward, terminated, truncated, info = self.env.step(action)
         return self.observation(observation), float(reward), terminated, truncated, info
@@ -407,9 +406,9 @@ class GraphSAGEEncoder(nn.Module):
         """Initialize the GraphSAGE encoder."""
         super().__init__()
         layer_count = num_conv_wo_resnet + num_resnet_layers
-        self.convs = nn.ModuleList(
-            [SAGEConv(NODE_FEATURE_DIM if index == 0 else hidden_dim, hidden_dim) for index in range(layer_count)]
-        )
+        self.convs = nn.ModuleList([
+            SAGEConv(NODE_FEATURE_DIM if index == 0 else hidden_dim, hidden_dim) for index in range(layer_count)
+        ])
         self.norms = nn.ModuleList(GraphNorm(hidden_dim) for _ in range(layer_count))
         self.activation = nn.LeakyReLU()
         self.dropout = nn.Dropout(dropout_p)
