@@ -42,7 +42,7 @@ releases may include breaking changes.
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - ✨ Enable configurable intermediate rewards for RL training by default
-  ([#760]) ([**@flowerthrower**])
+  ([#799]) ([**@flowerthrower**])
 - 🐛 Restore nondeterministic RL circuit sampling and inference without a seed,
   and make explicitly seeded training, deterministic inference, and randomized
   Qiskit actions reproducible ([#797]) ([**@flowerthrower**])
@@ -126,7 +126,7 @@ for previous changelogs._
 [#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
-[#760]: https://github.com/munich-quantum-toolkit/predictor/pull/760
+[#799]: https://github.com/munich-quantum-toolkit/predictor/pull/799
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
