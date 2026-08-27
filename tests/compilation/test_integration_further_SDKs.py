@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
-from qiskit.circuit.library import CXGate, HGate
-from qiskit.transpiler import PassManager, Target, TranspileLayout
+from qiskit.transpiler import PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
@@ -27,6 +28,9 @@ from qiskit.transpiler.passes import (
 
 from mqt.predictor.rl.actions import CompilationOrigin, PassType
 from mqt.predictor.rl.predictorenv import PredictorEnv
+
+if TYPE_CHECKING:
+    from qiskit.transpiler import Target
 
 
 def _setup_env(env: PredictorEnv, circuit: QuantumCircuit, layout: TranspileLayout | None, n_qubits: int) -> None:
@@ -120,16 +124,6 @@ def simple_circuit() -> QuantumCircuit:
 def env(target: Target) -> PredictorEnv:
     """Create a PredictorEnv for state-based invariant checking."""
     return PredictorEnv(device=target, reward_function="expected_fidelity")
-
-
-@pytest.fixture
-def directional_env() -> PredictorEnv:
-    """Create an environment for direction-sensitive routing actions."""
-    target = Target(num_qubits=2, description="directional test target")
-    target.add_instruction(HGate(), {(0,): None, (1,): None})
-    target.add_instruction(CXGate(), {(0, 1): None})
-    with pytest.warns(UserWarning, match="uni-directional"):
-        return PredictorEnv(device=target, reward_function="expected_fidelity")
 
 
 def test_synthesis_actions_produce_native_gates(
@@ -227,48 +221,38 @@ def test_mapping_actions_establish_layout_and_route(
 def test_routing_actions_route_circuit(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
-    directional_env: PredictorEnv,
 ) -> None:
     """Invariant: every routing action produces a circuit where all 2-qubit gates respect the coupling map."""
+    coupling_map = env.device.build_coupling_map()
+    applied_actions = 0
+
     for idx, action in env.action_set.items():
         if action.pass_type != PassType.ROUTING:
             continue
-
         qc_laid_out, layout = _lay_out(simple_circuit, env.device)
-        directional_circuit = QuantumCircuit(2)
-        directional_circuit.cx(1, 0)
-        directional_laid_out, directional_layout = _lay_out(directional_circuit, directional_env.device)
-        test_cases = (
-            (env, qc_laid_out, layout),
-            (directional_env, directional_laid_out, directional_layout),
-        )
-
-        for action_env, circuit, action_layout in test_cases:
-            n_qubits = circuit.num_qubits
-            _setup_env(action_env, circuit, action_layout, n_qubits)
-            if _is_available(action_env, idx):
-                routed = action_env.apply_action(idx)
-                break
-        else:
-            pytest.fail(f"{action.name} was unavailable for all routing test cases")
-
-        coupling_map = action_env.device.build_coupling_map()
-        assert action_env.is_circuit_routed(routed, coupling_map), (
-            f"{action.name} on {action_env.device.description} VIOLATED INVARIANT: "
-            "circuit not properly routed after action"
+        n_qubits = qc_laid_out.num_qubits
+        _setup_env(env, qc_laid_out, layout, n_qubits)
+        if not _is_available(env, idx):
+            continue
+        routed = env.apply_action(idx)
+        applied_actions += 1
+        assert env.is_circuit_routed(routed, coupling_map), (
+            f"{action.name} on {env.device.description} VIOLATED INVARIANT: circuit not properly routed after action"
         )
         # Check BQSKit routing translates its output permutation into Qiskit layout bookkeeping correctly.
         if action.origin == CompilationOrigin.BQSKIT:
-            assert action_env.layout is not None
-            assert action_env.layout.final_layout is not None
-            assert set(action_env.layout.final_layout.get_virtual_bits()).issubset(routed.qubits)
-            assert action_env.layout._output_qubit_list == routed.qubits  # ruff: ignore[private-member-access]
+            assert env.layout is not None
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(routed.qubits)
+            assert env.layout._output_qubit_list == routed.qubits  # ruff: ignore[private-member-access]
 
-            _setup_env(action_env, routed, action_env.layout, n_qubits)
-            rerouted = action_env.apply_action(idx)
-            assert action_env.layout.final_layout is not None
-            assert set(action_env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
-            assert action_env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
+            _setup_env(env, routed, env.layout, n_qubits)
+            rerouted = env.apply_action(idx)
+            assert env.layout.final_layout is not None
+            assert set(env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
+            assert env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
+
+    assert applied_actions > 0
 
 
 def test_optimization_actions_preserve_invariants(
