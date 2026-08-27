@@ -73,6 +73,7 @@ class Predictor:
         qc: QuantumCircuit | str,
         tracer_output_path: str | Path | None = None,
         seed: int | None = None,
+        pass_timeout: float | None = None,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
@@ -80,21 +81,26 @@ class Predictor:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
             tracer_output_path: Optional temporary path to export the compilation trace for this specific run.
             seed: The seed for reproducible deterministic inference and randomized Qiskit actions. Defaults to None.
+            pass_timeout: Maximum duration in seconds for one compilation pass.
+                Defaults to None, which disables pass timeouts.
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
 
         Raises:
             RuntimeError: If an error occurs during compilation.
+            ValueError: If ``pass_timeout`` is not positive.
         """
         original_tracer_output_path = self.env.tracer_output_path
         original_seed_qiskit_actions = self.env.configure_qiskit_action_seeding(enabled=seed is not None)
-
-        # Temporarily override singleton if a new path is explicitly provided
-        if tracer_output_path is not None:
-            self.env.tracer_output_path = tracer_output_path
+        original_pass_timeout = self.env.pass_timeout
 
         try:
+            # Temporarily override singleton settings for this compilation.
+            if tracer_output_path is not None:
+                self.env.tracer_output_path = tracer_output_path
+            self.env.pass_timeout = pass_timeout
+
             trained_rl_model = load_model(self.model_name)
 
             obs, _ = self.env.reset(qc, seed=seed)
@@ -121,8 +127,8 @@ class Predictor:
             raise RuntimeError(msg)
 
         finally:
-            # Restore original singleton path
             self.env.tracer_output_path = original_tracer_output_path
+            self.env.pass_timeout = original_pass_timeout
             self.env.configure_qiskit_action_seeding(enabled=original_seed_qiskit_actions)
 
     def train_model(
@@ -131,6 +137,7 @@ class Predictor:
         verbose: int = 2,
         test: bool = False,
         seed: int | None = None,
+        pass_timeout: float | None = None,
     ) -> None:
         """Trains all models for the given reward functions and device.
 
@@ -140,6 +147,11 @@ class Predictor:
             test: Whether to train the model for testing purposes. Defaults to False.
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
+            pass_timeout: Maximum duration in seconds for one compilation pass.
+                Defaults to None, which disables pass timeouts.
+
+        Raises:
+            ValueError: If ``pass_timeout`` is not positive.
         """
         self.env.configure_qiskit_action_seeding(enabled=seed is not None)
         if seed is not None:
@@ -157,22 +169,27 @@ class Predictor:
             batch_size = 64
             progress_bar = True
 
-        logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
-        model = MaskablePPO(
-            MaskableMultiInputActorCriticPolicy,
-            self.env,
-            verbose=verbose,
-            tensorboard_log=f"./{self.model_name}",
-            gamma=0.98,
-            n_steps=n_steps,
-            batch_size=batch_size,
-            n_epochs=n_epochs,
-            seed=seed,
-        )
-        # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
-        # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
-        model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
-        model.save(get_path_trained_model() / self.model_name)
+        original_pass_timeout = self.env.pass_timeout
+        self.env.pass_timeout = pass_timeout
+        try:
+            logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
+            model = MaskablePPO(
+                MaskableMultiInputActorCriticPolicy,
+                self.env,
+                verbose=verbose,
+                tensorboard_log=f"./{self.model_name}",
+                gamma=0.98,
+                n_steps=n_steps,
+                batch_size=batch_size,
+                n_epochs=n_epochs,
+                seed=seed,
+            )
+            # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
+            # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
+            model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
+            model.save(get_path_trained_model() / self.model_name)
+        finally:
+            self.env.pass_timeout = original_pass_timeout
 
 
 def load_model(model_name: str) -> MaskablePPO:
@@ -204,6 +221,7 @@ def rl_compile(
     tracer_output_path: str | Path | None = None,
     mdp: MDPPolicy = "v3",
     seed: int | None = None,
+    pass_timeout: float | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -217,12 +235,15 @@ def rl_compile(
             is the original strategy and ``v3`` is the default. When
             ``predictor_singleton`` is provided, its configured policy is used instead.
         seed: The seed for reproducible deterministic inference and randomized Qiskit actions. Defaults to None.
+        pass_timeout: Maximum duration in seconds for one compilation pass.
+            Defaults to None, which disables pass timeouts.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
 
     Raises:
-        ValueError: If figure_of_merit or device is None and predictor_singleton is also None.
+        ValueError: If figure_of_merit or device is None and predictor_singleton is also None,
+            or if ``pass_timeout`` is not positive.
     """
     if predictor_singleton is None:
         if figure_of_merit is None:
@@ -237,6 +258,8 @@ def rl_compile(
             tracer_output_path=tracer_output_path,
             mdp=mdp,
         )
-        return predictor.compile_as_predicted(qc, seed=seed)
+        return predictor.compile_as_predicted(qc, seed=seed, pass_timeout=pass_timeout)
 
-    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path, seed=seed)
+    return predictor_singleton.compile_as_predicted(
+        qc, tracer_output_path=tracer_output_path, seed=seed, pass_timeout=pass_timeout
+    )
