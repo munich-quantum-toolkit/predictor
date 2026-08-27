@@ -323,6 +323,7 @@ def qiskit_routing_actions() -> list[Action]:
             "SabreSwap",
             CompilationOrigin.QISKIT,
             PassType.ROUTING,
+            stochastic=True,
             transpile_pass=lambda device: cast(
                 "list[Task]", [SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay")]
             ),
