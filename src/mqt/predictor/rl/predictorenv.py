@@ -10,14 +10,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
+import signal
+import threading
 import time
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from types import FrameType
+
     from gymnasium.spaces import Space
     from qiskit.transpiler import Layout, Target
 
@@ -60,6 +66,43 @@ MDPPolicy = Literal["v2", "v3"]
 MDP_POLICIES: frozenset[str] = frozenset(get_args(MDPPolicy))
 
 
+@contextlib.contextmanager
+def _enforce_pass_timeout(pass_timeout: float | None) -> Iterator[None]:
+    if pass_timeout is None:
+        yield
+        return
+
+    if not all(hasattr(signal, attribute) for attribute in ("SIGALRM", "ITIMER_REAL", "getitimer", "setitimer")):
+        warnings.warn("Pass timeouts are not supported on this platform.", RuntimeWarning, stacklevel=2)
+        yield
+        return
+    if threading.current_thread() is not threading.main_thread():
+        warnings.warn("Pass timeouts are only supported on the main thread.", RuntimeWarning, stacklevel=2)
+        yield
+        return
+
+    def timeout_handler(_signum: int, _frame: FrameType | None) -> None:
+        msg = f"Compilation pass exceeded the timeout of {pass_timeout:g} seconds."
+        raise TimeoutError(msg)
+
+    previous_delay, previous_interval = signal.getitimer(signal.ITIMER_REAL)
+    if 0 < previous_delay <= pass_timeout:
+        yield
+        return
+
+    previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    start_time = time.monotonic()
+    try:
+        signal.setitimer(signal.ITIMER_REAL, pass_timeout)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_delay > 0:
+            remaining_delay = max(previous_delay - (time.monotonic() - start_time), 1e-6)
+            signal.setitimer(signal.ITIMER_REAL, remaining_delay, previous_interval)
+
+
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
 
@@ -71,6 +114,7 @@ class PredictorEnv(Env):
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
         mdp: MDPPolicy = "v3",
+        pass_timeout: float | None = None,
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -83,9 +127,12 @@ class PredictorEnv(Env):
             mdp: The MDP transition policy. ``v2`` is the original MQT Predictor
                 strategy. ``v3`` is the default and is permissive before layout while
                 preserving the established compilation structure afterwards.
+            pass_timeout: Maximum duration in seconds for one compilation pass.
+                Defaults to None, which disables pass timeouts.
 
         Raises:
-            ValueError: If ``mdp`` is unsupported, if the reward function is
+            ValueError: If ``mdp`` is unsupported, ``pass_timeout`` is not positive,
+                if the reward function is
                 "estimated_success_probability" and no calibration data is available
                 for the device, or if the reward function is
                 "estimated_hellinger_distance" and no trained model is available for
@@ -100,6 +147,7 @@ class PredictorEnv(Env):
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
         self.max_steps = max_steps
         self.mdp = mdp
+        self.pass_timeout = pass_timeout
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -201,6 +249,18 @@ class PredictorEnv(Env):
         self.observation_space = Dict(spaces)
         self.filename = ""
 
+    @property
+    def pass_timeout(self) -> float | None:
+        """The current per-pass timeout in seconds."""
+        return self._pass_timeout
+
+    @pass_timeout.setter
+    def pass_timeout(self, pass_timeout: float | None) -> None:
+        if pass_timeout is not None and pass_timeout <= 0:
+            msg = "pass_timeout must be positive."
+            raise ValueError(msg)
+        self._pass_timeout = pass_timeout
+
     def _collect_tracer_data(
         self,
         step_index: int,
@@ -290,7 +350,8 @@ class PredictorEnv(Env):
         start_time = time.perf_counter()
         try:
             self.used_actions.append(action_name)
-            altered_qc = self.apply_action(action)
+            with _enforce_pass_timeout(self.pass_timeout):
+                altered_qc = self.apply_action(action)
             action_duration = time.perf_counter() - start_time
         except Exception as exc:  # ruff:ignore[blind-except]
             action_duration = time.perf_counter() - start_time
