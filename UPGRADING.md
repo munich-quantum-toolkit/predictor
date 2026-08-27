@@ -11,8 +11,7 @@ of changes including minor and patch releases, please refer to the
 The RL action space now includes the following Qiskit passes:
 
 - the `TrivialLayout` and `ElidePermutations` layout actions;
-- the `SabreSwap`, `BasicSwap`, `LookaheadSwap`, and `GateDirection` routing
-  actions; and
+- the `SabreSwap`, `BasicSwap`, and `LookaheadSwap` routing actions; and
 - the `RemoveIdentityEquivalent` and `Optimize1qGatesSimpleCommutation`
   optimization actions.
 
