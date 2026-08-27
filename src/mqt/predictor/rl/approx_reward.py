@@ -105,9 +105,7 @@ def approximate_estimated_success_probability(
         gate_fidelity *= (1.0 - error_rates.get(gate, 0.0)) ** count
 
     effective_parallelism = 1.0 + (max(qc.num_qubits, 1) - 1.0) * parallelism
-    total_gate_time = (
-        sum(counts[gate] * gate_durations.get(gate, 0.0) for gate in basis_gates) / effective_parallelism
-    )
+    total_gate_time = sum(counts[gate] * gate_durations.get(gate, 0.0) for gate in basis_gates) / effective_parallelism
     idle_fraction = max(0.0, 1.0 - liveness)
     idle_factor = (
         1.0
@@ -171,8 +169,7 @@ def average_target_calibration(
         name: float(np.mean(samples)) if samples else fallback_error for name, samples in error_samples.items()
     }
     gate_durations = {
-        name: float(np.mean(samples)) if samples else fallback_duration
-        for name, samples in duration_samples.items()
+        name: float(np.mean(samples)) if samples else fallback_duration for name, samples in duration_samples.items()
     }
 
     coherence_samples: list[float] = []
