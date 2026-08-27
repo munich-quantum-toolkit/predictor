@@ -53,6 +53,11 @@ from mqt.predictor.rl.actions import (
 from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, run_bqskit_action
 from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
 from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
+from mqt.predictor.rl.approx_reward import (
+    approximate_estimated_success_probability,
+    approximate_expected_fidelity,
+    average_target_calibration,
+)
 from mqt.predictor.rl.helper import (
     OBSERVATION_OPERATIONS,
     create_feature_dict,
@@ -60,6 +65,7 @@ from mqt.predictor.rl.helper import (
     get_state_sample,
 )
 from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, FigureOfMeritMetrics
+from mqt.predictor.utils import calc_supermarq_features
 
 logger = logging.getLogger("mqt-predictor")
 
@@ -258,6 +264,7 @@ class PredictorEnv(Env):
         self._current_laid_out = False
         self._current_routed = False
         self._current_foms: dict[str, float] = {}
+        self._approximate_calibration: tuple[dict[str, float], dict[str, float], float | None] | None = None
 
         self.observation_space = Dict(spaces)
         self.filename = ""
@@ -365,6 +372,11 @@ class PredictorEnv(Env):
         action_obj = self.action_set[action]
         action_name = str(action_obj.name)
         action_type = action_obj.pass_type.value
+        previous_compilation_state = (
+            self._current_synthesized,
+            self._current_laid_out,
+            self._current_routed,
+        )
 
         start_time = time.perf_counter()
         try:
@@ -389,13 +401,13 @@ class PredictorEnv(Env):
                 action_name=action_name,
                 action_type=action_type,
                 action_duration=action_duration,
-                reward_val=0.0,
+                reward_val=self.no_effect_penalty,
                 feature_vector=obs,
                 done=True,
             )
             return (
                 obs,  # features
-                0,  # reward
+                self.no_effect_penalty,  # reward
                 False,  # terminated
                 True,  # truncated
                 {"Truncated because of error": f"{type(exc).__name__}: {exc}"},  # info
@@ -418,7 +430,11 @@ class PredictorEnv(Env):
             reward_val = self.calculate_reward()
             done = True
         elif previous_reward is not None:
-            reward_val = self._calculate_intermediate_reward(action, previous_reward)
+            reward_val = self._calculate_intermediate_reward(
+                action,
+                previous_reward,
+                previous_compilation_state,
+            )
             done = False
         else:
             reward_val = 0
@@ -486,45 +502,67 @@ class PredictorEnv(Env):
         return self._approximate_reward(), "approximate"
 
     def _approximate_reward(self) -> float:
-        """Estimate a reward from the average error of translated native gates."""
-        circuit = PassManager([
-            BasisTranslator(StandardEquivalenceLibrary, target_basis=self.device.operation_names)
-        ]).run(self.state.copy())
-        reward = 1.0
+        """Estimate the current figure of merit before exact evaluation is possible."""
+        cache_key = f"approximate_{self.reward_function}"
+        if cache_key in self._current_foms:
+            return self._current_foms[cache_key]
 
-        for instruction in circuit.data:
-            gate_name = instruction.operation.name
-            if gate_name in {"barrier", "measure"}:
-                continue
+        if self._approximate_calibration is None:
+            self._approximate_calibration = average_target_calibration(self.device)
+        error_rates, gate_durations, coherence_time = self._approximate_calibration
 
-            try:
-                properties = self.device[gate_name].values()
-            except KeyError:
-                return 0.0
+        if self.reward_function == "expected_fidelity":
+            reward = approximate_expected_fidelity(
+                self.state,
+                device=self.device,
+                error_rates=error_rates,
+            )
+        else:
+            features = calc_supermarq_features(self.state)
+            reward = approximate_estimated_success_probability(
+                self.state,
+                device=self.device,
+                error_rates=error_rates,
+                gate_durations=gate_durations,
+                coherence_time=coherence_time,
+                parallelism=float(features.parallelism),
+                liveness=float(features.liveness),
+            )
 
-            errors = [
-                instruction_property.error
-                for instruction_property in properties
-                if instruction_property is not None and instruction_property.error is not None
-            ]
-            if not errors:
-                return 0.0
-            reward *= 1 - float(np.mean(errors))
-
+        self._current_foms[cache_key] = reward
         return reward
 
-    def _calculate_intermediate_reward(self, action: int, previous_reward: tuple[float, str]) -> float:
+    def _calculate_intermediate_reward(
+        self,
+        action: int,
+        previous_reward: tuple[float, str],
+        previous_compilation_state: tuple[bool, bool, bool],
+    ) -> float:
         """Calculate the shaped reward for a non-terminal action."""
         previous_value, previous_kind = previous_reward
         current_value, current_kind = self._get_stepwise_reward()
-        if previous_kind != current_kind:
+        pass_type = self.action_set[action].pass_type
+        structural_progress = pass_type in {
+            PassType.SYNTHESIS,
+            PassType.LAYOUT,
+            PassType.ROUTING,
+            PassType.MAPPING,
+        } and any(
+            not previous and current
+            for previous, current in zip(
+                previous_compilation_state,
+                (self._current_synthesized, self._current_laid_out, self._current_routed),
+                strict=True,
+            )
+        )
+        if previous_kind != current_kind or structural_progress:
             return 0.0
 
         delta = current_value - previous_value
         if not isclose(delta, 0.0, abs_tol=1e-12):
             return self.reward_scale * delta
 
-        if self.action_set[action].pass_type in {PassType.OPT, PassType.FINAL_OPT}:
+        if pass_type in {PassType.OPT, PassType.FINAL_OPT}:
             return self.no_effect_penalty
         return 0.0
 
