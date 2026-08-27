@@ -24,7 +24,7 @@ releases may include breaking changes.
   and include measurements in the shared ML feature schema ([#758])
   ([**@flowerthrower**])
 - ✨ Evaluate configurable repeated candidates for stochastic Qiskit RL actions
-  and retain the highest-scoring result ([#757]) ([**@flowerthrower**])
+  and retain the highest-scoring result ([#791]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 - ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and
   use the selected strategy in compilation traces and model artifact names
@@ -108,7 +108,7 @@ for previous changelogs._
 [#784]: https://github.com/munich-quantum-toolkit/predictor/pull/784
 [#785]: https://github.com/munich-quantum-toolkit/predictor/pull/785
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
-[#757]: https://github.com/munich-quantum-toolkit/predictor/pull/757
+[#791]: https://github.com/munich-quantum-toolkit/predictor/pull/791
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
