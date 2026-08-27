@@ -98,6 +98,12 @@ Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
+[project.optional-dependencies]
+gnn = [
+    "torch-geometric>=2.7.0; python_version < '3.14'",
+    "torch-geometric>=2.8.0; python_version >= '3.14'",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mqt"]
 
