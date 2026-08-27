@@ -39,6 +39,8 @@ from bqskit.passes import (
     IfThenElsePass,
     LEAPSynthesisPass,
     ManyQuditGatesPredicate,
+    MGDPass,
+    QSDPass,
     QSearchSynthesisPass,
     RestoreMeasurements,
     SetModelPass,
@@ -308,6 +310,21 @@ def bqskit_synthesis_actions() -> list[Action]:
                 device,
                 IfThenElsePass(DiagonalPredicate(1e-9), WalshDiagonalSynthesisPass()),
             ),
+        ),
+        DeferredDeviceAction(
+            "QSDPass",
+            CompilationOrigin.BQSKIT,
+            PassType.SYNTHESIS,
+            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(
+                device,
+                QSDPass(min_qudit_size=_BQSKIT_BLOCK_SIZE - 1),
+            ),
+        ),
+        DeferredDeviceAction(
+            "MGDPass",
+            CompilationOrigin.BQSKIT,
+            PassType.SYNTHESIS,
+            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, MGDPass()),
         ),
         DeferredDeviceAction(
             "FullQSDPass",
