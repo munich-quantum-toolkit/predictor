@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add opt-in per-pass timeouts for RL training and inference ([#778])
+  ([**@flowerthrower**])
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
   `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and
   `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#759])
@@ -97,6 +99,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#778]: https://github.com/munich-quantum-toolkit/predictor/pull/778
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
