@@ -494,6 +494,8 @@ class PredictorEnv(Env):
 
     def _get_stepwise_reward(self) -> tuple[float, str]:
         """Return the current reward and whether it is exact or approximate."""
+        if self.reward_function == "critical_depth":
+            return self.calculate_reward(), "exact"
         if self.reward_function not in {"expected_fidelity", "estimated_success_probability"}:
             return 0.0, "unavailable"
 
@@ -555,7 +557,7 @@ class PredictorEnv(Env):
                 strict=True,
             )
         )
-        if previous_kind != current_kind or structural_progress:
+        if "unavailable" in {previous_kind, current_kind} or previous_kind != current_kind or structural_progress:
             return 0.0
 
         delta = current_value - previous_value
