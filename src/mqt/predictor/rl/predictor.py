@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
-    from mqt.predictor.rl.gnn import GNNConfig
+    from mqt.predictor.rl.gnn import GNNConfig, GNNObservationWrapper
 
 
 class Predictor:
@@ -113,11 +114,13 @@ class Predictor:
 
             trained_rl_model = load_model(self.model_name, graph=self.graph)
 
+            graph_env: GNNObservationWrapper | None = None
             policy_env = self.env
             if self.graph:
                 from mqt.predictor.rl.gnn import GNNObservationWrapper  # ruff: ignore[import-outside-top-level]
 
-                policy_env = GNNObservationWrapper(self.env, observation_space=trained_rl_model.observation_space)
+                graph_env = GNNObservationWrapper(self.env)
+                policy_env = graph_env
 
             obs, _ = policy_env.reset(qc, seed=0)
 
@@ -126,7 +129,11 @@ class Predictor:
             truncated = False
             while not (terminated or truncated):
                 action_masks = get_action_masks(policy_env)
-                action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+                policy_observation = graph_env.graph_observation if graph_env is not None else obs
+                action, _ = trained_rl_model.predict(
+                    policy_observation,  # ty: ignore[invalid-argument-type]
+                    action_masks=action_masks,
+                )
                 action = int(action)
                 action_item = self.env.action_set[action]
                 used_compilation_passes.append(action_item.name)
@@ -194,19 +201,18 @@ class Predictor:
                 )
 
                 assert self.gnn_config is not None
-                if not test:
-                    n_steps = self.gnn_config.n_steps
-                    n_epochs = self.gnn_config.n_epochs
-                    batch_size = self.gnn_config.batch_size
-                graph_env = GNNObservationWrapper(self.env, self.gnn_config)
+                effective_gnn_config = (
+                    replace(self.gnn_config, n_steps=n_steps, n_epochs=n_epochs, batch_size=batch_size)
+                    if test
+                    else self.gnn_config
+                )
+                n_steps = effective_gnn_config.n_steps
+                graph_env = GNNObservationWrapper(self.env)
                 model = create_gnn_model(
                     graph_env,
-                    self.gnn_config,
+                    effective_gnn_config,
                     verbose=verbose,
                     tensorboard_log=f"./{self.model_name}",
-                    n_steps=n_steps,
-                    batch_size=batch_size,
-                    n_epochs=n_epochs,
                     seed=training_seed,
                 )
             else:
