@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add BQSKit's `QSDPass` and `MGDPass` to the RL synthesis actions ([#795])
+  ([**@flowerthrower**])
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
   `BasicSwap`, `RemoveIdentityEquivalent`, and
   `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#794])
@@ -108,6 +110,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
