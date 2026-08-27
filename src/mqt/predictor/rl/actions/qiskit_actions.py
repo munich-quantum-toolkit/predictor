@@ -467,6 +467,8 @@ def run_qiskit_action(
                 deepcopy(layout) if stochastic_run else layout,
                 input_qubit_count,
             )
+        except TimeoutError:
+            raise
         except Exception:
             if not stochastic_run:
                 raise
@@ -477,6 +479,8 @@ def run_qiskit_action(
 
         try:
             candidate_score = score(altered_qc)
+        except TimeoutError:
+            raise
         except Exception:  # ruff:ignore[blind-except]
             logger.warning("Could not evaluate stochastic action %s; using swap count instead.", action.name)
             candidate_score = -float(altered_qc.count_ops().get("swap", 0))
