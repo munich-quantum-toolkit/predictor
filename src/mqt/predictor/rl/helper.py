@@ -47,14 +47,14 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     Raises:
         RuntimeError: If no quantum circuit could be read from the training circuits folder.
     """
-    file_list = list(path_training_circuits.glob("*.qasm"))
+    file_list = sorted(path_training_circuits.glob("*.qasm"))
 
     path_zip = path_training_circuits / "training_data_compilation.zip"
     if len(file_list) == 0 and path_zip.exists():
         with zipfile.ZipFile(str(path_zip), "r") as zip_ref:
             zip_ref.extractall(path_training_circuits)
 
-        file_list = list(path_training_circuits.glob("*.qasm"))
+        file_list = sorted(path_training_circuits.glob("*.qasm"))
         assert len(file_list) > 0
 
     found_suitable_qc = False
