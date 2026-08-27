@@ -33,7 +33,7 @@ releases may include breaking changes.
 ### Changed
 
 - ✨ Enable configurable intermediate rewards for RL training by default
-  ([#782]) ([**@flowerthrower**])
+  ([#792]) ([**@flowerthrower**])
 - 🐛 Make the `OptimizeCliffords` RL action collect standard Clifford gates
   before optimizing them ([#785]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -109,7 +109,7 @@ for previous changelogs._
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#784]: https://github.com/munich-quantum-toolkit/predictor/pull/784
 [#785]: https://github.com/munich-quantum-toolkit/predictor/pull/785
-[#782]: https://github.com/munich-quantum-toolkit/predictor/pull/782
+[#792]: https://github.com/munich-quantum-toolkit/predictor/pull/792
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#791]: https://github.com/munich-quantum-toolkit/predictor/pull/791
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
