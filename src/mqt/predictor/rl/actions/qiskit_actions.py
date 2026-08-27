@@ -461,7 +461,7 @@ def run_qiskit_action(
             action,
             circuit,
             device,
-            deepcopy(layout),
+            deepcopy(layout) if attempts > 1 else layout,
             input_qubit_count,
         )
         if score is None:
@@ -488,7 +488,6 @@ def _run_qiskit_action_once(
     input_qubit_count: int | None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Run one Qiskit action attempt and update its layout metadata."""
-    # Build the concrete Qiskit pass list for a single attempt.
     if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         factory = cast("Callable[[list[str], CouplingMap | None], list[Task]]", action.transpile_pass)
         passes = factory(device.operation_names, CouplingMap(device.build_coupling_map()) if layout else None)
