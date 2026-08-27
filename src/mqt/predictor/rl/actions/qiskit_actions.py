@@ -50,7 +50,6 @@ from qiskit.transpiler.passes import (
     EnlargeWithAncilla,
     FixedPoint,
     FullAncillaAllocation,
-    GateDirection,
     GatesInBasis,
     InverseCancellation,
     LookaheadSwap,
@@ -350,15 +349,6 @@ def qiskit_routing_actions() -> list[Action]:
                 ],
             ),
         ),
-        DeferredDeviceAction(
-            "GateDirection",
-            CompilationOrigin.QISKIT,
-            PassType.ROUTING,
-            transpile_pass=lambda device: cast(
-                "list[Task]",
-                [GateDirection(coupling_map=CouplingMap(device.build_coupling_map()), target=device)],
-            ),
-        ),
     ]
 
 
@@ -486,15 +476,7 @@ def run_qiskit_action(
     return altered_qc, layout
 
 
-def is_qiskit_action_available(action: Action, circuit: QuantumCircuit, device: Target) -> bool:
+def is_qiskit_action_available(action: Action, device: Target) -> bool:
     """Return whether a Qiskit action is available for the current device."""
-    if action.name == "GateDirection":
-        undirected_edges = {frozenset(edge) for edge in device.build_coupling_map().get_edges()}
-        return all(
-            frozenset(circuit.find_bit(qubit).index for qubit in instruction.qubits) in undirected_edges
-            for instruction in circuit.data
-            if len(instruction.qubits) == 2
-        )
-
     # Only allow VF2PostLayout if "ibm" is in the device name # TODO: Why?
     return action.name != "VF2PostLayout" or "ibm" in device.description
