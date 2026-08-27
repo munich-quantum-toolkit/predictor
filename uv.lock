@@ -1726,7 +1726,7 @@ requires-dist = [
     { name = "pytket-qiskit", marker = "python_full_version >= '3.14'", specifier = ">=0.78" },
     { name = "qiskit", specifier = ">=2.1.1" },
     { name = "rich", specifier = ">=12.6" },
-    { name = "sb3-contrib", specifier = ">=2" },
+    { name = "sb3-contrib", specifier = ">=2.3" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "scikit-learn", marker = "python_full_version >= '3.14'", specifier = ">=1.7.2" },
     { name = "tensorboard", specifier = ">=2.17" },

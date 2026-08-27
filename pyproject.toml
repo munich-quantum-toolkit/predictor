@@ -57,7 +57,7 @@ dependencies = [
   "pytket-qiskit>=0.78; python_version>='3.14'",
   "qiskit>=2.1.1",
   "rich>=12.6",
-  "sb3-contrib>=2",
+  "sb3-contrib>=2.3",
   "scikit-learn>=1.5.1",
   "scikit-learn>=1.7.2; python_version>='3.14'",
   "tensorboard>=2.17",

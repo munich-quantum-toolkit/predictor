@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import import_module
 from math import cos, pi
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
 
 import gymnasium as gym
 import numpy as np
@@ -25,29 +25,59 @@ from qiskit.dagcircuit import DAGOpNode
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import RemoveBarriers
 from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.buffers import MaskableDictRolloutBuffer
 from sb3_contrib.common.maskable.policies import MaskableMultiInputActorCriticPolicy
+from sb3_contrib.common.maskable.utils import get_action_masks, is_masking_supported
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from torch import nn
 
 try:
+    _torch_geometric_data = import_module("torch_geometric.data")
     _torch_geometric_nn = import_module("torch_geometric.nn")
 except ModuleNotFoundError as error:
     msg = "GNN support requires the optional dependencies. Install MQT Predictor with the 'gnn' extra."
     raise ImportError(msg) from error
 
 AttentionalAggregation = _torch_geometric_nn.AttentionalAggregation
+_PyGBatch: Any = _torch_geometric_data.Batch
+_PyGData: Any = _torch_geometric_data.Data
 GraphNorm = _torch_geometric_nn.GraphNorm
 SAGEConv = _torch_geometric_nn.SAGEConv
 
 if TYPE_CHECKING:
+    from collections.abc import Generator, Sequence
     from pathlib import Path
+    from typing import Protocol
 
     from numpy.typing import NDArray
     from qiskit import QuantumCircuit
+    from sb3_contrib.common.maskable.distributions import MaskableDistribution
+    from stable_baselines3.common.buffers import RolloutBuffer
+    from stable_baselines3.common.callbacks import BaseCallback
     from stable_baselines3.common.type_aliases import Schedule
+    from stable_baselines3.common.vec_env import VecEnv, VecNormalize
     from torch.optim import Optimizer
 
     from mqt.predictor.rl.predictorenv import PredictorEnv
+
+    class GraphData(Protocol):
+        """Typed subset of the optional PyG Data API used here."""
+
+        num_nodes: int
+
+        def __getitem__(self, key: str) -> torch.Tensor:
+            """Return a graph tensor by key."""
+            ...
+
+        def to(self, device: torch.device | str) -> Self:
+            """Move the graph tensors to a device."""
+            ...
+
+    class GraphBatch(GraphData, Protocol):
+        """Typed subset of the optional PyG Batch API used here."""
+
+        batch: torch.Tensor
+        num_graphs: int
 
 
 NODE_OPERATION_NAMES = (
@@ -137,17 +167,14 @@ NODE_SCALAR_DIM = NODE_FEATURE_DIM - len(NODE_OPERATION_NAMES)
 _GATE_INDICES = "gate_indices"
 _NODE_SCALARS = "node_scalars"
 _EDGE_INDEX = "edge_index"
-_NUM_NODES = "num_nodes"
-_NUM_EDGES = "num_edges"
 _GLOBAL_FEATURES = "global_features"
+_TERMINAL_GRAPH_OBSERVATION = "_mqt_gnn_terminal_observation"
 
 
 @dataclass(frozen=True, slots=True)
 class GNNConfig:
     """Configuration for the opt-in GNN policy."""
 
-    max_nodes: int = 512
-    max_edges: int = 2048
     hidden_dim: int = 128
     num_conv_wo_resnet: int = 3
     num_resnet_layers: int = 5
@@ -170,9 +197,6 @@ class GNNConfig:
 
     def __post_init__(self) -> None:
         """Validate the configuration."""
-        if self.max_nodes < 1 or self.max_edges < 1:
-            msg = "max_nodes and max_edges must be positive"
-            raise ValueError(msg)
         if self.hidden_dim < 1 or self.num_conv_wo_resnet < 1 or self.num_resnet_layers < 0:
             msg = "hidden_dim and num_conv_wo_resnet must be positive, and num_resnet_layers must be non-negative"
             raise ValueError(msg)
@@ -187,11 +211,9 @@ class GNNConfig:
             raise ValueError(msg)
 
     @classmethod
-    def paper(cls, *, max_nodes: int = 512, max_edges: int = 2048) -> Self:
+    def paper(cls) -> Self:
         """Return the tuned configuration used for the paper model."""
         return cls(
-            max_nodes=max_nodes,
-            max_edges=max_edges,
             hidden_dim=119,
             num_conv_wo_resnet=1,
             num_resnet_layers=5,
@@ -273,101 +295,33 @@ def _observation_scalar(observation: dict[str, Any], name: str) -> float:
 def create_graph_observation(
     qc: QuantumCircuit,
     flat_observation: dict[str, Any],
-    *,
-    max_nodes: int,
-    max_edges: int,
-) -> dict[str, NDArray[np.generic]]:
-    """Pack a circuit graph into the fixed-shape observation consumed by Stable-Baselines3."""
+) -> GraphData:
+    """Create an exact, variable-size graph alongside the regular RL observation."""
     gate_indices, node_scalars, edge_index = _create_sparse_dag(qc)
-    num_nodes = gate_indices.shape[0]
-    num_edges = edge_index.shape[1]
-    if num_nodes > max_nodes or num_edges > max_edges:
-        msg = (
-            f"Circuit graph has {num_nodes} nodes and {num_edges} edges, but the configured GNN capacity is "
-            f"{max_nodes} nodes and {max_edges} edges. Increase GNNConfig.max_nodes or GNNConfig.max_edges."
-        )
-        raise ValueError(msg)
-
-    padded_gate_indices = np.zeros(max_nodes, dtype=np.int32)
-    padded_gate_indices[:num_nodes] = gate_indices
-    padded_node_scalars = np.zeros((max_nodes, NODE_SCALAR_DIM), dtype=np.float32)
-    padded_node_scalars[:num_nodes] = node_scalars
-    padded_edge_index = np.zeros((2, max_edges), dtype=np.int32)
-    padded_edge_index[:, :num_edges] = edge_index
-
     global_features = np.asarray(
         [_observation_scalar(flat_observation, name) for name in GLOBAL_FEATURE_NAMES], dtype=np.float32
     )
     global_features[0] = qc.num_qubits
     global_features[1] = qc.depth()
 
-    return {
-        _GATE_INDICES: padded_gate_indices,
-        _NODE_SCALARS: padded_node_scalars,
-        _EDGE_INDEX: padded_edge_index,
-        _NUM_NODES: np.asarray([num_nodes], dtype=np.int32),
-        _NUM_EDGES: np.asarray([num_edges], dtype=np.int32),
-        _GLOBAL_FEATURES: global_features,
-    }
-
-
-def _graph_observation_space(max_nodes: int, max_edges: int) -> spaces.Dict:
-    return spaces.Dict({
-        _GATE_INDICES: spaces.Box(0, len(NODE_OPERATION_NAMES) - 1, (max_nodes,), dtype=np.int32),
-        _NODE_SCALARS: spaces.Box(-np.inf, np.inf, (max_nodes, NODE_SCALAR_DIM), dtype=np.float32),
-        _EDGE_INDEX: spaces.Box(0, max_nodes - 1, (2, max_edges), dtype=np.int32),
-        _NUM_NODES: spaces.Box(0, max_nodes, (1,), dtype=np.int32),
-        _NUM_EDGES: spaces.Box(0, max_edges, (1,), dtype=np.int32),
-        _GLOBAL_FEATURES: spaces.Box(-np.inf, np.inf, (GLOBAL_FEATURE_DIM,), dtype=np.float32),
-    })
-
-
-def _graph_capacities(observation_space: spaces.Space[Any]) -> tuple[int, int]:
-    if not isinstance(observation_space, spaces.Dict):
-        msg = "The GNN policy requires a dictionary observation space."
-        raise TypeError(msg)
-    try:
-        node_space = observation_space[_NODE_SCALARS]
-        edge_space = observation_space[_EDGE_INDEX]
-        global_space = observation_space[_GLOBAL_FEATURES]
-    except KeyError as error:
-        msg = "The observation space does not contain the required GNN graph fields."
-        raise ValueError(msg) from error
-    if node_space.shape is None or edge_space.shape is None or global_space.shape != (GLOBAL_FEATURE_DIM,):
-        msg = "The observation space contains incompatible GNN graph shapes."
-        raise ValueError(msg)
-    return node_space.shape[0], edge_space.shape[1]
+    return cast(
+        "GraphData",
+        _PyGData(
+            gate_indices=torch.as_tensor(gate_indices, dtype=torch.long),
+            node_scalars=torch.as_tensor(node_scalars, dtype=torch.float32),
+            edge_index=torch.as_tensor(edge_index, dtype=torch.long),
+            global_features=torch.as_tensor(global_features, dtype=torch.float32).reshape(1, -1),
+            num_nodes=gate_indices.shape[0],
+        ),
+    )
 
 
 class GNNObservationWrapper(gym.Wrapper):
-    """Adapt the flat predictor observation to a sparse, fixed-capacity graph observation."""
+    """Maintain a variable-size graph sidecar while preserving the regular RL interface."""
 
-    def __init__(
-        self,
-        env: PredictorEnv,
-        config: GNNConfig | None = None,
-        *,
-        observation_space: spaces.Space[Any] | None = None,
-    ) -> None:
-        """Initialize the graph observation wrapper."""
-        super().__init__(env)
-        if observation_space is None:
-            if config is None:
-                msg = "A GNN configuration is required when no saved observation space is provided."
-                raise ValueError(msg)
-            observation_space = _graph_observation_space(config.max_nodes, config.max_edges)
-        self.max_nodes, self.max_edges = _graph_capacities(observation_space)
-        self.observation_space = cast("spaces.Dict", observation_space)
-
-    def observation(self, observation: dict[str, Any]) -> dict[str, NDArray[np.generic]]:
-        """Convert a flat observation and its circuit state to the graph representation."""
+    def _update_graph_observation(self, observation: dict[str, Any]) -> None:
         predictor_env = cast("PredictorEnv", self.unwrapped)
-        return create_graph_observation(
-            predictor_env.state,
-            observation,
-            max_nodes=self.max_nodes,
-            max_edges=self.max_edges,
-        )
+        self.graph_observation = create_graph_observation(predictor_env.state, observation)
 
     def reset(
         self,
@@ -375,15 +329,19 @@ class GNNObservationWrapper(gym.Wrapper):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[dict[str, NDArray[np.generic]], dict[str, Any]]:
-        """Reset the underlying predictor and return a graph observation."""
+        """Reset the predictor and refresh the graph sidecar."""
         predictor_env = cast("PredictorEnv", self.unwrapped)
         observation, info = predictor_env.reset(qc, seed=seed, options=options)
-        return self.observation(observation), info
+        self._update_graph_observation(observation)
+        return observation, info
 
-    def step(self, action: Any) -> tuple[dict[str, NDArray[np.generic]], float, bool, bool, dict[str, Any]]:
-        """Step the underlying predictor and return a graph observation."""
+    def step(self, action: int) -> tuple[dict[str, NDArray[np.generic]], float, bool, bool, dict[str, Any]]:
+        """Step the predictor and refresh the graph sidecar."""
         observation, reward, terminated, truncated, info = self.env.step(action)
-        return self.observation(observation), float(reward), terminated, truncated, info
+        self._update_graph_observation(observation)
+        if truncated and not terminated:
+            info[_TERMINAL_GRAPH_OBSERVATION] = self.graph_observation
+        return observation, float(reward), terminated, truncated, info
 
     def action_masks(self) -> list[bool]:
         """Forward the action mask required by MaskablePPO."""
@@ -458,7 +416,6 @@ class GNNFeaturesExtractor(BaseFeaturesExtractor):
         bidirectional: bool = True,
     ) -> None:
         """Initialize the GNN feature extractor."""
-        _graph_capacities(observation_space)
         super().__init__(observation_space, features_dim=hidden_dim)
         self.encoder = GraphSAGEEncoder(
             hidden_dim,
@@ -478,32 +435,99 @@ class GNNFeaturesExtractor(BaseFeaturesExtractor):
             nn.Dropout(dropout_p),
         )
 
-    @staticmethod
-    def _batch_graphs(observations: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        batch_size = observations[_GLOBAL_FEATURES].shape[0]
-        node_features: list[torch.Tensor] = []
-        edge_indices: list[torch.Tensor] = []
-        batches: list[torch.Tensor] = []
-        node_offset = 0
-        for graph_index in range(batch_size):
-            num_nodes = int(observations[_NUM_NODES][graph_index].reshape(-1)[0].item())
-            num_edges = int(observations[_NUM_EDGES][graph_index].reshape(-1)[0].item())
-            gate_indices = observations[_GATE_INDICES][graph_index, :num_nodes].long()
-            scalars = observations[_NODE_SCALARS][graph_index, :num_nodes]
-            one_hot = functional.one_hot(gate_indices, num_classes=len(NODE_OPERATION_NAMES)).to(scalars.dtype)
-            node_features.append(torch.cat((one_hot, scalars), dim=1))
-            edge_indices.append(observations[_EDGE_INDEX][graph_index, :, :num_edges].long() + node_offset)
-            batches.append(torch.full((num_nodes,), graph_index, dtype=torch.long, device=scalars.device))
-            node_offset += num_nodes
-
-        return torch.cat(node_features), torch.cat(edge_indices, dim=1), torch.cat(batches)
-
-    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, observations: GraphBatch) -> torch.Tensor:
         """Extract a shared latent feature vector for the actor and critic."""
-        node_features, edge_index, batch = self._batch_graphs(observations)
+        gate_indices = observations[_GATE_INDICES]
+        node_scalars = observations[_NODE_SCALARS]
+        edge_index = observations[_EDGE_INDEX]
+        batch = observations.batch
         global_features = observations[_GLOBAL_FEATURES].reshape(-1, GLOBAL_FEATURE_DIM)
-        graph_embedding = self.encoder(node_features, edge_index, batch, global_features.shape[0])
+        one_hot = functional.one_hot(gate_indices, num_classes=len(NODE_OPERATION_NAMES)).to(node_scalars.dtype)
+        node_features = torch.cat((one_hot, node_scalars), dim=1)
+        graph_embedding = self.encoder(node_features, edge_index, batch, observations.num_graphs)
         return self.trunk(torch.cat((graph_embedding, global_features), dim=1))
+
+
+class GNNMaskableDictRolloutBufferSamples(NamedTuple):
+    """A MaskablePPO minibatch with a variable-size graph batch."""
+
+    observations: GraphBatch
+    actions: torch.Tensor
+    old_values: torch.Tensor
+    old_log_prob: torch.Tensor
+    advantages: torch.Tensor
+    returns: torch.Tensor
+    action_masks: torch.Tensor
+
+
+class GNNMaskableDictRolloutBuffer(MaskableDictRolloutBuffer):
+    """Store graph sidecars while retaining MaskablePPO's numeric rollout data and GAE."""
+
+    graph_observations: NDArray[np.object_]
+
+    def reset(self) -> None:
+        """Reset both the standard rollout data and graph sidecars."""
+        self.graph_observations = np.empty((self.buffer_size, self.n_envs), dtype=object)
+        super().reset()
+
+    def add(  # ty: ignore[invalid-method-override]
+        self,
+        obs: dict[str, NDArray[np.generic]],
+        action: NDArray[np.generic],
+        reward: NDArray[np.generic],
+        episode_start: NDArray[np.generic],
+        value: torch.Tensor,
+        log_prob: torch.Tensor,
+        *,
+        action_masks: NDArray[np.generic] | None = None,
+        graph_observations: Sequence[GraphData] | None = None,
+    ) -> None:
+        """Add one vectorized transition and its graph sidecars."""
+        if graph_observations is None:
+            msg = "GNN rollouts require graph observations."
+            raise ValueError(msg)
+        if len(graph_observations) != self.n_envs:
+            msg = f"Expected {self.n_envs} graph observations, got {len(graph_observations)}."
+            raise ValueError(msg)
+        self.graph_observations[self.pos] = graph_observations
+        super().add(obs, action, reward, episode_start, value, log_prob, action_masks=action_masks)
+
+    def get(  # ty: ignore[invalid-method-override]
+        self, batch_size: int | None = None
+    ) -> Generator[GNNMaskableDictRolloutBufferSamples, None, None]:
+        """Yield shuffled minibatches with PyG's exact ragged batching."""
+        assert self.full
+        indices = np.random.permutation(self.buffer_size * self.n_envs)  # ruff: ignore[numpy-legacy-random]
+        if not self.generator_ready:
+            self.graph_observations = self.swap_and_flatten(self.graph_observations).reshape(-1)
+            for tensor_name in ("actions", "values", "log_probs", "advantages", "returns", "action_masks"):
+                self.__dict__[tensor_name] = self.swap_and_flatten(self.__dict__[tensor_name])
+            self.generator_ready = True
+
+        if batch_size is None:
+            batch_size = self.buffer_size * self.n_envs
+
+        start_index = 0
+        while start_index < self.buffer_size * self.n_envs:
+            yield self._get_samples(indices[start_index : start_index + batch_size])
+            start_index += batch_size
+
+    def _get_samples(  # ty: ignore[invalid-method-override]
+        self,
+        batch_inds: NDArray[np.int64],
+        _env: VecNormalize | None = None,
+    ) -> GNNMaskableDictRolloutBufferSamples:
+        graphs = [cast("GraphData", self.graph_observations[index]) for index in batch_inds]
+        observations = cast("GraphBatch", _PyGBatch.from_data_list(graphs).to(self.device))
+        return GNNMaskableDictRolloutBufferSamples(
+            observations=observations,
+            actions=self.to_torch(self.actions[batch_inds]),
+            old_values=self.to_torch(self.values[batch_inds].flatten()),
+            old_log_prob=self.to_torch(self.log_probs[batch_inds].flatten()),
+            advantages=self.to_torch(self.advantages[batch_inds].flatten()),
+            returns=self.to_torch(self.returns[batch_inds].flatten()),
+            action_masks=self.to_torch(self.action_masks[batch_inds].reshape(-1, self.mask_dims)),
+        )
 
 
 class GNNMaskableMultiInputActorCriticPolicy(MaskableMultiInputActorCriticPolicy):
@@ -516,11 +540,58 @@ class GNNMaskableMultiInputActorCriticPolicy(MaskableMultiInputActorCriticPolicy
         lr_schedule: Schedule,
         *,
         gnn_learning_rate: float,
-        **kwargs: Any,
+        **kwargs: Any,  # ruff: ignore[any-type]
     ) -> None:
         """Initialize the maskable GNN policy."""
         self.gnn_learning_rate = gnn_learning_rate
         super().__init__(observation_space, action_space, lr_schedule, **kwargs)
+
+    def obs_to_tensor(  # ty: ignore[invalid-method-override]
+        self,
+        observation: GraphData | GraphBatch | Sequence[GraphData],
+    ) -> tuple[GraphBatch, bool]:
+        """Move one graph or an exact ragged graph batch to the policy device."""
+        if isinstance(observation, _PyGBatch):
+            batch = observation
+            vectorized = True
+        elif isinstance(observation, _PyGData):
+            batch = _PyGBatch.from_data_list([observation])
+            vectorized = False
+        else:
+            batch = _PyGBatch.from_data_list(list(observation))
+            vectorized = True
+        return cast("GraphBatch", batch.to(self.device)), vectorized
+
+    def extract_features(  # ty: ignore[invalid-method-override]
+        self,
+        obs: GraphBatch,
+        features_extractor: BaseFeaturesExtractor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Apply the GNN extractor directly, without SB3's fixed-shape preprocessing."""
+        if features_extractor is not None:
+            return features_extractor(obs)
+        if self.share_features_extractor:
+            return self.features_extractor(obs)
+        return self.pi_features_extractor(obs), self.vf_features_extractor(obs)
+
+    def get_distribution(  # ty: ignore[invalid-method-override]
+        self,
+        obs: GraphBatch,
+        action_masks: NDArray[np.bool_] | None = None,
+    ) -> MaskableDistribution:
+        """Return the masked action distribution for a graph batch."""
+        features = cast("torch.Tensor", self.extract_features(obs, self.pi_features_extractor))
+        latent_pi = self.mlp_extractor.forward_actor(features)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        if action_masks is not None:
+            distribution.apply_masking(action_masks)
+        return distribution
+
+    def predict_values(self, obs: GraphBatch) -> torch.Tensor:  # ty: ignore[invalid-method-override]
+        """Estimate values for a graph batch."""
+        features = cast("torch.Tensor", self.extract_features(obs, self.vf_features_extractor))
+        latent_vf = self.mlp_extractor.forward_critic(features)
+        return self.value_net(latent_vf)
 
     def _build(self, lr_schedule: Schedule) -> None:
         super()._build(lr_schedule)
@@ -550,6 +621,90 @@ class GNNMaskableMultiInputActorCriticPolicy(MaskableMultiInputActorCriticPolicy
 class GNNMaskablePPO(MaskablePPO):
     """MaskablePPO variant that retains the encoder-to-policy learning-rate ratio."""
 
+    def collect_rollouts(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: RolloutBuffer,
+        n_rollout_steps: int,
+        use_masking: bool = True,
+    ) -> bool:
+        """Collect rollouts with graph sidecars while retaining MaskablePPO's rollout logic."""
+        assert isinstance(rollout_buffer, GNNMaskableDictRolloutBuffer)
+        assert self._last_obs is not None
+        policy = cast("GNNMaskableMultiInputActorCriticPolicy", self.policy)
+        policy.set_training_mode(False)
+        n_steps = 0
+        action_masks = None
+        rollout_buffer.reset()
+
+        if use_masking and not is_masking_supported(env):
+            msg = "Environment does not support action masking. Consider using ActionMasker wrapper."
+            raise ValueError(msg)
+
+        graph_observations = cast("list[GraphData]", env.get_attr("graph_observation"))
+        callback.on_rollout_start()
+
+        while n_steps < n_rollout_steps:
+            with torch.no_grad():
+                obs_tensor, _ = policy.obs_to_tensor(graph_observations)
+                if use_masking:
+                    action_masks = get_action_masks(env)
+                actions, values, log_probs = policy(obs_tensor, action_masks=action_masks)
+
+            actions = actions.cpu().numpy()
+            new_obs, rewards, dones, infos = env.step(actions)
+            terminal_graph_observations = [info.pop(_TERMINAL_GRAPH_OBSERVATION, None) for info in infos]
+            new_graph_observations = cast("list[GraphData]", env.get_attr("graph_observation"))
+
+            self.num_timesteps += env.num_envs
+            callback.update_locals(locals())
+            if not callback.on_step():
+                return False
+
+            self._update_info_buffer(infos, dones)
+            n_steps += 1
+
+            if isinstance(self.action_space, spaces.Discrete):
+                actions = actions.reshape(-1, 1)
+
+            for index, done in enumerate(dones):
+                if (
+                    done
+                    and infos[index].get("terminal_observation") is not None
+                    and infos[index].get("TimeLimit.truncated", False)
+                ):
+                    terminal_graph_observation = terminal_graph_observations[index]
+                    if terminal_graph_observation is None:
+                        msg = "The GNN environment did not provide the graph for a truncated episode."
+                        raise RuntimeError(msg)
+                    terminal_obs, _ = policy.obs_to_tensor(cast("GraphData", terminal_graph_observation))
+                    with torch.no_grad():
+                        terminal_value = policy.predict_values(terminal_obs)[0]
+                    rewards[index] += self.gamma * float(terminal_value.item())
+
+            rollout_buffer.add(
+                cast("dict[str, NDArray[np.generic]]", self._last_obs),
+                actions,
+                rewards,
+                cast("NDArray[np.generic]", self._last_episode_starts),
+                values,
+                log_probs,
+                action_masks=action_masks,
+                graph_observations=graph_observations,
+            )
+            self._last_obs = new_obs
+            self._last_episode_starts = dones
+            graph_observations = new_graph_observations
+
+        with torch.no_grad():
+            final_obs, _ = policy.obs_to_tensor(graph_observations)
+            values = policy.predict_values(final_obs)
+
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+        callback.on_rollout_end()
+        return True
+
     def _update_learning_rate(self, optimizers: list[Optimizer] | Optimizer) -> None:
         current_learning_rate = self.lr_schedule(self._current_progress_remaining)
         self.logger.record("train/learning_rate", current_learning_rate)
@@ -574,9 +729,6 @@ def create_gnn_model(
     *,
     verbose: int,
     tensorboard_log: str,
-    n_steps: int,
-    batch_size: int,
-    n_epochs: int,
     seed: int | None,
 ) -> GNNMaskablePPO:
     """Create the GNN policy on top of the existing MaskablePPO implementation."""
@@ -584,9 +736,9 @@ def create_gnn_model(
         GNNMaskableMultiInputActorCriticPolicy,
         env,
         learning_rate=_cosine_schedule(config.learning_rate, config.minimum_learning_rate_factor),
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs,
+        n_steps=config.n_steps,
+        batch_size=config.batch_size,
+        n_epochs=config.n_epochs,
         gamma=config.gamma,
         gae_lambda=config.gae_lambda,
         clip_range=config.clip_range,
@@ -598,6 +750,7 @@ def create_gnn_model(
         verbose=verbose,
         tensorboard_log=tensorboard_log,
         seed=seed,
+        rollout_buffer_class=GNNMaskableDictRolloutBuffer,
         policy_kwargs={
             "features_extractor_class": GNNFeaturesExtractor,
             "features_extractor_kwargs": {
