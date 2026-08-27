@@ -209,7 +209,7 @@ class CompilationTracer:
         reward: float,
         current_qc: QuantumCircuit,
         figures_of_merit: FigureOfMeritMetrics,
-        features: dict[str, NDArray[np.float32]],
+        features: dict[str, int | NDArray[np.float32]],
         synthesized: bool,
         laid_out: bool,
         routed: bool,
@@ -337,6 +337,8 @@ class CompilationTracer:
         )
 
     @staticmethod
-    def _extract_float(val: NDArray[np.float32]) -> float:
-        """Extract a float from a one-element feature array."""
+    def _extract_float(val: int | NDArray[np.float32]) -> float:
+        """Extract a float from a scalar or one-element feature array."""
+        if isinstance(val, int):
+            return float(val)
         return float(val.item())

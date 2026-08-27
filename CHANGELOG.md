@@ -12,9 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Expand and compact the RL observation with normalized OpenQASM operation
-  frequencies and one-element `float32` qubit-count and depth arrays, and
-  include measurements in the shared ML feature schema ([#758])
+- ✨ Expand the RL observation with normalized OpenQASM operation frequencies
+  and include measurements in the shared ML feature schema ([#758])
   ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 - ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and

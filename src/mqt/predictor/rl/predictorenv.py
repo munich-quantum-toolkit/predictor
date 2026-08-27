@@ -183,8 +183,8 @@ class PredictorEnv(Env):
             operation: Box(low=0, high=1, shape=(1,), dtype=np.float32) for operation in OBSERVATION_OPERATIONS
         }
         spaces: dict[str, Space] = {
-            "num_qubits": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            "num_qubits": Discrete(128),
+            "depth": Discrete(1000000),
             **operation_spaces,
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "critical_depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
@@ -297,7 +297,7 @@ class PredictorEnv(Env):
             action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
-            obs = create_feature_dict(self.state, self.device.num_qubits)
+            obs = create_feature_dict(self.state)
 
             # Trace the error before aborting
             self._collect_tracer_data(
@@ -337,7 +337,7 @@ class PredictorEnv(Env):
             reward_val = 0
             done = False
 
-        obs = create_feature_dict(self.state, self.device.num_qubits)
+        obs = create_feature_dict(self.state)
 
         # Trace+truncate if step limit is reached
         if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
@@ -447,7 +447,7 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
-        obs = create_feature_dict(self.state, self.device.num_qubits)
+        obs = create_feature_dict(self.state)
 
         # Setup tracer for the new episode
         if self.tracer_output_path is not None:

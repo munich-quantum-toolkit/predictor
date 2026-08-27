@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import logging
-from math import log1p
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,7 +28,6 @@ from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
 
-MAX_CIRCUIT_DEPTH = 999_999
 OBSERVATION_OPERATIONS = tuple(get_openqasm_gates())
 
 
@@ -74,13 +72,11 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
-def create_feature_dict(qc: QuantumCircuit, max_num_qubits: int) -> dict[str, NDArray[np.float32]]:
+def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
     """Create a normalized feature dictionary for a quantum circuit."""
     operation_counts = dict(qc.count_ops())
     total_operations = sum(value for gate, value in operation_counts.items() if gate != "barrier")
-    normalized_num_qubits = min(qc.num_qubits, max_num_qubits) / max_num_qubits
-    normalized_depth = log1p(min(qc.depth(), MAX_CIRCUIT_DEPTH)) / log1p(MAX_CIRCUIT_DEPTH)
-    feature_dict = {
+    feature_dict: dict[str, int | NDArray[np.float32]] = {
         **{
             operation: np.array(
                 [operation_counts.get(operation, 0) / total_operations if total_operations else 0.0],
@@ -88,8 +84,8 @@ def create_feature_dict(qc: QuantumCircuit, max_num_qubits: int) -> dict[str, ND
             )
             for operation in OBSERVATION_OPERATIONS
         },
-        "num_qubits": np.array([normalized_num_qubits], dtype=np.float32),
-        "depth": np.array([normalized_depth], dtype=np.float32),
+        "num_qubits": qc.num_qubits,
+        "depth": qc.depth(),
     }
 
     supermarq_features = calc_supermarq_features(qc)

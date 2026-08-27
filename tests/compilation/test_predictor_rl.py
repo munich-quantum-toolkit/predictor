@@ -50,8 +50,8 @@ def test_predictor_env_reset_from_string() -> None:
         dump(qc, f)
     observation, _ = predictor.env.reset(qc=qasm_path)
 
-    assert observation == create_feature_dict(qc, device.num_qubits)
-    assert observation["num_qubits"][0] == pytest.approx(qc.num_qubits / device.num_qubits)
+    assert observation == create_feature_dict(qc)
+    assert observation["num_qubits"] == qc.num_qubits
 
 
 def test_predictor_env_esp_error() -> None:
