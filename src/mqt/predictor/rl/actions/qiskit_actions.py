@@ -352,18 +352,25 @@ def run_qiskit_action(
     Stochastic actions are evaluated repeatedly when a score function is
     supplied. The highest-scoring result is retained together with its layout.
     """
-    attempts = stochastic_action_trials if action.stochastic and score is not None else 1
+    stochastic_run = action.stochastic and score is not None
+    attempts = stochastic_action_trials if stochastic_run else 1
     best_result: tuple[QuantumCircuit, TranspileLayout | None] | None = None
     best_score: float | None = None
 
-    for _ in range(max(1, attempts)):
-        altered_qc, candidate_layout = _run_qiskit_action_once(
-            action,
-            circuit,
-            device,
-            deepcopy(layout) if attempts > 1 else layout,
-            input_qubit_count,
-        )
+    for attempt in range(max(1, attempts)):
+        try:
+            altered_qc, candidate_layout = _run_qiskit_action_once(
+                action,
+                circuit,
+                device,
+                deepcopy(layout) if stochastic_run else layout,
+                input_qubit_count,
+            )
+        except Exception:
+            if not stochastic_run:
+                raise
+            logger.exception("Stochastic action %s failed on attempt %d.", action.name, attempt + 1)
+            continue
         if score is None:
             return altered_qc, candidate_layout
 
@@ -376,8 +383,10 @@ def run_qiskit_action(
             best_result = altered_qc, candidate_layout
             best_score = candidate_score
 
-    assert best_result is not None
-    return best_result
+    if best_result is not None:
+        return best_result
+    logger.error("All attempts for stochastic action %s failed.", action.name)
+    return circuit, layout
 
 
 def _run_qiskit_action_once(
