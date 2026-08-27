@@ -112,7 +112,7 @@ class Predictor:
                 self.env.tracer_output_path = tracer_output_path
             self.env.pass_timeout = pass_timeout
 
-            trained_rl_model = load_model(self.model_name, graph=self.graph)
+            trained_rl_model = load_model(self.model_name, graph=True) if self.graph else load_model(self.model_name)
 
             graph_env: GNNObservationWrapper | None = None
             policy_env = self.env
