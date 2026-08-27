@@ -35,7 +35,7 @@ releases may include breaking changes.
 ### Changed
 
 - ✨ Enable configurable intermediate rewards for RL training by default
-  ([#760]) ([**@flowerthrower**])
+  ([#799]) ([**@flowerthrower**])
 - 🐛 Restore nondeterministic RL circuit sampling without a seed and make
   explicitly seeded sampling and randomized Qiskit actions reproducible ([#797])
   ([**@flowerthrower**])
@@ -118,7 +118,7 @@ for previous changelogs._
 [#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
-[#760]: https://github.com/munich-quantum-toolkit/predictor/pull/760
+[#799]: https://github.com/munich-quantum-toolkit/predictor/pull/799
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
