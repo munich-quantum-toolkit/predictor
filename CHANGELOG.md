@@ -14,7 +14,7 @@ releases may include breaking changes.
 
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
   `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and
-  `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#759])
+  `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#785])
   ([**@flowerthrower**])
 - ✨ Encode the RL qubit-count and depth observations as normalized
   one-element `float32` arrays ([#784]) ([**@flowerthrower**])
@@ -29,7 +29,7 @@ releases may include breaking changes.
 ### Changed
 
 - 🐛 Make the `OptimizeCliffords` RL action collect standard Clifford gates
-  before optimizing them ([#759]) ([**@flowerthrower**])
+  before optimizing them ([#785]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
@@ -101,7 +101,7 @@ for previous changelogs._
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#784]: https://github.com/munich-quantum-toolkit/predictor/pull/784
-[#759]: https://github.com/munich-quantum-toolkit/predictor/pull/759
+[#785]: https://github.com/munich-quantum-toolkit/predictor/pull/785
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
