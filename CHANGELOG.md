@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add TKET's `KAKDecomposition`, `GraphPlacement`, and `NoiseAwarePlacement`
+  passes to the RL actions ([#796]) ([**@flowerthrower**])
 - ✨ Add BQSKit's `QSDPass` to the RL synthesis actions ([#795])
   ([**@flowerthrower**])
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
@@ -30,6 +32,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🐛 Mask TKET layout and routing actions for circuits containing operations
+  wider than two qubits ([#796]) ([**@flowerthrower**])
 - 🐛 Make the `OptimizeCliffords` RL action collect standard Clifford gates
   before optimizing them ([#794]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -102,6 +106,7 @@ for previous changelogs._
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758

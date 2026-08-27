@@ -6,6 +6,17 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Expanded TKET action set
+
+The RL action space now includes TKET's `KAKDecomposition` optimization action
+and the `GraphPlacement` and `NoiseAwarePlacement` layout actions. TKET layout
+and routing actions are masked while a circuit contains operations on more than
+two qubits; those operations must be decomposed first.
+
+Existing RL models must be retrained because the action-space size and the
+indices of later actions have changed. Code that persists or selects actions by
+numeric index must be updated.
+
 ### Expanded Qiskit action set
 
 The RL action space now includes the following Qiskit passes:
