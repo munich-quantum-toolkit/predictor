@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add opt-in per-pass timeouts for RL training and inference ([#778])
+  ([**@flowerthrower**])
 - ✨ Add TKET's `KAKDecomposition`, `GraphPlacement`, and `NoiseAwarePlacement`
   passes to the RL actions ([#796]) ([**@flowerthrower**])
 - ✨ Add BQSKit's `QSDPass` to the RL synthesis actions ([#795])
@@ -107,6 +109,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#778]: https://github.com/munich-quantum-toolkit/predictor/pull/778
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#797]: https://github.com/munich-quantum-toolkit/predictor/pull/797
