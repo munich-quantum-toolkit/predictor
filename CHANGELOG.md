@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
-  `BasicSwap`, `LookaheadSwap`, `GateDirection`, `RemoveIdentityEquivalent`, and
+  `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and
   `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#759])
   ([**@flowerthrower**])
 - ✨ Expand and compact the RL observation with normalized OpenQASM operation
