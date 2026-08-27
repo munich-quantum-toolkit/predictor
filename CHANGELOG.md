@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Encode the RL qubit-count and depth observations as normalized
-  one-element `float32` arrays ([#784]) ([**@flowerthrower**])
+- ✨ Encode the RL qubit-count and depth observations as normalized one-element
+  `float32` arrays ([#784]) ([**@flowerthrower**])
 - ✨ Expand the RL observation with normalized OpenQASM operation frequencies
   and include measurements in the shared ML feature schema ([#758])
   ([**@flowerthrower**])
