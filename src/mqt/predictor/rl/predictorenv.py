@@ -186,7 +186,6 @@ class PredictorEnv(Env):
         self.layout: TranspileLayout | None = None
 
         self.has_parameterized_gates = False
-        self.rng = np.random.default_rng(10)
 
         operation_spaces = {
             operation: Box(low=0, high=1, shape=(1,), dtype=np.float32) for operation in OBSERVATION_OPERATIONS
@@ -428,7 +427,11 @@ class PredictorEnv(Env):
             self.filename = str(qc)
             current_circuit_name = Path(str(qc)).stem
         else:
-            self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
+            self.state, self.filename = get_state_sample(
+                self.device.num_qubits,
+                self.path_training_circuits,
+                self.np_random,
+            )
             current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
