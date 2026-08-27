@@ -6,15 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### RL observation features
+### Compact scalar RL observations
 
-The RL observation now includes normalized frequencies for supported OpenQASM
-gates and measurements. The `num_qubits` and `depth` entries are now one-element
+The `num_qubits` and `depth` entries in RL observations are now one-element
 `float32` arrays in `[0, 1]` instead of discrete integers. The qubit count is
 linearly scaled by the target device's qubit count; the depth is `log1p`-scaled
 and capped at 999,999. Existing RL models must be retrained, and code that
-consumes `PredictorEnv` observations directly must handle the expanded schema
-and array values.
+consumes `PredictorEnv` observations directly must handle the new array values.
+
+### RL operation features
+
+The RL observation now includes normalized frequencies for supported OpenQASM
+gates and measurements. Existing RL models must be retrained, and code that
+consumes `PredictorEnv` observations directly must handle the additional keys.
 
 ### End of support for Python 3.10
 
