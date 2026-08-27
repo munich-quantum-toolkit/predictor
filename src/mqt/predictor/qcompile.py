@@ -27,6 +27,7 @@ def qcompile(
     qc: QuantumCircuit,
     figure_of_merit: figure_of_merit = "expected_fidelity",
     tracer_output_path: str | Path | None = None,
+    pass_timeout: float | None = None,
 ) -> tuple[QuantumCircuit, list[str], str]:
     """Compiles a given quantum circuit to a device with the highest predicted figure of merit.
 
@@ -34,12 +35,21 @@ def qcompile(
         qc: The quantum circuit to be compiled.
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         tracer_output_path: If provided, enables compiler tracing and exports the JSON log to this path/directory.
+        pass_timeout: Maximum duration in seconds for one compilation pass.
+            Defaults to None, which disables pass timeouts.
 
     Returns:
         A tuple containing the compiled quantum circuit, the compilation information, and the name of the device used for compilation.
+
+    Raises:
+        ValueError: If ``pass_timeout`` is not positive.
     """
     predicted_device = predict_device_for_figure_of_merit(qc, figure_of_merit=figure_of_merit)
     res = rl_compile(
-        qc, device=predicted_device, figure_of_merit=figure_of_merit, tracer_output_path=tracer_output_path
+        qc,
+        device=predicted_device,
+        figure_of_merit=figure_of_merit,
+        tracer_output_path=tracer_output_path,
+        pass_timeout=pass_timeout,
     )
     return *res, predicted_device
