@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import operator
+from collections import defaultdict
 from functools import cache
 from typing import TYPE_CHECKING, cast
 
@@ -64,24 +65,28 @@ class PreProcessTKETRoutingAfterQiskitLayout:
 @cache
 def _prepare_noise_data(device: Target) -> tuple[dict[Node, float], dict[tuple[Node, Node], float], dict[Node, float]]:
     """Extract calibration errors for TKET's noise-aware placement."""
-    node_errors: dict[Node, float] = {}
-    link_errors: dict[tuple[Node, Node], float] = {}
+    node_error_samples: defaultdict[Node, list[float]] = defaultdict(list)
+    link_error_samples: defaultdict[tuple[Node, Node], list[float]] = defaultdict(list)
     readout_errors: dict[Node, float] = {}
 
     for operation_name in device.operation_names:
+        if operation_name == "measure":
+            continue
         for qubits, properties in device[operation_name].items():
             if qubits is None or properties is None or properties.error is None:
                 continue
             if len(qubits) == 1:
-                node_errors[Node(qubits[0])] = properties.error
+                node_error_samples[Node(qubits[0])].append(properties.error)
             elif len(qubits) == 2:
-                link_errors[Node(qubits[0]), Node(qubits[1])] = properties.error
+                link_error_samples[Node(qubits[0]), Node(qubits[1])].append(properties.error)
 
     if "measure" in device:
         for qubits, properties in device["measure"].items():
             if qubits is not None and len(qubits) == 1 and properties is not None and properties.error is not None:
                 readout_errors[Node(qubits[0])] = properties.error
 
+    node_errors = {node: sum(errors) / len(errors) for node, errors in node_error_samples.items()}
+    link_errors = {link: sum(errors) / len(errors) for link, errors in link_error_samples.items()}
     return node_errors, link_errors, readout_errors
 
 
@@ -266,8 +271,8 @@ def run_tket_action(
         passes = cast("list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout | Placement]", action.transpile_pass)
 
     if action.pass_type == PassType.LAYOUT:
-        if not passes or not isinstance(passes[0], Placement):
-            msg = f"TKET layout action {action.name} did not provide a placement pass."
+        if len(passes) != 1 or not isinstance(passes[0], Placement):
+            msg = f"TKET layout action {action.name} must provide exactly one placement."
             raise TypeError(msg)
         try:
             placement = passes[0].get_placement_map(tket_qc)

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
+from pytket.architecture import Architecture
+from pytket.placement import Placement
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
@@ -326,6 +328,30 @@ def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError, match=re.escape("Action with name test_action already registered.")):
         register_action(action)
+
+
+def test_registered_tket_layout_action_requires_exactly_one_placement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Registered TKET layout actions reject ambiguous placement payloads."""
+    actions_registry = vars(actions_registry_module)
+    monkeypatch.setitem(actions_registry, "_ACTIONS", actions_registry["_ACTIONS"].copy())
+    device = get_device("ibm_falcon_27")
+    placement = Placement(Architecture(list(device.build_coupling_map())))
+    action = DeviceIndependentAction(
+        name="AmbiguousTKETPlacement",
+        pass_type=PassType.LAYOUT,
+        transpile_pass=[placement, placement],
+        origin=CompilationOrigin.TKET,
+    )
+    register_action(action)
+    env = predictorenv_module.PredictorEnv(device=device)
+    env.reset(QuantumCircuit(2))
+    action_index = next(index for index, registered in env.action_set.items() if registered is action)
+
+    with pytest.raises(
+        TypeError,
+        match=re.escape("TKET layout action AmbiguousTKETPlacement must provide exactly one placement."),
+    ):
+        env.apply_action(action_index)
 
 
 @pytest.mark.model_training
