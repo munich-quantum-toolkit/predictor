@@ -11,15 +11,17 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
 
 import pytest
 from bqskit.compiler.passdata import PassData
 from bqskit.ir.gates import MPRYGate, MPRZGate, VariableUnitaryGate
 from mqt.bench.targets import get_device
+from pytket.circuit import Node
 from qiskit import QuantumCircuit
-from qiskit.circuit import StandardEquivalenceLibrary
-from qiskit.transpiler import PassManager, TranspileLayout
+from qiskit.circuit import Measure, StandardEquivalenceLibrary
+from qiskit.circuit.library import CXGate, CZGate, SXGate, XGate
+from qiskit.quantum_info import Operator
+from qiskit.transpiler import InstructionProperties, PassManager, Target, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
@@ -29,11 +31,8 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_actions
+from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_actions, tket_actions
 from mqt.predictor.rl.predictorenv import PredictorEnv
-
-if TYPE_CHECKING:
-    from qiskit.transpiler import Target
 
 
 def _setup_env(env: PredictorEnv, circuit: QuantumCircuit, layout: TranspileLayout | None, n_qubits: int) -> None:
@@ -145,6 +144,59 @@ def test_qsd_unitary_synthesis_pass_applies_one_qsd_level(simple_circuit: Quantu
     assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRYGate)) == 1
 
 
+def test_tket_noise_data_averages_gate_errors_separately_from_readout() -> None:
+    """TKET receives mean one- and two-qubit gate errors plus separate readout errors."""
+    target = Target(num_qubits=2)
+    target.add_instruction(
+        XGate(),
+        {(0,): InstructionProperties(error=0.1), (1,): InstructionProperties(error=0.2)},
+    )
+    target.add_instruction(
+        SXGate(),
+        {(0,): InstructionProperties(error=0.3), (1,): InstructionProperties(error=0.4)},
+    )
+    target.add_instruction(
+        CXGate(),
+        {(0, 1): InstructionProperties(error=0.2), (1, 0): InstructionProperties(error=0.4)},
+    )
+    target.add_instruction(
+        CZGate(),
+        {(0, 1): InstructionProperties(error=0.6), (1, 0): InstructionProperties(error=0.8)},
+    )
+    target.add_instruction(
+        Measure(),
+        {(0,): InstructionProperties(error=0.9), (1,): InstructionProperties(error=0.7)},
+    )
+
+    node_errors, link_errors, readout_errors = tket_actions._prepare_noise_data(  # ruff: ignore[private-member-access]
+        target
+    )
+
+    assert node_errors == pytest.approx({Node(0): 0.2, Node(1): 0.3})
+    assert link_errors == pytest.approx({(Node(0), Node(1)): 0.4, (Node(1), Node(0)): 0.6})
+    assert readout_errors == {Node(0): 0.9, Node(1): 0.7}
+
+
+def test_tket_layout_and_routing_actions_are_masked_for_wide_operations(env: PredictorEnv) -> None:
+    """TKET layout and routing actions are unavailable for operations wider than two qubits."""
+    circuit = QuantumCircuit(3)
+    circuit.ccx(0, 1, 2)
+    env.reset(circuit)
+    env.valid_actions = list(env.action_set)
+
+    action_mask = env.action_masks()
+    layout_and_routing_indices = [
+        index
+        for index, action in env.action_set.items()
+        if action.origin == CompilationOrigin.TKET and action.pass_type in {PassType.LAYOUT, PassType.ROUTING}
+    ]
+    kak_index = next(index for index, action in env.action_set.items() if action.name == "KAKDecomposition")
+
+    assert layout_and_routing_indices
+    assert not any(action_mask[index] for index in layout_and_routing_indices)
+    assert action_mask[kak_index]
+
+
 def test_synthesis_actions_produce_native_gates(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
@@ -202,6 +254,38 @@ def test_layout_actions_establish_layout(
         )
 
     assert applied_actions > 0
+
+
+@pytest.mark.parametrize("action_name", ["GraphPlacement", "NoiseAwarePlacement"])
+def test_tket_placement_actions_assign_every_input_qubit(action_name: str, env: PredictorEnv) -> None:
+    """TKET placement actions assign active and idle input qubits to the device."""
+    circuit = QuantumCircuit(3)
+    circuit.cx(0, 1)
+    env.reset(circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == action_name)
+
+    compiled = env.apply_action(action_index)
+
+    assert env.layout is not None
+    assert set(circuit.qubits).issubset(env.layout.input_qubit_mapping)
+    assert set(circuit.qubits).issubset(env.layout.initial_layout.get_virtual_bits())
+    assert env.is_circuit_laid_out(compiled, env.layout)
+
+
+def test_kak_decomposition_executes_on_mixed_two_qubit_block(env: PredictorEnv) -> None:
+    """KAK decomposition squashes a triggering mixed two-qubit block."""
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    circuit.cz(0, 1)
+    circuit.swap(0, 1)
+    env.reset(circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "KAKDecomposition")
+
+    compiled = env.apply_action(action_index)
+
+    assert Operator(compiled).equiv(Operator(circuit))
+    assert "cz" not in compiled.count_ops()
+    assert "swap" not in compiled.count_ops()
 
 
 def test_mapping_actions_establish_layout_and_route(

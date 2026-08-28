@@ -493,6 +493,7 @@ class PredictorEnv(Env):
             A dense boolean mask ordered like ``self.action_set``.
         """
         has_layout = self.layout is not None
+        has_wide_operations = any(len(instruction.qubits) > 2 for instruction in self.state.data)
         valid_action_indices = set(self.valid_actions)
         action_mask: list[bool] = []
 
@@ -508,7 +509,13 @@ class PredictorEnv(Env):
             if action.origin == CompilationOrigin.QISKIT:
                 action_mask.append(is_qiskit_action_available(action, self.device))
             elif action.origin == CompilationOrigin.TKET:
-                action_mask.append(is_tket_action_available(action=action, has_layout=has_layout))
+                action_mask.append(
+                    is_tket_action_available(
+                        action=action,
+                        has_layout=has_layout,
+                        has_wide_operations=has_wide_operations,
+                    )
+                )
             elif action.origin == CompilationOrigin.BQSKIT:
                 action_mask.append(
                     is_bqskit_action_available(

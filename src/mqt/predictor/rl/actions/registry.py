@@ -59,6 +59,7 @@ for _action in (
     qiskit_actions.qiskit_o3_action(),
     *qiskit_actions.qiskit_optimization_actions(),
     qiskit_actions.qiskit_final_optimization_action(),
+    *tket_actions.tket_layout_actions(),
     tket_actions.tket_routing_action(),
     *tket_actions.tket_optimization_actions(),
     *bqskit_actions.bqskit_layout_actions(),
