@@ -10,9 +10,14 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import re
+import signal
+import time
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from unittest.mock import Mock
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -84,6 +89,121 @@ def test_predictor_env_rejects_unsupported_mdp() -> None:
 
     with pytest.raises(ValueError, match=re.escape("Unsupported MDP policy: unsupported.")):
         predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=invalid_mdp)
+
+
+@pytest.mark.parametrize("pass_timeout", [0, -1])
+def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> None:
+    """Test that pass timeouts must be positive when enabled."""
+    with pytest.raises(ValueError, match=re.escape("pass_timeout must be positive.")):
+        predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=pass_timeout)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
+def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that a pass timeout truncates the current episode."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=0.01)
+    qc = QuantumCircuit(1)
+    env.reset(qc)
+    monkeypatch.setattr(env, "apply_action", lambda _action: time.sleep(1))
+
+    _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
+
+    assert reward_val == 0
+    assert not terminated
+    assert truncated
+    assert info == {
+        "Truncated because of error": "TimeoutError: Compilation pass exceeded the timeout of 0.01 seconds."
+    }
+
+
+def test_training_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that training applies and restores its pass timeout."""
+    observed_timeouts: list[float | None] = []
+
+    class FakeModel:
+        """Minimal MaskablePPO replacement that records the environment timeout."""
+
+        def __init__(
+            self,
+            _policy: object,
+            env: predictorenv_module.PredictorEnv,
+            **_kwargs: object,
+        ) -> None:
+            self.env = env
+
+        def learn(self, *, total_timesteps: int, progress_bar: bool) -> None:
+            assert total_timesteps == 2
+            assert not progress_bar
+            observed_timeouts.append(self.env.pass_timeout)
+
+        def save(self, _path: Path) -> None:
+            pass
+
+    monkeypatch.setattr(predictor_module, "MaskablePPO", FakeModel)
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=get_device("ibm_falcon_27"))
+
+    predictor.train_model(timesteps=2, test=True, pass_timeout=2)
+
+    assert observed_timeouts == [2]
+    assert predictor.env.pass_timeout is None
+
+
+def test_inference_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that inference applies and restores its independent pass timeout."""
+    observed_timeouts: list[float | None] = []
+    qc = QuantumCircuit(1)
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=get_device("ibm_falcon_27"))
+
+    class FakeModel:
+        """Minimal trained model replacement."""
+
+        def predict(self, _obs: object, *, action_masks: object) -> tuple[int, None]:
+            assert action_masks == []
+            return predictor.env.actions_opt_indices[0], None
+
+    def fake_step(_action: int) -> tuple[dict[str, object], float, bool, bool, dict[str, object]]:
+        observed_timeouts.append(predictor.env.pass_timeout)
+        predictor.env.state = qc
+        return {}, 0, True, False, {}
+
+    def fake_reset(_qc: QuantumCircuit | str) -> tuple[dict[str, object], dict[str, object]]:
+        predictor.env.error_occurred = False
+        return {}, {}
+
+    monkeypatch.setattr(predictor_module, "load_model", lambda _model_name: FakeModel())
+    monkeypatch.setattr(predictor_module, "get_action_masks", lambda _env: [])
+    monkeypatch.setattr(predictor.env, "reset", fake_reset)
+    monkeypatch.setattr(predictor.env, "step", fake_step)
+
+    compiled_qc, _passes = predictor.compile_as_predicted(qc, pass_timeout=0.5)
+
+    assert compiled_qc is qc
+    assert observed_timeouts == [0.5]
+    assert predictor.env.pass_timeout is None
+
+
+def test_qcompile_forwards_inference_pass_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that the top-level inference API forwards its pass timeout."""
+    qcompile_module = import_module("mqt.predictor.qcompile")
+    device = get_device("ibm_falcon_27")
+    qc = QuantumCircuit(1)
+
+    def fake_predict_device(_qc: QuantumCircuit, figure_of_merit: str) -> Target:
+        assert figure_of_merit == "expected_fidelity"
+        return device
+
+    def fake_rl_compile(circuit: QuantumCircuit, **kwargs: object) -> tuple[QuantumCircuit, list[str]]:
+        assert kwargs["pass_timeout"] == 3
+        return circuit, []
+
+    monkeypatch.setattr(qcompile_module, "predict_device_for_figure_of_merit", fake_predict_device)
+    monkeypatch.setattr(qcompile_module, "rl_compile", fake_rl_compile)
+
+    compiled_qc, compilation_info, selected_device = qcompile_module.qcompile(qc, pass_timeout=3)
+
+    assert compiled_qc is qc
+    assert compilation_info == []
+    assert selected_device is device
 
 
 @pytest.mark.parametrize(
@@ -414,6 +534,69 @@ def test_seed_randomized_qiskit_passes() -> None:
         qiskit_actions._seed_randomized_passes([transpiler_pass], seed=123)  # ruff: ignore[private-member-access]
         assert transpiler_pass.seed == 123
         assert all(getattr(transpiler_pass, attribute) == 1 for attribute in trial_attributes)
+
+
+@pytest.mark.parametrize("pass_timeout", [None, 1.25])
+def test_qiskit_vf2_actions_use_pass_timeout(pass_timeout: float | None) -> None:
+    """Qiskit's native VF2 search uses the shared timeout value."""
+    device = get_device("ibm_falcon_27")
+    passes = [VF2Layout(target=device), VF2PostLayout(target=device)]
+
+    qiskit_actions._set_native_pass_time_limits(passes, pass_timeout)  # ruff: ignore[private-member-access]
+
+    assert all(transpiler_pass.time_limit == pass_timeout for transpiler_pass in passes)
+
+
+def test_qiskit_vf2_timeout_worker() -> None:
+    """The isolated VF2 worker returns results."""
+    device = get_device("ibm_falcon_27")
+    action = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "VF2Layout")
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+
+    try:
+        compiled, layout = qiskit_actions.run_qiskit_action(action, circuit, device, None, pass_timeout=30)
+    finally:
+        qiskit_actions._close_qiskit_timeout_pool()  # ruff: ignore[private-member-access]
+
+    assert compiled.num_qubits == device.num_qubits
+    assert layout is not None
+    assert qiskit_actions._QISKIT_TIMEOUT_POOL is None  # ruff: ignore[private-member-access]
+
+
+def test_qiskit_vf2_timeout_worker_stops_at_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A VF2 deadline terminates and resets the isolated worker."""
+    result = Mock()
+    result.get.side_effect = multiprocessing.TimeoutError
+    pool = Mock()
+    pool.apply_async.return_value = result
+    monkeypatch.setattr(qiskit_actions, "_QISKIT_TIMEOUT_POOL", pool)
+
+    device = get_device("ibm_falcon_27")
+    action = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "VF2Layout")
+    with pytest.raises(TimeoutError, match=re.escape("exceeded the timeout of 1.25 seconds")):
+        qiskit_actions.run_qiskit_action(action, QuantumCircuit(2), device, None, pass_timeout=1.25)
+
+    result.get.assert_called_once_with(timeout=1.25)
+    pool.terminate.assert_called_once_with()
+    pool.join.assert_called_once_with()
+    assert qiskit_actions._QISKIT_TIMEOUT_POOL is None  # ruff: ignore[private-member-access]
+
+
+def test_predictor_env_forwards_pass_timeout_to_qiskit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The environment forwards its timeout to Qiskit action execution."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=1.25)
+    circuit = QuantumCircuit(2)
+    env.reset(circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "VF2Layout")
+
+    def fake_run_qiskit_action(**kwargs: object) -> tuple[QuantumCircuit, None]:
+        assert kwargs["pass_timeout"] == pytest.approx(1.25)
+        return circuit, None
+
+    monkeypatch.setattr(predictorenv_module, "run_qiskit_action", fake_run_qiskit_action)
+
+    assert env.apply_action(action_index) is circuit
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:

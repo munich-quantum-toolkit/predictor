@@ -45,8 +45,14 @@ from mqt.bench.targets import get_device
 
 device = get_device("ibm_falcon_27")
 rl_pred = RL_Predictor(device=device, figure_of_merit="expected_fidelity")
-rl_pred.train_model(timesteps=100000)
+rl_pred.train_model(timesteps=100000, pass_timeout=600)
 ```
+
+`pass_timeout` is optional and applies the same limit to each compilation pass
+during training. If it is omitted, pass execution is unbounded. Passes without a
+native timeout rely on POSIX signals and execution on the main thread;
+unsupported environments emit a warning and continue without that fallback
+timeout.
 
 Currently, the following figures of merit are supported:
 
@@ -121,8 +127,15 @@ from mqt.predictor import qcompile
 from mqt.bench import get_benchmark, BenchmarkLevel
 
 uncompiled_qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=5)
-compiled_qc, compilation_info, selected_device = qcompile(uncompiled_qc, figure_of_merit="expected_fidelity")
+compiled_qc, compilation_info, selected_device = qcompile(
+    uncompiled_qc,
+    figure_of_merit="expected_fidelity",
+    pass_timeout=60,
+)
 ```
+
+Inference has its own optional `pass_timeout`, so it can use a different limit
+than training.
 
 This returns:
 
