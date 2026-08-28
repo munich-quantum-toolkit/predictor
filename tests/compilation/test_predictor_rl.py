@@ -101,14 +101,16 @@ def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
 def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that a pass timeout truncates the current episode."""
-    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=0.01)
+    env = predictorenv_module.PredictorEnv(
+        device=get_device("ibm_falcon_27"), pass_timeout=0.01, intermediate_reward=False
+    )
     qc = QuantumCircuit(1)
     env.reset(qc)
     monkeypatch.setattr(env, "apply_action", lambda _action: time.sleep(1))
 
     _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
 
-    assert reward_val == 0
+    assert reward_val == env.no_effect_penalty
     assert not terminated
     assert truncated
     assert info == {
@@ -289,7 +291,7 @@ def test_warning_for_unidirectional_device() -> None:
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
+    env = predictorenv_module.PredictorEnv(device=device, max_steps=1, intermediate_reward=False)
     qc = QuantumCircuit(1)
     qc.h(0)
     env.reset(qc)
