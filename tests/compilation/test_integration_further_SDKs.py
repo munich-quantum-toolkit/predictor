@@ -10,9 +10,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+from bqskit.compiler.passdata import PassData
+from bqskit.ir.gates import MPRYGate, MPRZGate, VariableUnitaryGate
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
@@ -26,7 +29,7 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType
+from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_actions
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 if TYPE_CHECKING:
@@ -124,6 +127,22 @@ def simple_circuit() -> QuantumCircuit:
 def env(target: Target) -> PredictorEnv:
     """Create a PredictorEnv for state-based invariant checking."""
     return PredictorEnv(device=target, reward_function="expected_fidelity")
+
+
+@pytest.mark.filterwarnings("ignore:__array__ implementation doesn't accept a copy keyword:DeprecationWarning")
+def test_qsd_unitary_synthesis_pass_applies_one_qsd_level(simple_circuit: QuantumCircuit) -> None:
+    """The QSD adapter performs one equivalent decomposition of a reachable partition target."""
+    bqskit_circuit = bqskit_actions.qiskit_to_bqskit(simple_circuit)
+    unitary = bqskit_circuit.get_unitary()
+    synthesis_pass = bqskit_actions._QSDUnitarySynthesisPass()  # ruff: ignore[private-member-access]
+
+    decomposed = asyncio.run(synthesis_pass.synthesize(unitary, PassData(bqskit_circuit)))
+
+    assert decomposed.get_unitary().get_distance_from(unitary) < 1e-7
+    assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, VariableUnitaryGate)) == 4
+    assert all(gate.num_qudits == 2 for gate in decomposed.gate_set if isinstance(gate, VariableUnitaryGate))
+    assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRZGate)) == 2
+    assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRYGate)) == 1
 
 
 def test_synthesis_actions_produce_native_gates(

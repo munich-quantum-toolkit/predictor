@@ -15,7 +15,7 @@ import re
 from functools import cache
 from typing import TYPE_CHECKING, TypeAlias, cast
 
-from bqskit import MachineModel
+from bqskit import Circuit, MachineModel
 from bqskit.compiler import Compiler, Workflow
 from bqskit.compiler.compile import (
     build_multi_qudit_retarget_workflow,
@@ -39,11 +39,13 @@ from bqskit.passes import (
     IfThenElsePass,
     LEAPSynthesisPass,
     ManyQuditGatesPredicate,
+    QSDPass,
     QSearchSynthesisPass,
     RestoreMeasurements,
     SetModelPass,
     SetRandomSeedPass,
     StaticPlacementPass,
+    SynthesisPass,
     TrivialPlacementPass,
     UnfoldPass,
     WalshDiagonalSynthesisPass,
@@ -59,11 +61,11 @@ from mqt.predictor.rl.actions.base import CompilationOrigin, DeferredDeviceActio
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from bqskit import Circuit
     from bqskit.compiler.basepass import BasePass
     from bqskit.compiler.passdata import PassData
     from bqskit.compiler.workflow import WorkflowLike
     from bqskit.ir import Gate
+    from bqskit.qis import StateSystem, StateVector, UnitaryMatrix
     from qiskit import QuantumCircuit
     from qiskit.circuit import Qubit as QiskitQubit
     from qiskit.transpiler import Target
@@ -79,6 +81,22 @@ _BQSKIT_BLOCK_SIZE = 3
 _BQSKIT_SEARCH_MAX_LAYER = 3
 _BQSKIT_SEED = 10
 _BQSKIT_NUM_WORKERS = 1 if os.getenv("GITHUB_ACTIONS") == "true" else -1
+
+
+class _QSDUnitarySynthesisPass(SynthesisPass):
+    """Apply one QSD level to each multi-qubit synthesis target."""
+
+    async def synthesize(
+        self,
+        target: UnitaryMatrix | StateVector | StateSystem,
+        data: PassData,
+    ) -> Circuit:
+        """Synthesize a partition target with one QSD level."""
+        del data
+        unitary = cast("UnitaryMatrix", target)
+        if unitary.num_qudits == 1:
+            return Circuit.from_unitary(unitary)
+        return QSDPass.qsd(unitary)
 
 
 def _r_gate(theta: float, phi: float) -> Instruction:
@@ -308,6 +326,12 @@ def bqskit_synthesis_actions() -> list[Action]:
                 device,
                 IfThenElsePass(DiagonalPredicate(1e-9), WalshDiagonalSynthesisPass()),
             ),
+        ),
+        DeferredDeviceAction(
+            "QSDPass",
+            CompilationOrigin.BQSKIT,
+            PassType.SYNTHESIS,
+            transpile_pass=lambda device: _bqskit_partitioned_synthesis_factory(device, _QSDUnitarySynthesisPass()),
         ),
         DeferredDeviceAction(
             "FullQSDPass",
