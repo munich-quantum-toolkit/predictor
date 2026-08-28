@@ -15,18 +15,20 @@ import json
 import random
 import re
 from dataclasses import replace
+from datetime import UTC
 from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.benchmarks import get_available_benchmark_names
-from mqt.bench.targets import get_device
 from networkx import NetworkXError
 from qiskit import QuantumCircuit, transpile
 from qiskit.circuit.library.standard_gates import get_standard_gate_name_mapping
 from qiskit.exceptions import QiskitError
 from qiskit.qasm2 import dump
+from qiskit.transpiler import Target
+from qiskit_ibm_runtime.fake_provider import FakeBoston
 from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.checkpoints import RollingCheckpointCallback, latest_checkpoint, prune_checkpoints
@@ -34,12 +36,12 @@ from mqt.predictor.rl.gnn import GNNConfig, GNNMaskablePPO, GNNObservationWrappe
 from mqt.predictor.rl.predictor import Predictor
 from mqt.predictor.utils import get_openqasm_gates
 
-TARGET_NAME = "ibm_heron_156"
 REFERENCE_QPU = "ibm_boston"
+FIGURE_OF_MERIT = "estimated_success_probability"
 TEST_FRACTION = 0.1
-MAX_CIRCUIT_SIZE = 250
-MAX_CIRCUIT_DEPTH = 250
+MAX_CIRCUIT_DEPTH = 1_000
 RL_BASIS_GATES = [gate for gate in get_openqasm_gates() if gate in get_standard_gate_name_mapping()]
+ESP_OPERATIONS = ("cz", "delay", "id", "measure", "reset", "rz", "sx", "x")
 EXPECTED_GENERATION_ERRORS = (
     AssertionError,
     AttributeError,
@@ -53,7 +55,7 @@ EXPECTED_GENERATION_ERRORS = (
 )
 
 
-class _CircuitTooLargeError(Exception):
+class _CircuitTooDeepError(Exception):
     pass
 
 
@@ -63,6 +65,56 @@ def _slug(value: str) -> str:
 
 def _write_config(path: Path, config: dict[str, object]) -> None:
     path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _load_boston_snapshot() -> tuple[Target, dict[str, object]]:
+    backend = FakeBoston()
+    source = backend.target
+    target = Target(
+        description=REFERENCE_QPU,
+        num_qubits=source.num_qubits,
+        dt=source.dt,
+        granularity=source.granularity,
+        min_length=source.min_length,
+        pulse_alignment=source.pulse_alignment,
+        acquire_alignment=source.acquire_alignment,
+        qubit_properties=source.qubit_properties,
+        concurrent_measurements=source.concurrent_measurements,
+    )
+    for name in ESP_OPERATIONS:
+        target.add_instruction(source.operation_from_name(name), source[name], name=name)
+
+    calibration_timestamp = backend.properties().last_update_date.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    metadata: dict[str, object] = {
+        "backend": REFERENCE_QPU,
+        "backend_version": backend.backend_version,
+        "calibration_timestamp_utc": calibration_timestamp,
+        "qiskit_ibm_runtime": version("qiskit-ibm-runtime"),
+        "source": "qiskit_ibm_runtime.fake_provider.FakeBoston",
+    }
+    return target, metadata
+
+
+def _record_run_metadata(output_dir: Path, device: Target, calibration_snapshot: dict[str, object]) -> None:
+    metadata: dict[str, object] = {
+        "benchmark_max_depth": MAX_CIRCUIT_DEPTH,
+        "calibration_snapshot": calibration_snapshot,
+        "figure_of_merit": FIGURE_OF_MERIT,
+        "gnn_config": "paper",
+        "max_episode_steps": 100,
+        "mdp": "v3",
+        "training_target": {
+            "name": REFERENCE_QPU,
+            "num_qubits": device.num_qubits,
+            "operations": sorted(device.operation_names),
+        },
+    }
+    path = output_dir / "run_metadata.json"
+    if path.exists() and json.loads(path.read_text(encoding="utf-8")) != metadata:
+        msg = f"Run configuration differs from {path}; use a new output directory."
+        raise ValueError(msg)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _write_config(path, metadata)
 
 
 def _generate_circuit(
@@ -84,8 +136,8 @@ def _generate_circuit(
     )
     if circuit.num_qubits > max_qubits:
         return None
-    if circuit.size() > MAX_CIRCUIT_SIZE or (circuit.depth() or 0) > MAX_CIRCUIT_DEPTH:
-        raise _CircuitTooLargeError
+    if (circuit.depth() or 0) > MAX_CIRCUIT_DEPTH:
+        raise _CircuitTooDeepError
     stream = StringIO()
     dump(circuit, stream)
     qasm = stream.getvalue()
@@ -131,7 +183,6 @@ def _prepare_data(output_dir: Path, max_qubits: int, seed: int, *, smoke: bool) 
         "benchmark_names": benchmark_names,
         "complete": False,
         "max_circuit_depth": MAX_CIRCUIT_DEPTH,
-        "max_circuit_size": MAX_CIRCUIT_SIZE,
         "max_qubits": max_requested_size,
         "mqt_bench": version("mqt-bench"),
         "seed": seed,
@@ -173,7 +224,7 @@ def _prepare_data(output_dir: Path, max_qubits: int, seed: int, *, smoke: bool) 
                 continue
             try:
                 generated = _generate_circuit(benchmark_name, requested_size, max_qubits, seed)
-            except _CircuitTooLargeError:
+            except _CircuitTooDeepError:
                 break
             except EXPECTED_GENERATION_ERRORS:
                 continue
@@ -203,7 +254,8 @@ def _prepare_data(output_dir: Path, max_qubits: int, seed: int, *, smoke: bool) 
 
 
 def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *, smoke: bool) -> Path:
-    device = get_device(TARGET_NAME)
+    device, calibration_snapshot = _load_boston_snapshot()
+    _record_run_metadata(output_dir, device, calibration_snapshot)
     train_dir, test_dir = _prepare_data(output_dir, device.num_qubits, seed, smoke=smoke)
     config = GNNConfig.paper()
     if smoke:
@@ -212,7 +264,7 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
         )
 
     predictor = Predictor(
-        figure_of_merit="expected_fidelity",
+        figure_of_merit=FIGURE_OF_MERIT,
         device=device,
         path_training_circuits=train_dir,
         max_steps=100,
@@ -244,12 +296,13 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
             total_timesteps=remaining_steps,
             reset_num_timesteps=checkpoint is None,
             callback=callback,
-            progress_bar=not smoke,
+            progress_bar=True,
         )
         checkpoint = callback.save_final()
 
     assert checkpoint is not None
-    print(f"Target: {TARGET_NAME} (static architecture proxy for {REFERENCE_QPU})")
+    print(f"Target: {REFERENCE_QPU} ({calibration_snapshot['calibration_timestamp_utc']})")
+    print(f"Figure of merit: {FIGURE_OF_MERIT}")
     print(f"Train/test circuits: {len(list(train_dir.glob('*.qasm')))}/{len(list(test_dir.glob('*.qasm')))}")
     print(f"Completed timesteps: {model.num_timesteps}")
     print(f"Latest checkpoint: {checkpoint}")
