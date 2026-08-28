@@ -12,14 +12,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
+import threading
+import time
 from dataclasses import replace
 from datetime import UTC
 from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
+import gymnasium as gym
+import psutil  # ty: ignore[unresolved-import]
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.benchmarks import get_available_benchmark_names
 from networkx import NetworkXError
@@ -38,11 +44,15 @@ from mqt.predictor.rl.gnn import GNNConfig, GNNMaskablePPO, GNNObservationWrappe
 from mqt.predictor.rl.predictor import Predictor
 from mqt.predictor.utils import get_openqasm_gates
 
+if TYPE_CHECKING:
+    from mqt.predictor.rl.predictorenv import PredictorEnv
+
 REFERENCE_QPU = "ibm_boston"
 FIGURE_OF_MERIT = "estimated_success_probability"
 TEST_FRACTION = 0.1
 MAX_CIRCUIT_DEPTH = 256
 PASS_TIMEOUT_SECONDS = 30
+DEFAULT_ROLLOUT_STEPS = 256
 RL_BASIS_GATES = [gate for gate in get_openqasm_gates() if gate in get_standard_gate_name_mapping()]
 ESP_OPERATIONS = ("cz", "delay", "id", "measure", "reset", "rz", "sx", "x")
 EXPECTED_GENERATION_ERRORS = (
@@ -70,8 +80,80 @@ class _TensorBoardProgressCallback(BaseCallback):
     def _on_step(self) -> bool:
         self.logger.record("progress/total_timesteps", self.num_timesteps)
         self.logger.record("progress/fraction_complete", min(self.num_timesteps / self._target_steps, 1.0))
+        graph_observations = self.locals.get("graph_observations")
+        if graph_observations:
+            graph = graph_observations[0]
+            self.logger.record("rollout/stored_graph_nodes", graph.num_nodes)
+            self.logger.record("rollout/stored_graph_edges", graph["edge_index"].shape[1])
+        model = cast("GNNMaskablePPO", self.model)
+        self.logger.record("rollout/graphs_collected", model.rollout_buffer.pos + 1)
+        for metrics in self.training_env.get_attr("resource_metrics"):
+            for name, value in metrics.items():
+                self.logger.record(f"resources/{name}", value)
         self.model.dump_logs()
         return True
+
+
+def _process_tree_rss_mib(process: psutil.Process) -> float:
+    processes = [process, *process.children(recursive=True)]
+    total = 0
+    for child in processes:
+        try:
+            total += child.memory_info().rss
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            continue
+    return total / 2**20
+
+
+class _ResourceMonitor(gym.Wrapper):
+    """Measure per-action process-tree memory for the experiment."""
+
+    def __init__(self, env: gym.Env) -> None:
+        super().__init__(env)
+        self._process = psutil.Process(os.getpid())
+        self._action_count = 0
+        self.resource_metrics: dict[str, float | int] = {}
+
+    def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+        predictor_env = cast("PredictorEnv", self.unwrapped)
+        circuit = predictor_env.state
+        action_index = int(action)
+        action_name = predictor_env.action_set[action_index].name
+        rss_before = _process_tree_rss_mib(self._process)
+        minimum_available = psutil.virtual_memory().available / 2**20
+        peak_rss = rss_before
+        stop = threading.Event()
+
+        def sample_memory() -> None:
+            nonlocal minimum_available, peak_rss
+            while not stop.wait(0.1):
+                peak_rss = max(peak_rss, _process_tree_rss_mib(self._process))
+                minimum_available = min(minimum_available, psutil.virtual_memory().available / 2**20)
+
+        self._action_count += 1
+        print(
+            f"action={self._action_count} pass={action_name} qubits={circuit.num_qubits} "
+            f"gates={circuit.size()} depth={circuit.depth()} rss_mib={rss_before:.1f}",
+            flush=True,
+        )
+        sampler = threading.Thread(target=sample_memory, daemon=True)
+        sampler.start()
+        start = time.perf_counter()
+        try:
+            observation, reward, terminated, truncated, info = self.env.step(action_index)
+        finally:
+            stop.set()
+            sampler.join()
+            peak_rss = max(peak_rss, _process_tree_rss_mib(self._process))
+
+        self.resource_metrics = {
+            "action_duration_seconds": time.perf_counter() - start,
+            "action_index": action_index,
+            "process_tree_peak_rss_mib": peak_rss,
+            "process_tree_rss_before_mib": rss_before,
+            "system_available_min_mib": minimum_available,
+        }
+        return cast("dict[str, Any]", observation), float(reward), terminated, truncated, info
 
 
 def _slug(value: str) -> str:
@@ -110,7 +192,9 @@ def _load_boston_snapshot() -> tuple[Target, dict[str, object]]:
     return target, metadata
 
 
-def _record_run_metadata(output_dir: Path, device: Target, calibration_snapshot: dict[str, object]) -> None:
+def _record_run_metadata(
+    output_dir: Path, device: Target, calibration_snapshot: dict[str, object], rollout_steps: int
+) -> None:
     metadata: dict[str, object] = {
         "benchmark_max_depth": MAX_CIRCUIT_DEPTH,
         "calibration_snapshot": calibration_snapshot,
@@ -120,6 +204,7 @@ def _record_run_metadata(output_dir: Path, device: Target, calibration_snapshot:
         "max_episode_steps": 100,
         "mdp": "v3",
         "pass_timeout_seconds": PASS_TIMEOUT_SECONDS,
+        "rollout_steps": rollout_steps,
         "training_target": {
             "name": REFERENCE_QPU,
             "num_qubits": device.num_qubits,
@@ -273,14 +358,22 @@ def _prepare_data(output_dir: Path, max_qubits: int, seed: int, *, smoke: bool) 
     return train_dir, test_dir
 
 
-def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *, smoke: bool) -> Path:
+def _train(
+    output_dir: Path, total_steps: int, save_interval: int, rollout_steps: int, seed: int, *, smoke: bool
+) -> Path:
     device, calibration_snapshot = _load_boston_snapshot()
-    _record_run_metadata(output_dir, device, calibration_snapshot)
+    _record_run_metadata(output_dir, device, calibration_snapshot, rollout_steps)
     train_dir, test_dir = _prepare_data(output_dir, device.num_qubits, seed, smoke=smoke)
-    config = GNNConfig.paper()
+    config = replace(GNNConfig.paper(), n_steps=rollout_steps, batch_size=min(64, rollout_steps))
     if smoke:
         config = replace(
-            config, hidden_dim=16, num_conv_wo_resnet=1, num_resnet_layers=0, n_steps=4, batch_size=4, n_epochs=1
+            config,
+            hidden_dim=16,
+            num_conv_wo_resnet=1,
+            num_resnet_layers=0,
+            n_steps=min(4, rollout_steps),
+            batch_size=min(4, rollout_steps),
+            n_epochs=1,
         )
 
     predictor = Predictor(
@@ -295,7 +388,7 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
     predictor.env.pass_timeout = PASS_TIMEOUT_SECONDS
     predictor.env.configure_qiskit_action_seeding(enabled=True)
     set_random_seed(seed)
-    graph_env = GNNObservationWrapper(predictor.env)
+    graph_env = GNNObservationWrapper(_ResourceMonitor(predictor.env))
     checkpoint_dir = output_dir / "checkpoints"
     prune_checkpoints(checkpoint_dir)
     checkpoint = latest_checkpoint(checkpoint_dir)
@@ -325,6 +418,7 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
     print(f"Target: {REFERENCE_QPU} ({calibration_snapshot['calibration_timestamp_utc']})")
     print(f"Figure of merit: {FIGURE_OF_MERIT}")
     print(f"Pass timeout: {PASS_TIMEOUT_SECONDS} seconds")
+    print(f"Rollout steps: {config.n_steps}")
     print(f"Train/test circuits: {len(list(train_dir.glob('*.qasm')))}/{len(list(test_dir.glob('*.qasm')))}")
     print(f"Completed timesteps: {model.num_timesteps}")
     print(f"Latest checkpoint: {checkpoint}")
@@ -342,6 +436,12 @@ def main() -> None:
         default=10_000,
         help="Minimum steps between checkpoints; saves occur after completed PPO rollouts.",
     )
+    parser.add_argument(
+        "--rollout-steps",
+        type=int,
+        default=DEFAULT_ROLLOUT_STEPS,
+        help="Graphs retained before each PPO update (paper configuration: 2048).",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--smoke", action="store_true", help="Use two small benchmarks and a tiny rollout.")
     args = parser.parse_args()
@@ -349,7 +449,9 @@ def main() -> None:
         parser.error("--total-steps must be positive")
     if args.save_interval <= 0:
         parser.error("--save-interval must be positive")
-    _train(args.output_dir, args.total_steps, args.save_interval, args.seed, smoke=args.smoke)
+    if args.rollout_steps < 2:
+        parser.error("--rollout-steps must be at least 2")
+    _train(args.output_dir, args.total_steps, args.save_interval, args.rollout_steps, args.seed, smoke=args.smoke)
 
 
 if __name__ == "__main__":

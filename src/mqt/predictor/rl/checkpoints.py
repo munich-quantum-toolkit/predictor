@@ -81,6 +81,8 @@ class RollingCheckpointCallback(BaseCallback):
         self._directory.mkdir(parents=True, exist_ok=True)
         prune_checkpoints(self._directory, self._prefix)
         completed_steps = int(self.model.num_timesteps)
+        if completed_steps == 0 and latest_checkpoint(self._directory, self._prefix) is None:
+            self._save()
         self._next_save = (completed_steps // self._save_interval + 1) * self._save_interval
 
     def _save(self) -> Path:
