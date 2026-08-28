@@ -20,6 +20,7 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
+from qiskit.quantum_info import Clifford
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
@@ -30,7 +31,6 @@ from mqt.predictor.rl.actions import (
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
-    qiskit_actions,
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
@@ -263,46 +263,54 @@ def test_predictor_env_actions_for_mdp_state(
     assert set(valid_actions) == expected_actions
 
 
-def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that Qiskit routing actions update the tracked final layout."""
-    device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device)
-    qc = QuantumCircuit(2)
-    qc.cx(0, 1)
-    env.reset(qc)
-
-    initial_layout = Layout({qubit: index for index, qubit in enumerate(qc.qubits)})
-    final_layout = Layout({qc.qubits[0]: 1, qc.qubits[1]: 0})
-    env.layout = TranspileLayout(
-        initial_layout=initial_layout,
-        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
-        _output_qubit_list=qc.qubits,
-        _input_qubit_count=qc.num_qubits,
+def test_predictor_env_qiskit_routing_composes_final_layout() -> None:
+    """Test that Qiskit routing composes an existing output permutation."""
+    target = Target(num_qubits=3, description="bidirectional line")
+    target.add_instruction(
+        CXGate(),
+        {
+            (0, 1): InstructionProperties(),
+            (1, 0): InstructionProperties(),
+            (1, 2): InstructionProperties(),
+            (2, 1): InstructionProperties(),
+        },
     )
+    env = predictorenv_module.PredictorEnv(device=target)
+    circuit = QuantumCircuit(3)
+    circuit.swap(0, 1)
+    circuit.cx(1, 2)
+    env.reset(circuit)
 
-    class FakePassManager:
-        """Minimal PassManager replacement that exposes a final layout."""
+    elide_index = next(index for index, action in env.action_set.items() if action.name == "ElidePermutations")
+    env.state = env.apply_action(elide_index)
+    assert env.layout is not None
+    assert env.layout.final_index_layout() == [1, 0, 2]
 
-        def __init__(self, _passes: object) -> None:
-            self.property_set = {"final_layout": final_layout}
+    basic_swap_index = next(index for index, action in env.action_set.items() if action.name == "BasicSwap")
+    env.state = env.apply_action(basic_swap_index)
+    assert env.layout.final_index_layout() == [0, 1, 2]
 
-        def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
-            return circuit
 
-    monkeypatch.setattr(qiskit_actions, "PassManager", FakePassManager)
-    action = DeviceIndependentAction(
-        name="SyntheticQiskitRouting",
-        pass_type=PassType.ROUTING,
-        transpile_pass=[],
-        origin=CompilationOrigin.QISKIT,
+def test_clifford_decomposition_is_scoped_to_optimize_cliffords() -> None:
+    """Test that only OptimizeCliffords decomposes Clifford operations."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"))
+    definition = QuantumCircuit(1)
+    definition.h(0)
+    circuit = QuantumCircuit(1)
+    circuit.append(Clifford(definition), [0])
+    env.reset(circuit)
+
+    remove_identity_index = next(
+        index for index, action in env.action_set.items() if action.name == "RemoveIdentityEquivalent"
     )
-    routing_action_index = next(iter(env.actions_routing_indices))
-    env.action_set[routing_action_index] = action
-    altered_qc = env.apply_action(action_index=routing_action_index)
+    unchanged = env.apply_action(remove_identity_index)
+    assert unchanged.count_ops() == {"clifford": 1}
 
-    assert altered_qc is env.state
-    assert env.layout.final_layout is final_layout
+    optimize_cliffords_index = next(
+        index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
+    )
+    optimized = env.apply_action(optimize_cliffords_index)
+    assert "clifford" not in optimized.count_ops()
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
