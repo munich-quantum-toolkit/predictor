@@ -40,6 +40,7 @@ REFERENCE_QPU = "ibm_boston"
 FIGURE_OF_MERIT = "estimated_success_probability"
 TEST_FRACTION = 0.1
 MAX_CIRCUIT_DEPTH = 1_000
+PASS_TIMEOUT_SECONDS = 30
 RL_BASIS_GATES = [gate for gate in get_openqasm_gates() if gate in get_standard_gate_name_mapping()]
 ESP_OPERATIONS = ("cz", "delay", "id", "measure", "reset", "rz", "sx", "x")
 EXPECTED_GENERATION_ERRORS = (
@@ -103,6 +104,7 @@ def _record_run_metadata(output_dir: Path, device: Target, calibration_snapshot:
         "gnn_config": "paper",
         "max_episode_steps": 100,
         "mdp": "v3",
+        "pass_timeout_seconds": PASS_TIMEOUT_SECONDS,
         "training_target": {
             "name": REFERENCE_QPU,
             "num_qubits": device.num_qubits,
@@ -272,6 +274,7 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
         graph=True,
         gnn_config=config,
     )
+    predictor.env.pass_timeout = PASS_TIMEOUT_SECONDS
     predictor.env.configure_qiskit_action_seeding(enabled=True)
     set_random_seed(seed)
     graph_env = GNNObservationWrapper(predictor.env)
@@ -303,6 +306,7 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
     assert checkpoint is not None
     print(f"Target: {REFERENCE_QPU} ({calibration_snapshot['calibration_timestamp_utc']})")
     print(f"Figure of merit: {FIGURE_OF_MERIT}")
+    print(f"Pass timeout: {PASS_TIMEOUT_SECONDS} seconds")
     print(f"Train/test circuits: {len(list(train_dir.glob('*.qasm')))}/{len(list(test_dir.glob('*.qasm')))}")
     print(f"Completed timesteps: {model.num_timesteps}")
     print(f"Latest checkpoint: {checkpoint}")
