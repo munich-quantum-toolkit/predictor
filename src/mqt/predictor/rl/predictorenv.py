@@ -311,7 +311,7 @@ class PredictorEnv(Env):
 
         obs = create_feature_dict(self.state)
 
-        # Trace+truncate if step limit is reached
+        # Trace+terminate if step limit is reached
         if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
             self._collect_tracer_data(
                 step_index=self.num_steps,
@@ -322,7 +322,7 @@ class PredictorEnv(Env):
                 feature_vector=obs,
                 done=True,
             )
-            return obs, reward_val, False, True, {"truncation_reason": "max_steps_exceeded"}
+            return obs, reward_val, True, False, {"termination_reason": "max_steps_exceeded"}
 
         # Trace the successful step
         self._collect_tracer_data(
