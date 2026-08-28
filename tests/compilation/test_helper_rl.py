@@ -19,21 +19,24 @@ from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
-from qiskit.transpiler import PassManager
+from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
 from mqt.predictor.rl.actions import (
+    CompilationOrigin,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
 )
 from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
-from mqt.predictor.rl.actions.qiskit_actions import postprocess_vf2postlayout
+from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, postprocess_vf2postlayout
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 from mqt.predictor.utils import get_openqasm_gates
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    import pytest
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
@@ -97,6 +100,56 @@ def test_bqskit_to_qiskit_converts_u1q_to_r_gate() -> None:
 
     assert qc.data[0].operation.name == "r"
     assert qc.data[0].operation.params == [0.1, 0.2]
+
+
+def test_ai_routing_action_factories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test the IBM AI routing action wiring without loading its model."""
+
+    class FakeAIRouting:
+        """Record the arguments used to construct an AI routing pass."""
+
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(qiskit_actions, "_load_airouting", lambda: FakeAIRouting)
+
+    device = get_device("ibm_falcon_27")
+    actions = {
+        action.name: action
+        for action in (
+            *get_actions_by_pass_type()[PassType.ROUTING],
+            *get_actions_by_pass_type()[PassType.MAPPING],
+        )
+    }
+
+    routing_action = actions["AIRouting"]
+    assert routing_action.origin == CompilationOrigin.QISKIT
+    assert routing_action.pass_type == PassType.ROUTING
+    routing_factory = cast("Callable[[Target], list[Task]]", routing_action.transpile_pass)
+    routing_passes = routing_factory(device)
+    assert len(routing_passes) == 1
+    ai_routing = cast("FakeAIRouting", routing_passes[0])
+    routing_coupling_map = cast("CouplingMap", ai_routing.kwargs["coupling_map"])
+    assert routing_coupling_map.get_edges() == device.build_coupling_map().get_edges()
+    assert ai_routing.kwargs["optimization_level"] == 3
+    assert ai_routing.kwargs["layout_mode"] == "improve"
+    assert ai_routing.kwargs["local_mode"] is True
+
+    mapping_action = actions["AIRouting_opt"]
+    assert mapping_action.origin == CompilationOrigin.QISKIT
+    assert mapping_action.pass_type == PassType.MAPPING
+    mapping_factory = cast("Callable[[Target], list[Task]]", mapping_action.transpile_pass)
+    mapping_passes = mapping_factory(device)
+    assert len(mapping_passes) == 1
+    ai_mapping = cast("FakeAIRouting", mapping_passes[0])
+    mapping_coupling_map = cast("CouplingMap", ai_mapping.kwargs["coupling_map"])
+    assert mapping_coupling_map.get_edges() == device.build_coupling_map().get_edges()
+    assert ai_mapping.kwargs["optimization_level"] == 3
+    assert ai_mapping.kwargs["layout_mode"] == "optimize"
+    assert ai_mapping.kwargs["local_mode"] is True
+
+    monkeypatch.setattr(qiskit_actions, "_is_ai_routing_available", lambda: False)
+    assert not is_qiskit_action_available(routing_action, device)
 
 
 def test_vf2_layout_and_postlayout() -> None:
