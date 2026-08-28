@@ -39,9 +39,9 @@ releases may include breaking changes.
   ([#831]) ([**@flowerthrower**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
-- 🐛 Restore nondeterministic RL circuit sampling without a seed and make
-  explicitly seeded sampling and randomized Qiskit actions reproducible ([#797])
-  ([**@flowerthrower**])
+- 🐛 Restore nondeterministic RL circuit sampling and inference without a seed,
+  and make explicitly seeded training, deterministic inference, and randomized
+  Qiskit actions reproducible ([#797]) ([**@flowerthrower**])
 - 🐛 Mask TKET layout and routing actions for circuits containing operations
   wider than two qubits ([#796]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])

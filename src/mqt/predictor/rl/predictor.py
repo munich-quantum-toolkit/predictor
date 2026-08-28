@@ -72,12 +72,14 @@ class Predictor:
         self,
         qc: QuantumCircuit | str,
         tracer_output_path: str | Path | None = None,
+        seed: int | None = None,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
             tracer_output_path: Optional temporary path to export the compilation trace for this specific run.
+            seed: The seed for reproducible deterministic inference and randomized Qiskit actions. Defaults to None.
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -86,7 +88,7 @@ class Predictor:
             RuntimeError: If an error occurs during compilation.
         """
         original_tracer_output_path = self.env.tracer_output_path
-        original_seed_qiskit_actions = self.env.configure_qiskit_action_seeding(enabled=False)
+        original_seed_qiskit_actions = self.env.configure_qiskit_action_seeding(enabled=seed is not None)
 
         # Temporarily override singleton if a new path is explicitly provided
         if tracer_output_path is not None:
@@ -95,14 +97,18 @@ class Predictor:
         try:
             trained_rl_model = load_model(self.model_name)
 
-            obs, _ = self.env.reset(qc)
+            obs, _ = self.env.reset(qc, seed=seed)
 
             used_compilation_passes = []
             terminated = False
             truncated = False
             while not (terminated or truncated):
                 action_masks = get_action_masks(self.env)
-                action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+                action, _ = trained_rl_model.predict(
+                    obs,
+                    deterministic=seed is not None,
+                    action_masks=action_masks,
+                )
                 action = int(action)
                 action_item = self.env.action_set[action]
                 used_compilation_passes.append(action_item.name)
@@ -197,6 +203,7 @@ def rl_compile(
     predictor_singleton: Predictor | None = None,
     tracer_output_path: str | Path | None = None,
     mdp: MDPPolicy = "v3",
+    seed: int | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -209,6 +216,7 @@ def rl_compile(
         mdp: The MDP transition policy used when constructing a predictor. ``v2``
             is the original strategy and ``v3`` is the default. When
             ``predictor_singleton`` is provided, its configured policy is used instead.
+        seed: The seed for reproducible deterministic inference and randomized Qiskit actions. Defaults to None.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -229,6 +237,6 @@ def rl_compile(
             tracer_output_path=tracer_output_path,
             mdp=mdp,
         )
-        return predictor.compile_as_predicted(qc)
+        return predictor.compile_as_predicted(qc, seed=seed)
 
-    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path)
+    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path, seed=seed)
