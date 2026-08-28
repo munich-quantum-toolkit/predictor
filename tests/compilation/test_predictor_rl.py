@@ -362,18 +362,20 @@ def test_predictor_env_qiskit_action_seeds_are_opt_in(monkeypatch: pytest.Monkey
 
 
 def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that unseeded top-level operations disable prior seeded mode."""
+    """Test that a compilation seed enables deterministic inference and seeded actions."""
     predictor = Predictor(figure_of_merit="expected_fidelity", device=get_device("ibm_falcon_27"))
     predictor.env.reset(QuantumCircuit(1), seed=123)
-    observed_modes: list[bool] = []
+    observed_inference_modes: list[tuple[bool, bool]] = []
+    observed_training_modes: list[bool] = []
 
     class TerminatingModel:
         """Return the terminate action immediately."""
 
         @staticmethod
-        def predict(_observation: object, action_masks: object) -> tuple[int, None]:
+        def predict(_observation: object, *, deterministic: bool, action_masks: object) -> tuple[int, None]:
             assert action_masks is not None
-            observed_modes.append(predictor.env.configure_qiskit_action_seeding(enabled=False))
+            qiskit_actions_seeded = predictor.env.configure_qiskit_action_seeding(enabled=False)
+            observed_inference_modes.append((deterministic, qiskit_actions_seeded))
             return predictor.env.action_terminate_index, None
 
     class NoOpModel:
@@ -381,7 +383,7 @@ def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch)
 
         def __init__(self, *args: object, **_kwargs: object) -> None:
             env = cast("PredictorEnv", args[1])
-            observed_modes.append(env.configure_qiskit_action_seeding(enabled=False))
+            observed_training_modes.append(env.configure_qiskit_action_seeding(enabled=False))
 
         def learn(self, *_args: object, **_kwargs: object) -> None:
             pass
@@ -392,11 +394,14 @@ def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(predictor_module, "load_model", lambda _model_name: TerminatingModel())
     predictor.compile_as_predicted(QuantumCircuit(1))
     assert predictor.env.configure_qiskit_action_seeding(enabled=True)
+    rl_compile(QuantumCircuit(1), device=None, predictor_singleton=predictor, seed=123)
+    assert predictor.env.configure_qiskit_action_seeding(enabled=True)
 
     monkeypatch.setattr(predictor_module, "MaskablePPO", NoOpModel)
     predictor.train_model(timesteps=1, test=True)
 
-    assert observed_modes == [False, False]
+    assert observed_inference_modes == [(False, False), (True, True)]
+    assert observed_training_modes == [False]
 
 
 def test_seed_randomized_qiskit_passes() -> None:
