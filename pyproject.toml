@@ -35,7 +35,7 @@ dependencies = [
     "pytket>=2.4.0; python_version >= '3.14'",
     "pytket_qiskit>=0.61.0",
     "pytket-qiskit>=0.78.0; python_version >= '3.14'",
-    "sb3_contrib>=2.0.0",
+    "sb3_contrib>=2.3.0",
     "tqdm>=4.66.0",
     "rich>=12.6.0",
     "scikit-learn>=1.5.1",
@@ -97,6 +97,12 @@ Homepage = "https://github.com/munich-quantum-toolkit/predictor"
 Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
+
+[project.optional-dependencies]
+gnn = [
+    "torch-geometric>=2.7.0; python_version < '3.14'",
+    "torch-geometric>=2.8.0; python_version >= '3.14'",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mqt"]
@@ -250,6 +256,7 @@ wille = "wille"
 anc = "anc"
 aer = "aer"
 fom = "fom"
+gae = "gae"
 
 
 [tool.repo-review.ignore]
