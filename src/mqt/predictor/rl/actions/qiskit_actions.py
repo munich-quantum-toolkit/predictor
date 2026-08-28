@@ -81,7 +81,7 @@ from mqt.predictor.rl.actions.base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from qiskit import QuantumCircuit
     from qiskit.passmanager import PropertySet
@@ -524,6 +524,13 @@ def _seed_randomized_passes(passes: list[Task], seed: int) -> None:
             transpiler_pass.trials = 1
 
 
+def _set_native_pass_time_limits(passes: Sequence[Task], pass_timeout: float | None) -> None:
+    """Configure native deadlines for Qiskit passes that support them."""
+    for transpiler_pass in passes:
+        if isinstance(transpiler_pass, (VF2Layout, VF2PostLayout)):
+            transpiler_pass.time_limit = pass_timeout
+
+
 def run_qiskit_action(
     action: Action,
     circuit: QuantumCircuit,
@@ -531,6 +538,7 @@ def run_qiskit_action(
     layout: TranspileLayout | None,
     input_qubit_count: int | None = None,
     seed: int | None = None,
+    pass_timeout: float | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     # Build the concrete Qiskit pass list for given action.
@@ -542,6 +550,8 @@ def run_qiskit_action(
         passes = factory(device)
     else:
         passes = cast("list[Task]", action.transpile_pass)
+
+    _set_native_pass_time_limits(passes, pass_timeout)
 
     if seed is not None:
         _seed_randomized_passes(passes, seed)

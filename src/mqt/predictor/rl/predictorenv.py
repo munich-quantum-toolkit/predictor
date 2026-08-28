@@ -630,6 +630,7 @@ class PredictorEnv(Env):
                 layout=self.layout,
                 input_qubit_count=self.num_qubits_uncompiled_circuit,
                 seed=(int(self.np_random.integers(0, np.iinfo(np.int32).max)) if self._seed_qiskit_actions else None),
+                pass_timeout=self.pass_timeout,
             )
         elif action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(

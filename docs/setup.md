@@ -49,9 +49,10 @@ rl_pred.train_model(timesteps=100000, pass_timeout=600)
 ```
 
 `pass_timeout` is optional and applies the same limit to each compilation pass
-during training. If it is omitted, pass execution is unbounded. Pass timeouts
-require POSIX signals and execution on the main thread; unsupported environments
-emit a warning and continue without a timeout.
+during training. If it is omitted, pass execution is unbounded. Passes without a
+native timeout rely on POSIX signals and execution on the main thread;
+unsupported environments emit a warning and continue without that fallback
+timeout.
 
 Currently, the following figures of merit are supported:
 

@@ -534,6 +534,33 @@ def test_seed_randomized_qiskit_passes() -> None:
         assert all(getattr(transpiler_pass, attribute) == 1 for attribute in trial_attributes)
 
 
+@pytest.mark.parametrize("pass_timeout", [None, 1.25])
+def test_qiskit_vf2_actions_use_pass_timeout(pass_timeout: float | None) -> None:
+    """Qiskit's native VF2 search uses the shared timeout value."""
+    device = get_device("ibm_falcon_27")
+    passes = [VF2Layout(target=device), VF2PostLayout(target=device)]
+
+    qiskit_actions._set_native_pass_time_limits(passes, pass_timeout)  # ruff: ignore[private-member-access]
+
+    assert all(transpiler_pass.time_limit == pass_timeout for transpiler_pass in passes)
+
+
+def test_predictor_env_forwards_pass_timeout_to_qiskit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The environment forwards its timeout to Qiskit action execution."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=1.25)
+    circuit = QuantumCircuit(2)
+    env.reset(circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "VF2Layout")
+
+    def fake_run_qiskit_action(**kwargs: object) -> tuple[QuantumCircuit, None]:
+        assert kwargs["pass_timeout"] == pytest.approx(1.25)
+        return circuit, None
+
+    monkeypatch.setattr(predictorenv_module, "run_qiskit_action", fake_run_qiskit_action)
+
+    assert env.apply_action(action_index) is circuit
+
+
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
     actions_registry = vars(actions_registry_module)
