@@ -80,7 +80,7 @@ _BQSKIT_SYNTHESIS_EPSILON = 1e-1 if os.getenv("GITHUB_ACTIONS") == "true" else 1
 _BQSKIT_BLOCK_SIZE = 3
 _BQSKIT_SEARCH_MAX_LAYER = 3
 _BQSKIT_SEED = 10
-_BQSKIT_NUM_WORKERS = 1 if os.getenv("GITHUB_ACTIONS") == "true" else -1
+_BQSKIT_NUM_WORKERS = 1 if os.getenv("GITHUB_ACTIONS") == "true" else 2
 
 
 class _QSDUnitarySynthesisPass(SynthesisPass):

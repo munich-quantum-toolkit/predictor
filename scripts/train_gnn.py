@@ -29,6 +29,7 @@ from qiskit.exceptions import QiskitError
 from qiskit.qasm2 import dump
 from qiskit.transpiler import Target
 from qiskit_ibm_runtime.fake_provider import FakeBoston
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.checkpoints import RollingCheckpointCallback, latest_checkpoint, prune_checkpoints
@@ -58,6 +59,18 @@ EXPECTED_GENERATION_ERRORS = (
 
 class _CircuitTooDeepError(Exception):
     pass
+
+
+class _TensorBoardProgressCallback(BaseCallback):
+    def __init__(self, target_steps: int) -> None:
+        super().__init__()
+        self._target_steps = target_steps
+
+    def _on_step(self) -> bool:
+        self.logger.record("progress/total_timesteps", self.num_timesteps)
+        self.logger.record("progress/fraction_complete", min(self.num_timesteps / self._target_steps, 1.0))
+        self.model.dump_logs()
+        return True
 
 
 def _slug(value: str) -> str:
@@ -294,14 +307,14 @@ def _train(output_dir: Path, total_steps: int, save_interval: int, seed: int, *,
 
     remaining_steps = max(0, total_steps - int(model.num_timesteps))
     if remaining_steps:
-        callback = RollingCheckpointCallback(save_interval, checkpoint_dir)
+        checkpoint_callback = RollingCheckpointCallback(save_interval, checkpoint_dir)
         model.learn(
             total_timesteps=remaining_steps,
             reset_num_timesteps=checkpoint is None,
-            callback=callback,
+            callback=CallbackList([checkpoint_callback, _TensorBoardProgressCallback(total_steps)]),
             progress_bar=True,
         )
-        checkpoint = callback.save_final()
+        checkpoint = checkpoint_callback.save_final()
 
     assert checkpoint is not None
     print(f"Target: {REFERENCE_QPU} ({calibration_snapshot['calibration_timestamp_utc']})")
