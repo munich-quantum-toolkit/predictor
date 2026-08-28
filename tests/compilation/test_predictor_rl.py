@@ -48,7 +48,10 @@ def test_predictor_env_reset_from_string() -> None:
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
-    assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
+    observation, _ = predictor.env.reset(qc=qasm_path)
+
+    assert observation == create_feature_dict(qc, device.num_qubits)
+    assert observation["num_qubits"][0] == pytest.approx(qc.num_qubits / device.num_qubits)
 
 
 def test_predictor_env_esp_error() -> None:

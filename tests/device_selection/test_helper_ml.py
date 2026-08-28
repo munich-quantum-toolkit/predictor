@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 from mqt.bench import BenchmarkLevel, get_benchmark
 
 from mqt.predictor.ml.helper import (
@@ -25,7 +26,12 @@ def test_create_feature_vector() -> None:
     """Test the creation of a feature dictionary."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     feature_vector = create_feature_vector(qc)
-    assert feature_vector is not None
+
+    expected_operations = dict.fromkeys(get_openqasm_gates(), 0.0)
+    expected_operations.update({"x": 1.0, "h": 5.0, "measure": 2.0})
+    expected_features = [*expected_operations.values(), 3.0, 5.0, 0.0, 0.0, 0.0, 1 / 5, 11 / 15]
+
+    np.testing.assert_allclose(feature_vector, expected_features)
 
 
 def test_get_openqasm_gates() -> None:
