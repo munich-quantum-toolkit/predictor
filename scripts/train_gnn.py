@@ -24,6 +24,7 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.benchmarks import get_available_benchmark_names
 from networkx import NetworkXError
 from qiskit import QuantumCircuit, transpile
+from qiskit.circuit import ControlFlowOp
 from qiskit.circuit.library.standard_gates import get_standard_gate_name_mapping
 from qiskit.exceptions import QiskitError
 from qiskit.qasm2 import dump
@@ -113,6 +114,7 @@ def _record_run_metadata(output_dir: Path, device: Target, calibration_snapshot:
     metadata: dict[str, object] = {
         "benchmark_max_depth": MAX_CIRCUIT_DEPTH,
         "calibration_snapshot": calibration_snapshot,
+        "exclude_control_flow": True,
         "figure_of_merit": FIGURE_OF_MERIT,
         "gnn_config": "paper",
         "max_episode_steps": 100,
@@ -149,6 +151,8 @@ def _generate_circuit(
         optimization_level=1,
         seed_transpiler=0,
     )
+    if any(isinstance(instruction.operation, ControlFlowOp) for instruction in circuit.data):
+        return None
     if circuit.num_qubits > max_qubits:
         return None
     if (circuit.depth() or 0) > MAX_CIRCUIT_DEPTH:
@@ -197,6 +201,7 @@ def _prepare_data(output_dir: Path, max_qubits: int, seed: int, *, smoke: bool) 
     config: dict[str, object] = {
         "benchmark_names": benchmark_names,
         "complete": False,
+        "exclude_control_flow": True,
         "max_circuit_depth": MAX_CIRCUIT_DEPTH,
         "max_qubits": max_requested_size,
         "mqt_bench": version("mqt-bench"),
