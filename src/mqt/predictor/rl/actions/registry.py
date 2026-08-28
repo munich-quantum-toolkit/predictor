@@ -52,7 +52,9 @@ def get_actions_by_pass_type() -> dict[PassType, list[Action]]:
 for _action in (
     *qiskit_actions.qiskit_layout_actions(),
     *qiskit_actions.qiskit_routing_actions(),
+    qiskit_actions.qiskit_ai_routing_action(),
     qiskit_actions.qiskit_mapping_action(),
+    qiskit_actions.qiskit_ai_mapping_action(),
     qiskit_actions.qiskit_synthesis_action(),
     qiskit_actions.qiskit_o3_action(),
     *qiskit_actions.qiskit_optimization_actions(),
