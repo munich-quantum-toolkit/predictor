@@ -11,7 +11,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from functools import cache
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, cast
 
 from qiskit.circuit import StandardEquivalenceLibrary
 from qiskit.circuit.library import (
@@ -37,24 +39,33 @@ from qiskit.passmanager.flow_controllers import DoWhileController
 from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
+    BasicSwap,
     BasisTranslator,
     Collect2qBlocks,
+    CollectCliffords,
     CommutativeCancellation,
     CommutativeInverseCancellation,
     ConsolidateBlocks,
+    Decompose,
     DenseLayout,
     Depth,
+    ElidePermutations,
     EnlargeWithAncilla,
     FixedPoint,
     FullAncillaAllocation,
     GatesInBasis,
     InverseCancellation,
+    LookaheadSwap,
     MinimumPoint,
     Optimize1qGatesDecomposition,
+    Optimize1qGatesSimpleCommutation,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
+    RemoveIdentityEquivalent,
     SabreLayout,
+    SabreSwap,
     Size,
+    TrivialLayout,
     UnitarySynthesis,
     VF2Layout,
     VF2PostLayout,
@@ -80,6 +91,39 @@ if TYPE_CHECKING:
     from mqt.predictor.rl.actions.base import Action
 
 logger = logging.getLogger("mqt-predictor")
+
+_AI_ROUTING_ACTION_NAMES = frozenset({"AIRouting", "AIRouting_opt"})
+
+
+@cache
+def _load_airouting() -> type[Any]:
+    """Load IBM's optional AI routing pass."""
+    try:
+        module = import_module("qiskit_ibm_transpiler.ai.routing")
+    except ImportError as exc:
+        msg = "AIRouting requires a qiskit-ibm-transpiler installation compatible with this environment."
+        raise RuntimeError(msg) from exc
+    return cast("type[Any]", vars(module)["AIRouting"])
+
+
+def _airouting_pass(*, coupling_map: CouplingMap, layout_mode: str) -> Task:
+    """Construct IBM's local AI routing pass."""
+    return _load_airouting()(
+        coupling_map=coupling_map,
+        optimization_level=3,
+        layout_mode=layout_mode,
+        local_mode=True,
+    )
+
+
+@cache
+def _is_ai_routing_available() -> bool:
+    """Return whether IBM's AI routing pass can be imported."""
+    try:
+        _load_airouting()
+    except RuntimeError:
+        return False
+    return True
 
 
 def qiskit_optimization_actions() -> list[Action]:
@@ -149,7 +193,11 @@ def qiskit_optimization_actions() -> list[Action]:
             "OptimizeCliffords",
             CompilationOrigin.QISKIT,
             PassType.OPT,
-            [OptimizeCliffords()],
+            [
+                CollectCliffords(),
+                OptimizeCliffords(),
+                Decompose(gates_to_decompose="clifford", apply_synthesis=True),
+            ],
             preserves_layout=True,
             preserves_routing=False,
             preserves_synthesis=False,
@@ -162,6 +210,32 @@ def qiskit_optimization_actions() -> list[Action]:
             preserves_layout=True,
             preserves_routing=True,
             preserves_synthesis=False,
+        ),
+        DeviceIndependentAction(
+            "RemoveIdentityEquivalent",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            [RemoveIdentityEquivalent()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
+        ),
+        DeferredDeviceAction(
+            "Optimize1qGatesSimpleCommutation",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    Optimize1qGatesSimpleCommutation(
+                        basis=device.operation_names,
+                        run_to_completion=True,
+                    )
+                ],
+            ),
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
         ),
     ]
 
@@ -249,7 +323,91 @@ def qiskit_layout_actions() -> list[Action]:
                 ],
             ),
         ),
+        DeferredDeviceAction(
+            "TrivialLayout",
+            CompilationOrigin.QISKIT,
+            PassType.LAYOUT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+            ),
+        ),
+        DeferredDeviceAction(
+            "ElidePermutations",
+            CompilationOrigin.QISKIT,
+            PassType.LAYOUT,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    ElidePermutations(),
+                    TrivialLayout(coupling_map=CouplingMap(device.build_coupling_map())),
+                    FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
+                    EnlargeWithAncilla(),
+                    ApplyLayout(),
+                ],
+            ),
+        ),
     ]
+
+
+def qiskit_routing_actions() -> list[Action]:
+    """Return the Qiskit routing actions."""
+    return [
+        DeferredDeviceAction(
+            "SabreSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]", [SabreSwap(coupling_map=CouplingMap(device.build_coupling_map()), heuristic="decay")]
+            ),
+        ),
+        DeferredDeviceAction(
+            "BasicSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]", [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))]
+            ),
+        ),
+        DeferredDeviceAction(
+            "LookaheadSwap",
+            CompilationOrigin.QISKIT,
+            PassType.ROUTING,
+            transpile_pass=lambda device: cast(
+                "list[Task]",
+                [
+                    LookaheadSwap(
+                        coupling_map=CouplingMap(device.build_coupling_map()),
+                        search_depth=1,
+                        search_width=1,
+                    )
+                ],
+            ),
+        ),
+    ]
+
+
+def qiskit_ai_routing_action() -> Action:
+    """Return IBM's AI routing action."""
+    return DeferredDeviceAction(
+        "AIRouting",
+        CompilationOrigin.QISKIT,
+        PassType.ROUTING,
+        transpile_pass=lambda device: cast(
+            "list[Task]",
+            [
+                _airouting_pass(
+                    coupling_map=device.build_coupling_map(),
+                    layout_mode="improve",
+                )
+            ],
+        ),
+    )
 
 
 def qiskit_mapping_action() -> Action:
@@ -260,6 +418,24 @@ def qiskit_mapping_action() -> Action:
         PassType.MAPPING,
         transpile_pass=lambda device: cast(
             "list[Task]", [SabreLayout(coupling_map=CouplingMap(device.build_coupling_map()), skip_routing=False)]
+        ),
+    )
+
+
+def qiskit_ai_mapping_action() -> Action:
+    """Return the combined AI layout and routing action."""
+    return DeferredDeviceAction(
+        "AIRouting_opt",
+        CompilationOrigin.QISKIT,
+        PassType.MAPPING,
+        transpile_pass=lambda device: cast(
+            "list[Task]",
+            [
+                _airouting_pass(
+                    coupling_map=device.build_coupling_map(),
+                    layout_mode="optimize",
+                ),
+            ],
         ),
     )
 
@@ -365,16 +541,22 @@ def run_qiskit_action(
     if action.pass_type in {PassType.LAYOUT, PassType.MAPPING, PassType.FINAL_OPT}:
         altered_qc, layout = _postprocess_layout_action(action, pm.property_set, altered_qc, layout, input_qubit_count)
     elif action.pass_type == PassType.ROUTING and layout and pm.property_set["final_layout"] is not None:
-        layout.final_layout = pm.property_set["final_layout"]
+        routing_layout = pm.property_set["final_layout"]
+        layout.final_layout = (
+            layout.final_layout.compose(routing_layout, circuit.qubits)
+            if layout.final_layout is not None
+            else routing_layout
+        )
 
     if altered_qc.count_ops().get("unitary"):
         # Custom "unitary" gates can not be processed further by other passes
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
-
     return altered_qc, layout
 
 
 def is_qiskit_action_available(action: Action, device: Target) -> bool:
     """Return whether a Qiskit action is available for the current device."""
+    if action.name in _AI_ROUTING_ACTION_NAMES and not _is_ai_routing_available():
+        return False
     # Only allow VF2PostLayout if "ibm" is in the device name # TODO: Why?
     return action.name != "VF2PostLayout" or "ibm" in device.description
