@@ -121,8 +121,8 @@ def test_warning_for_unidirectional_device() -> None:
         Predictor(figure_of_merit="expected_fidelity", device=target)
 
 
-def test_predictor_env_truncates_at_max_steps() -> None:
-    """Test that the environment truncates episodes that hit the step limit."""
+def test_predictor_env_terminates_at_max_steps() -> None:
+    """Test that the environment terminates episodes that hit the step limit."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
     qc = QuantumCircuit(1)
@@ -132,9 +132,9 @@ def test_predictor_env_truncates_at_max_steps() -> None:
     _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
 
     assert reward_val == 0
-    assert not terminated
-    assert truncated
-    assert info["truncation_reason"] == "max_steps_exceeded"
+    assert terminated
+    assert not truncated
+    assert info["termination_reason"] == "max_steps_exceeded"
 
 
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
