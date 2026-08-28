@@ -14,7 +14,8 @@ releases may include breaking changes.
 
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
   `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and
-  `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#794])
+  `Optimize1qGatesSimpleCommutation` passes and the optional IBM-backed
+  `AIRouting` and `AIRouting_opt` passes to the RL actions ([#794])
   ([**@flowerthrower**])
 - ✨ Expand and compact the RL observation with normalized OpenQASM operation
   frequencies and one-element `float32` qubit-count and depth arrays, and
