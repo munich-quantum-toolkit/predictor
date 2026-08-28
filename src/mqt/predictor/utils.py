@@ -192,4 +192,5 @@ def get_openqasm_gates() -> list[str]:
         "c3sqrtx",
         "c4x",
         "measure",
+        "r",
     ]
