@@ -545,6 +545,25 @@ def test_qiskit_vf2_actions_use_pass_timeout(pass_timeout: float | None) -> None
     assert all(transpiler_pass.time_limit == pass_timeout for transpiler_pass in passes)
 
 
+def test_qiskit_vf2_timeout_worker() -> None:
+    """The isolated VF2 worker returns results and stops at its deadline."""
+    device = get_device("ibm_falcon_27")
+    action = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "VF2Layout")
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+
+    try:
+        compiled, layout = qiskit_actions.run_qiskit_action(action, circuit, device, None, pass_timeout=30)
+        with pytest.raises(TimeoutError, match=re.escape("exceeded the timeout of 0.001 seconds")):
+            qiskit_actions.run_qiskit_action(action, circuit, device, None, pass_timeout=0.001)
+    finally:
+        qiskit_actions._close_qiskit_timeout_pool()  # ruff: ignore[private-member-access]
+
+    assert compiled.num_qubits == device.num_qubits
+    assert layout is not None
+    assert qiskit_actions._QISKIT_TIMEOUT_POOL is None  # ruff: ignore[private-member-access]
+
+
 def test_predictor_env_forwards_pass_timeout_to_qiskit(monkeypatch: pytest.MonkeyPatch) -> None:
     """The environment forwards its timeout to Qiskit action execution."""
     env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=1.25)

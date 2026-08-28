@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import multiprocessing
 from functools import cache
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
@@ -82,6 +84,7 @@ from mqt.predictor.rl.actions.base import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from multiprocessing.pool import Pool
 
     from qiskit import QuantumCircuit
     from qiskit.passmanager import PropertySet
@@ -91,6 +94,8 @@ if TYPE_CHECKING:
     from mqt.predictor.rl.actions.base import Action
 
 logger = logging.getLogger("mqt-predictor")
+_QISKIT_TIMEOUT_POOL: Pool | None = None
+_VF2_ACTION_NAMES = frozenset({"VF2Layout", "VF2PostLayout"})
 
 _AI_ROUTING_ACTION_NAMES = frozenset({"AIRouting", "AIRouting_opt"})
 
@@ -531,7 +536,7 @@ def _set_native_pass_time_limits(passes: Sequence[Task], pass_timeout: float | N
             transpiler_pass.time_limit = pass_timeout
 
 
-def run_qiskit_action(
+def _run_qiskit_action(
     action: Action,
     circuit: QuantumCircuit,
     device: Target,
@@ -578,6 +583,68 @@ def run_qiskit_action(
         # Custom "unitary" gates can not be processed further by other passes
         altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
     return altered_qc, layout
+
+
+def _run_registered_vf2_action(
+    action_name: str,
+    circuit: QuantumCircuit,
+    device: Target,
+    layout: TranspileLayout | None,
+    input_qubit_count: int | None,
+    seed: int | None,
+    pass_timeout: float,
+) -> tuple[QuantumCircuit, TranspileLayout | None]:
+    if action_name == "VF2Layout":
+        action = next(action for action in qiskit_layout_actions() if action.name == action_name)
+    else:
+        action = qiskit_final_optimization_action()
+    return _run_qiskit_action(action, circuit, device, layout, input_qubit_count, seed, pass_timeout)
+
+
+def _close_qiskit_timeout_pool() -> None:
+    global _QISKIT_TIMEOUT_POOL  # ruff: ignore[global-statement]
+    if _QISKIT_TIMEOUT_POOL is not None:
+        _QISKIT_TIMEOUT_POOL.terminate()
+        _QISKIT_TIMEOUT_POOL.join()
+        _QISKIT_TIMEOUT_POOL = None
+
+
+def _get_qiskit_timeout_pool() -> Pool:
+    global _QISKIT_TIMEOUT_POOL  # ruff: ignore[global-statement]
+    if _QISKIT_TIMEOUT_POOL is None:
+        _QISKIT_TIMEOUT_POOL = multiprocessing.get_context("forkserver").Pool(processes=1)
+    return _QISKIT_TIMEOUT_POOL
+
+
+atexit.register(_close_qiskit_timeout_pool)
+
+
+def run_qiskit_action(
+    action: Action,
+    circuit: QuantumCircuit,
+    device: Target,
+    layout: TranspileLayout | None,
+    input_qubit_count: int | None = None,
+    seed: int | None = None,
+    pass_timeout: float | None = None,
+) -> tuple[QuantumCircuit, TranspileLayout | None]:
+    """Apply a Qiskit action and return the updated circuit and layout metadata."""
+    if pass_timeout is None or action.name not in _VF2_ACTION_NAMES:
+        return _run_qiskit_action(action, circuit, device, layout, input_qubit_count, seed, pass_timeout)
+
+    try:
+        return (
+            _get_qiskit_timeout_pool()
+            .apply_async(
+                _run_registered_vf2_action,
+                (action.name, circuit, device, layout, input_qubit_count, seed, pass_timeout),
+            )
+            .get(timeout=pass_timeout)
+        )
+    except (multiprocessing.TimeoutError, TimeoutError) as error:
+        _close_qiskit_timeout_pool()
+        msg = f"Compilation pass exceeded the timeout of {pass_timeout:g} seconds."
+        raise TimeoutError(msg) from error
 
 
 def is_qiskit_action_available(action: Action, device: Target) -> bool:
