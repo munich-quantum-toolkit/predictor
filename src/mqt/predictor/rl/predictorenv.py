@@ -177,7 +177,7 @@ class PredictorEnv(Env):
         self.layout: TranspileLayout | None = None
 
         self.has_parameterized_gates = False
-        self.rng = np.random.default_rng(10)
+        self._seed_qiskit_actions = False
 
         operation_spaces = {
             operation: Box(low=0, high=1, shape=(1,), dtype=np.float32) for operation in OBSERVATION_OPERATIONS
@@ -201,6 +201,12 @@ class PredictorEnv(Env):
 
         self.observation_space = Dict(spaces)
         self.filename = ""
+
+    def configure_qiskit_action_seeding(self, *, enabled: bool) -> bool:
+        """Configure Qiskit action seeding and return the previous setting."""
+        previous = self._seed_qiskit_actions
+        self._seed_qiskit_actions = enabled
+        return previous
 
     def _collect_tracer_data(
         self,
@@ -410,6 +416,8 @@ class PredictorEnv(Env):
             The initial state and additional information.
         """
         super().reset(seed=seed)
+        if seed is not None:
+            self._seed_qiskit_actions = True
         if isinstance(qc, QuantumCircuit):
             self.state = qc
             self.filename = ""
@@ -419,7 +427,11 @@ class PredictorEnv(Env):
             self.filename = str(qc)
             current_circuit_name = Path(str(qc)).stem
         else:
-            self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
+            self.state, self.filename = get_state_sample(
+                self.device.num_qubits,
+                self.path_training_circuits,
+                self.np_random,
+            )
             current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
@@ -556,6 +568,7 @@ class PredictorEnv(Env):
                 device=self.device,
                 layout=self.layout,
                 input_qubit_count=self.num_qubits_uncompiled_circuit,
+                seed=(int(self.np_random.integers(0, np.iinfo(np.int32).max)) if self._seed_qiskit_actions else None),
             )
         elif action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(

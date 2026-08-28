@@ -32,6 +32,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🐛 Restore nondeterministic RL circuit sampling and inference without a seed,
+  and make explicitly seeded training, deterministic inference, and randomized
+  Qiskit actions reproducible ([#797]) ([**@flowerthrower**])
 - 🐛 Mask TKET layout and routing actions for circuits containing operations
   wider than two qubits ([#796]) ([**@flowerthrower**])
 - 🐛 Make the `OptimizeCliffords` RL action collect standard Clifford gates
@@ -106,6 +109,7 @@ for previous changelogs._
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#797]: https://github.com/munich-quantum-toolkit/predictor/pull/797
 [#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794

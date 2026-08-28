@@ -24,22 +24,26 @@ from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.quantum_info import Clifford
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler.passes import GatesInBasis, SabreLayout, SabreSwap, VF2Layout, VF2PostLayout
 
 from mqt.predictor.rl import Predictor, rl_compile
+from mqt.predictor.rl import predictor as predictor_module
 from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 if TYPE_CHECKING:
-    from mqt.predictor.rl.predictorenv import MDPPolicy
+    from numpy.random import Generator
+
+    from mqt.predictor.rl.predictorenv import MDPPolicy, PredictorEnv
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -313,6 +317,108 @@ def test_clifford_decomposition_is_scoped_to_optimize_cliffords() -> None:
     )
     optimized = env.apply_action(optimize_cliffords_index)
     assert "clifford" not in optimized.count_ops()
+
+
+def test_predictor_env_qiskit_action_seeds_are_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test default randomness and reproducible user-seeded resets."""
+    captured_seeds: list[int | None] = []
+    captured_samples: list[int] = []
+
+    def fake_run_qiskit_action(**kwargs: object) -> tuple[QuantumCircuit, TranspileLayout | None]:
+        captured_seeds.append(cast("int | None", kwargs["seed"]))
+        return cast("QuantumCircuit", kwargs["circuit"]), cast("TranspileLayout | None", kwargs["layout"])
+
+    def fake_get_state_sample(_max_qubits: int, _path: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
+        captured_samples.append(int(rng.integers(0, 1000)))
+        return QuantumCircuit(2), "sample.qasm"
+
+    monkeypatch.setattr(predictorenv_module, "run_qiskit_action", fake_run_qiskit_action)
+    monkeypatch.setattr(predictorenv_module, "get_state_sample", fake_get_state_sample)
+
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"))
+    action_index = next(index for index, action in env.action_set.items() if action.origin == CompilationOrigin.QISKIT)
+    env.reset()
+    env.apply_action(action_index)
+
+    assert captured_seeds == [None]
+    captured_seeds.clear()
+    captured_samples.clear()
+
+    for _ in range(2):
+        env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"))
+        action_index = next(
+            index for index, action in env.action_set.items() if action.origin == CompilationOrigin.QISKIT
+        )
+        env.reset(seed=123)
+        env.apply_action(action_index)
+        env.apply_action(action_index)
+        env.reset()
+        env.apply_action(action_index)
+
+    assert captured_seeds[:3] == captured_seeds[3:]
+    assert all(seed is not None for seed in captured_seeds)
+    assert captured_seeds[0] != captured_seeds[1]
+    assert captured_samples[:2] == captured_samples[2:]
+
+
+def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that a compilation seed enables deterministic inference and seeded actions."""
+    predictor = Predictor(figure_of_merit="expected_fidelity", device=get_device("ibm_falcon_27"))
+    predictor.env.reset(QuantumCircuit(1), seed=123)
+    observed_inference_modes: list[tuple[bool, bool]] = []
+    observed_training_modes: list[bool] = []
+
+    class TerminatingModel:
+        """Return the terminate action immediately."""
+
+        @staticmethod
+        def predict(_observation: object, *, deterministic: bool, action_masks: object) -> tuple[int, None]:
+            assert action_masks is not None
+            qiskit_actions_seeded = predictor.env.configure_qiskit_action_seeding(enabled=False)
+            observed_inference_modes.append((deterministic, qiskit_actions_seeded))
+            return predictor.env.action_terminate_index, None
+
+    class NoOpModel:
+        """Record the environment mode without training a model."""
+
+        def __init__(self, *args: object, **_kwargs: object) -> None:
+            env = cast("PredictorEnv", args[1])
+            observed_training_modes.append(env.configure_qiskit_action_seeding(enabled=False))
+
+        def learn(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def save(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+    monkeypatch.setattr(predictor_module, "load_model", lambda _model_name: TerminatingModel())
+    predictor.compile_as_predicted(QuantumCircuit(1))
+    assert predictor.env.configure_qiskit_action_seeding(enabled=True)
+    rl_compile(QuantumCircuit(1), device=None, predictor_singleton=predictor, seed=123)
+    assert predictor.env.configure_qiskit_action_seeding(enabled=True)
+
+    monkeypatch.setattr(predictor_module, "MaskablePPO", NoOpModel)
+    predictor.train_model(timesteps=1, test=True)
+
+    assert observed_inference_modes == [(False, False), (True, True)]
+    assert observed_training_modes == [False]
+
+
+def test_seed_randomized_qiskit_passes() -> None:
+    """Test native Qiskit seeds and CPU-independent SABRE trial counts."""
+    device = get_device("ibm_falcon_27")
+    coupling_map = device.build_coupling_map()
+    passes_and_trial_attributes = [
+        (VF2Layout(target=device), ()),
+        (VF2PostLayout(target=device), ()),
+        (SabreSwap(coupling_map=coupling_map), ("trials",)),
+        (SabreLayout(coupling_map=coupling_map), ("layout_trials", "swap_trials")),
+    ]
+
+    for transpiler_pass, trial_attributes in passes_and_trial_attributes:
+        qiskit_actions._seed_randomized_passes([transpiler_pass], seed=123)  # ruff: ignore[private-member-access]
+        assert transpiler_pass.seed == 123
+        assert all(getattr(transpiler_pass, attribute) == 1 for attribute in trial_attributes)
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
