@@ -612,7 +612,8 @@ def _close_qiskit_timeout_pool() -> None:
 def _get_qiskit_timeout_pool() -> Pool:
     global _QISKIT_TIMEOUT_POOL  # ruff: ignore[global-statement]
     if _QISKIT_TIMEOUT_POOL is None:
-        _QISKIT_TIMEOUT_POOL = multiprocessing.get_context("forkserver").Pool(processes=1)
+        start_method = "forkserver" if "forkserver" in multiprocessing.get_all_start_methods() else "spawn"
+        _QISKIT_TIMEOUT_POOL = multiprocessing.get_context(start_method).Pool(processes=1)
     return _QISKIT_TIMEOUT_POOL
 
 

@@ -10,12 +10,14 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import re
 import signal
 import time
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from unittest.mock import Mock
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -546,7 +548,7 @@ def test_qiskit_vf2_actions_use_pass_timeout(pass_timeout: float | None) -> None
 
 
 def test_qiskit_vf2_timeout_worker() -> None:
-    """The isolated VF2 worker returns results and stops at its deadline."""
+    """The isolated VF2 worker returns results."""
     device = get_device("ibm_falcon_27")
     action = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "VF2Layout")
     circuit = QuantumCircuit(2)
@@ -554,13 +556,30 @@ def test_qiskit_vf2_timeout_worker() -> None:
 
     try:
         compiled, layout = qiskit_actions.run_qiskit_action(action, circuit, device, None, pass_timeout=30)
-        with pytest.raises(TimeoutError, match=re.escape("exceeded the timeout of 0.001 seconds")):
-            qiskit_actions.run_qiskit_action(action, circuit, device, None, pass_timeout=0.001)
     finally:
         qiskit_actions._close_qiskit_timeout_pool()  # ruff: ignore[private-member-access]
 
     assert compiled.num_qubits == device.num_qubits
     assert layout is not None
+    assert qiskit_actions._QISKIT_TIMEOUT_POOL is None  # ruff: ignore[private-member-access]
+
+
+def test_qiskit_vf2_timeout_worker_stops_at_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A VF2 deadline terminates and resets the isolated worker."""
+    result = Mock()
+    result.get.side_effect = multiprocessing.TimeoutError
+    pool = Mock()
+    pool.apply_async.return_value = result
+    monkeypatch.setattr(qiskit_actions, "_QISKIT_TIMEOUT_POOL", pool)
+
+    device = get_device("ibm_falcon_27")
+    action = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "VF2Layout")
+    with pytest.raises(TimeoutError, match=re.escape("exceeded the timeout of 1.25 seconds")):
+        qiskit_actions.run_qiskit_action(action, QuantumCircuit(2), device, None, pass_timeout=1.25)
+
+    result.get.assert_called_once_with(timeout=1.25)
+    pool.terminate.assert_called_once_with()
+    pool.join.assert_called_once_with()
     assert qiskit_actions._QISKIT_TIMEOUT_POOL is None  # ruff: ignore[private-member-access]
 
 
