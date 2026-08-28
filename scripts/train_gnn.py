@@ -39,7 +39,7 @@ from mqt.predictor.utils import get_openqasm_gates
 REFERENCE_QPU = "ibm_boston"
 FIGURE_OF_MERIT = "estimated_success_probability"
 TEST_FRACTION = 0.1
-MAX_CIRCUIT_DEPTH = 1_000
+MAX_CIRCUIT_DEPTH = 256
 PASS_TIMEOUT_SECONDS = 30
 RL_BASIS_GATES = [gate for gate in get_openqasm_gates() if gate in get_standard_gate_name_mapping()]
 ESP_OPERATIONS = ("cz", "delay", "id", "measure", "reset", "rz", "sx", "x")
