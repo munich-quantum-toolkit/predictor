@@ -12,7 +12,7 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add BQSKit's `QSDPass` and `MGDPass` to the RL synthesis actions ([#795])
+- ✨ Add BQSKit's `QSDPass` to the RL synthesis actions ([#795])
   ([**@flowerthrower**])
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
   `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and

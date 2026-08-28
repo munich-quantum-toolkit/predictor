@@ -67,8 +67,8 @@ The new actions include:
 - the `GeneralizedSabreRoutingPass` routing action;
 - the `BQSKitSABREMapping` mapping action; and
 - the `QSearchSynthesisPass`, `LEAPSynthesisPass`, `WalshDiagonalSynthesisPass`,
-  `QSDPass`, `MGDPass`, `FullQSDPass`, `BlockZXZPass`, and `FullBlockZXZPass`
-  synthesis actions.
+  `QSDPass`, `FullQSDPass`, `BlockZXZPass`, and `FullBlockZXZPass` synthesis
+  actions.
 
 See the
 [framework setup](docs/setup.md#step-2-train-reinforcement-learning-models) for
