@@ -31,6 +31,7 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
+from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import CompilationOrigin, PassType, bqskit_actions, tket_actions
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
@@ -126,6 +127,37 @@ def simple_circuit() -> QuantumCircuit:
 def env(target: Target) -> PredictorEnv:
     """Create a PredictorEnv for state-based invariant checking."""
     return PredictorEnv(device=target, reward_function="expected_fidelity")
+
+
+@pytest.mark.parametrize("action_name", ["GraphPlacement", "NoiseAwarePlacement"])
+@pytest.mark.parametrize(("pass_timeout", "expected_ms"), [(None, 2**32 - 1), (1.25, 1250)])
+def test_tket_placement_actions_use_pass_timeout(
+    action_name: str, pass_timeout: float | None, expected_ms: int, target: Target
+) -> None:
+    """TKET placement uses the shared timeout value and has no shorter default cutoff."""
+    action = next(action for action in tket_actions.tket_layout_actions() if action.name == action_name)
+    assert callable(action.transpile_pass)
+
+    placement = action.transpile_pass(target, pass_timeout)[0]
+
+    assert placement.to_dict()["timeout"] == expected_ms
+
+
+def test_predictor_env_forwards_pass_timeout_to_tket(
+    monkeypatch: pytest.MonkeyPatch, env: PredictorEnv, simple_circuit: QuantumCircuit
+) -> None:
+    """The environment forwards its timeout to TKET action execution."""
+    env.pass_timeout = 1.25
+    env.reset(simple_circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "GraphPlacement")
+
+    def fake_run_tket_action(**kwargs: object) -> tuple[QuantumCircuit, None]:
+        assert kwargs["pass_timeout"] == pytest.approx(1.25)
+        return simple_circuit, None
+
+    monkeypatch.setattr(predictorenv_module, "run_tket_action", fake_run_tket_action)
+
+    assert env.apply_action(action_index) is simple_circuit
 
 
 @pytest.mark.filterwarnings("ignore:__array__ implementation doesn't accept a copy keyword:DeprecationWarning")

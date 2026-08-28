@@ -14,6 +14,7 @@ import logging
 import operator
 from collections import defaultdict
 from functools import cache
+from math import ceil
 from typing import TYPE_CHECKING, cast
 
 from pytket import Qubit
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
     from mqt.predictor.rl.actions.base import Action
 
 logger = logging.getLogger("mqt-predictor")
+_TKET_MAX_TIMEOUT_MS = 2**32 - 1
 
 
 class PreProcessTKETRoutingAfterQiskitLayout:
@@ -90,7 +92,23 @@ def _prepare_noise_data(device: Target) -> tuple[dict[Node, float], dict[tuple[N
     return node_errors, link_errors, readout_errors
 
 
-def _noise_aware_placement(device: Target) -> list[Placement]:
+def _placement_timeout_ms(pass_timeout: float | None) -> int:
+    if pass_timeout is None:
+        return _TKET_MAX_TIMEOUT_MS
+    return min(_TKET_MAX_TIMEOUT_MS, max(1, ceil(pass_timeout * 1000)))
+
+
+def _graph_placement(device: Target, pass_timeout: float | None = None) -> list[Placement]:
+    return [
+        GraphPlacement(
+            Architecture(list(device.build_coupling_map())),
+            timeout=_placement_timeout_ms(pass_timeout),
+            maximum_matches=5000,
+        )
+    ]
+
+
+def _noise_aware_placement(device: Target, pass_timeout: float | None = None) -> list[Placement]:
     node_errors, link_errors, readout_errors = _prepare_noise_data(device)
     return [
         NoiseAwarePlacement(
@@ -98,7 +116,7 @@ def _noise_aware_placement(device: Target) -> list[Placement]:
             node_errors=node_errors,
             link_errors=link_errors,
             readout_errors=readout_errors,
-            timeout=5000,
+            timeout=_placement_timeout_ms(pass_timeout),
             maximum_matches=5000,
         )
     ]
@@ -204,13 +222,7 @@ def tket_layout_actions() -> list[Action]:
             "GraphPlacement",
             CompilationOrigin.TKET,
             PassType.LAYOUT,
-            transpile_pass=lambda device: [
-                GraphPlacement(
-                    Architecture(list(device.build_coupling_map())),
-                    timeout=5000,
-                    maximum_matches=5000,
-                )
-            ],
+            transpile_pass=_graph_placement,
         ),
         DeferredDeviceAction(
             "NoiseAwarePlacement",
@@ -258,15 +270,23 @@ def run_tket_action(
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
+    pass_timeout: float | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a TKET action and return the updated circuit and layout metadata."""
     tket_qc = qiskit_to_tk(circuit, preserve_param_uuid=True)
     if callable(action.transpile_pass):
-        factory = cast(
-            "Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout | Placement]]",
-            action.transpile_pass,
-        )
-        passes = factory(device)
+        if action.transpile_pass in {_graph_placement, _noise_aware_placement}:
+            timeout_factory = cast(
+                "Callable[[Target, float | None], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout | Placement]]",
+                action.transpile_pass,
+            )
+            passes = timeout_factory(device, pass_timeout)
+        else:
+            factory = cast(
+                "Callable[[Target], list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout | Placement]]",
+                action.transpile_pass,
+            )
+            passes = factory(device)
     else:
         passes = cast("list[TketBasePass | PreProcessTKETRoutingAfterQiskitLayout | Placement]", action.transpile_pass)
 

@@ -637,6 +637,7 @@ class PredictorEnv(Env):
                 circuit=self.state,
                 device=self.device,
                 layout=self.layout,
+                pass_timeout=self.pass_timeout,
             )
         elif action.origin == CompilationOrigin.BQSKIT:
             altered_qc, self.layout = run_bqskit_action(

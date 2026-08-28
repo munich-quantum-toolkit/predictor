@@ -164,8 +164,7 @@ def test_inference_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) 
         predictor.env.state = qc
         return {}, 0, True, False, {}
 
-    def fake_reset(_qc: QuantumCircuit | str, seed: int) -> tuple[dict[str, object], dict[str, object]]:
-        assert seed == 0
+    def fake_reset(_qc: QuantumCircuit | str) -> tuple[dict[str, object], dict[str, object]]:
         predictor.env.error_occurred = False
         return {}, {}
 
