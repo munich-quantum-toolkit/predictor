@@ -22,7 +22,7 @@ from datetime import UTC
 from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import gymnasium as gym
 import psutil  # ty: ignore[unresolved-import]
@@ -41,11 +41,8 @@ from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.checkpoints import RollingCheckpointCallback, latest_checkpoint, prune_checkpoints
 from mqt.predictor.rl.gnn import GNNConfig, GNNMaskablePPO, GNNObservationWrapper, create_gnn_model
-from mqt.predictor.rl.predictor import Predictor
+from mqt.predictor.rl.predictorenv import PredictorEnv
 from mqt.predictor.utils import get_openqasm_gates
-
-if TYPE_CHECKING:
-    from mqt.predictor.rl.predictorenv import PredictorEnv
 
 REFERENCE_QPU = "ibm_boston"
 FIGURE_OF_MERIT = "estimated_success_probability"
@@ -53,6 +50,8 @@ TEST_FRACTION = 0.1
 MAX_CIRCUIT_DEPTH = 256
 PASS_TIMEOUT_SECONDS = 30
 DEFAULT_ROLLOUT_STEPS = 256
+MAX_COMPILED_CIRCUIT_DEPTH = 1000
+MAX_COMPILED_CIRCUIT_GATES = 10_000
 RL_BASIS_GATES = [gate for gate in get_openqasm_gates() if gate in get_standard_gate_name_mapping()]
 ESP_OPERATIONS = ("cz", "delay", "id", "measure", "reset", "rz", "sx", "x")
 EXPECTED_GENERATION_ERRORS = (
@@ -94,6 +93,22 @@ class _TensorBoardProgressCallback(BaseCallback):
         return True
 
 
+class _BoundedPredictorEnv(PredictorEnv):
+    """Reject compiled states too large for the experiment rollout buffer."""
+
+    def apply_action(self, action_index: int) -> QuantumCircuit:
+        circuit = super().apply_action(action_index)
+        gate_count = circuit.size()
+        if gate_count > MAX_COMPILED_CIRCUIT_GATES:
+            msg = f"Compiled circuit has {gate_count} gates; limit is {MAX_COMPILED_CIRCUIT_GATES}."
+            raise RuntimeError(msg)
+        depth = circuit.depth()
+        if depth > MAX_COMPILED_CIRCUIT_DEPTH:
+            msg = f"Compiled circuit has depth {depth}; limit is {MAX_COMPILED_CIRCUIT_DEPTH}."
+            raise RuntimeError(msg)
+        return circuit
+
+
 def _process_tree_rss_mib(process: psutil.Process) -> float:
     processes = [process, *process.children(recursive=True)]
     total = 0
@@ -108,11 +123,17 @@ def _process_tree_rss_mib(process: psutil.Process) -> float:
 class _ResourceMonitor(gym.Wrapper):
     """Measure per-action process-tree memory for the experiment."""
 
-    def __init__(self, env: gym.Env) -> None:
+    def __init__(self, env: gym.Env, log_path: Path) -> None:
         super().__init__(env)
         self._process = psutil.Process(os.getpid())
         self._action_count = 0
+        self._log_path = log_path
         self.resource_metrics: dict[str, float | int] = {}
+
+    def _log(self, message: str) -> None:
+        print(message, flush=True)
+        with self._log_path.open("a", encoding="utf-8") as log:
+            log.write(f"{message}\n")
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         predictor_env = cast("PredictorEnv", self.unwrapped)
@@ -131,10 +152,9 @@ class _ResourceMonitor(gym.Wrapper):
                 minimum_available = min(minimum_available, psutil.virtual_memory().available / 2**20)
 
         self._action_count += 1
-        print(
+        self._log(
             f"action={self._action_count} pass={action_name} qubits={circuit.num_qubits} "
-            f"gates={circuit.size()} depth={circuit.depth()} rss_mib={rss_before:.1f}",
-            flush=True,
+            f"gates={circuit.size()} depth={circuit.depth()} rss_mib={rss_before:.1f}"
         )
         sampler = threading.Thread(target=sample_memory, daemon=True)
         sampler.start()
@@ -153,6 +173,8 @@ class _ResourceMonitor(gym.Wrapper):
             "process_tree_rss_before_mib": rss_before,
             "system_available_min_mib": minimum_available,
         }
+        if terminated or truncated:
+            self._log(f"action={self._action_count} episode_done info={info}")
         return cast("dict[str, Any]", observation), float(reward), terminated, truncated, info
 
 
@@ -198,6 +220,8 @@ def _record_run_metadata(
     metadata: dict[str, object] = {
         "benchmark_max_depth": MAX_CIRCUIT_DEPTH,
         "calibration_snapshot": calibration_snapshot,
+        "compiled_state_max_depth": MAX_COMPILED_CIRCUIT_DEPTH,
+        "compiled_state_max_gates": MAX_COMPILED_CIRCUIT_GATES,
         "exclude_control_flow": True,
         "figure_of_merit": FIGURE_OF_MERIT,
         "gnn_config": "paper",
@@ -376,19 +400,17 @@ def _train(
             n_epochs=1,
         )
 
-    predictor = Predictor(
-        figure_of_merit=FIGURE_OF_MERIT,
+    predictor_env = _BoundedPredictorEnv(
+        reward_function=FIGURE_OF_MERIT,
         device=device,
         path_training_circuits=train_dir,
         max_steps=100,
         mdp="v3",
-        graph=True,
-        gnn_config=config,
     )
-    predictor.env.pass_timeout = PASS_TIMEOUT_SECONDS
-    predictor.env.configure_qiskit_action_seeding(enabled=True)
+    predictor_env.pass_timeout = PASS_TIMEOUT_SECONDS
+    predictor_env.configure_qiskit_action_seeding(enabled=True)
     set_random_seed(seed)
-    graph_env = GNNObservationWrapper(_ResourceMonitor(predictor.env))
+    graph_env = GNNObservationWrapper(_ResourceMonitor(predictor_env, output_dir / "actions.log"))
     checkpoint_dir = output_dir / "checkpoints"
     prune_checkpoints(checkpoint_dir)
     checkpoint = latest_checkpoint(checkpoint_dir)
