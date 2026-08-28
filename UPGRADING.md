@@ -11,7 +11,9 @@ of changes including minor and patch releases, please refer to the
 The RL action space now includes the following Qiskit passes:
 
 - the `TrivialLayout` and `ElidePermutations` layout actions;
-- the `SabreSwap`, `BasicSwap`, and `LookaheadSwap` routing actions; and
+- the `SabreSwap`, `BasicSwap`, `LookaheadSwap`, and `AIRouting` routing
+  actions;
+- the combined layout-and-routing action `AIRouting_opt`; and
 - the `RemoveIdentityEquivalent` and `Optimize1qGatesSimpleCommutation`
   optimization actions.
 
@@ -19,6 +21,15 @@ The RL action space now includes the following Qiskit passes:
 output permutation remains part of the canonical layout. `OptimizeCliffords` now
 collects standard Clifford gates before optimizing and decomposes the result for
 subsequent passes.
+
+`AIRouting` and `AIRouting_opt` are masked when IBM's optional
+`qiskit-ibm-transpiler` package cannot be imported. MQT Predictor does not
+install that package because its current release pins NetworkX 2.8.5 while MQT
+Bench requires NetworkX 2.8.8 or newer, excludes Python 3.14, and imports Qiskit
+internals removed in Qiskit 2.5. Consequently, there is currently no supported
+MQT Predictor installation that enables these actions. A future compatible IBM
+release can be loaded without changing the action schema. Its routing model is
+downloaded on first use.
 
 Existing RL models must be retrained because the action-space size and the
 indices of later actions have changed. Code that persists or selects actions by
