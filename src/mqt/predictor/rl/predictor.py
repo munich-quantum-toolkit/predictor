@@ -20,7 +20,7 @@ from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.utils import set_random_seed
 
 from mqt.predictor.rl.helper import get_path_trained_model, logger
-from mqt.predictor.rl.predictorenv import PredictorEnv
+from mqt.predictor.rl.predictorenv import MDPPolicy, PredictorEnv
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -40,6 +40,7 @@ class Predictor:
         logger_level: int = logging.INFO,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
+        mdp: MDPPolicy = "v3",
     ) -> None:
         """Initializes the Predictor object.
 
@@ -50,6 +51,8 @@ class Predictor:
             logger_level: The logger level. Defaults to logging.INFO.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
+            mdp: The MDP transition policy. ``v2`` is the original strategy and
+                ``v3`` is the default.
         """
         logger.setLevel(logger_level)
 
@@ -59,9 +62,11 @@ class Predictor:
             path_training_circuits=path_training_circuits,
             max_steps=max_steps,
             tracer_output_path=tracer_output_path,
+            mdp=mdp,
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
+        self.model_name = f"model_{self.figure_of_merit}_{self.device_name}_{mdp}"
 
     def compile_as_predicted(
         self,
@@ -87,7 +92,7 @@ class Predictor:
             self.env.tracer_output_path = tracer_output_path
 
         try:
-            trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
+            trained_rl_model = load_model(self.model_name)
 
             obs, _ = self.env.reset(qc, seed=0)
 
@@ -148,7 +153,7 @@ class Predictor:
             MaskableMultiInputActorCriticPolicy,
             self.env,
             verbose=verbose,
-            tensorboard_log="./model_" + self.figure_of_merit + "_" + self.device_name,
+            tensorboard_log=f"./{self.model_name}",
             gamma=0.98,
             n_steps=n_steps,
             batch_size=batch_size,
@@ -158,7 +163,7 @@ class Predictor:
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
         # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
         model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
-        model.save(get_path_trained_model() / ("model_" + self.figure_of_merit + "_" + self.device_name))
+        model.save(get_path_trained_model() / self.model_name)
 
 
 def load_model(model_name: str) -> MaskablePPO:
@@ -188,6 +193,7 @@ def rl_compile(
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
     tracer_output_path: str | Path | None = None,
+    mdp: MDPPolicy = "v3",
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -197,6 +203,9 @@ def rl_compile(
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
         tracer_output_path: If provided, enables compiler tracing and exports the JSON log to the specified path.
+        mdp: The MDP transition policy used when constructing a predictor. ``v2``
+            is the original strategy and ``v3`` is the default. When
+            ``predictor_singleton`` is provided, its configured policy is used instead.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -211,7 +220,12 @@ def rl_compile(
         if device is None:
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
+        predictor = Predictor(
+            figure_of_merit=figure_of_merit,
+            device=device,
+            tracer_output_path=tracer_output_path,
+            mdp=mdp,
+        )
         return predictor.compile_as_predicted(qc)
 
     return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path)

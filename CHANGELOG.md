@@ -13,6 +13,9 @@ releases may include breaking changes.
 ### Added
 
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
+- ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and
+  use the selected strategy in compilation traces and model artifact names
+  ([#755]) ([**@flowerthrower**])
 
 ### Changed
 
@@ -86,12 +89,13 @@ for previous changelogs._
 
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
-[#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
+[#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
+[#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
-[#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#679]: https://github.com/munich-quantum-toolkit/predictor/pull/679
+[#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
 [#572]: https://github.com/munich-quantum-toolkit/predictor/pull/572
 [#489]: https://github.com/munich-quantum-toolkit/predictor/pull/489
 [#488]: https://github.com/munich-quantum-toolkit/predictor/pull/488

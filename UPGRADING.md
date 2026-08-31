@@ -36,6 +36,17 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
+### Default RL MDP strategy
+
+`PredictorEnv`, `Predictor`, and `rl_compile` now use the `v3` MDP strategy by
+default. To retain the original MQT Predictor behavior, pass `mdp="v2"`
+explicitly.
+
+Existing models trained with the previous MQT Predictor strategy can be reused
+with the `v2` policy. Copy or rename `model_<figure_of_merit>_<device>.zip` to
+`model_<figure_of_merit>_<device>_v2.zip`, then pass `mdp="v2"` to `Predictor`
+or `rl_compile`. Models for the new default `v3` policy must be retrained.
+
 ## [2.4.0]
 
 ### Trained RL model names
