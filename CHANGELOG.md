@@ -22,6 +22,11 @@ releases may include breaking changes.
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
   ([**@flowerthrower**])
 
+### Fixed
+
+- 🐛 Treat the hard RL pass horizon as terminal to prevent value bootstrapping
+  beyond it ([#801]) ([**@flowerthrower**])
+
 ## [2.4.0] - 2026-07-13
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#240)._
@@ -84,6 +89,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#801]: https://github.com/munich-quantum-toolkit/predictor/pull/801
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
