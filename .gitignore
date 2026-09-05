@@ -1,67 +1,78 @@
-/build*
-/cmake-build-*
-.idea/*
-!.idea/runConfigurations
-!.idea/cmake.xml
-.vscode/*
-*~
+# This file has been generated from an external template. Please do not modify it directly.
+# Changes should be contributed to https://github.com/munich-quantum-toolkit/templates.
 
+# Python
 __pycache__/
-*.so
 *.py[cod]
+*$py.class
+*.so
 
+# Packaging
+/build/
+/dist/
+.eggs/
 *.egg
-*.eggs
-*.egg-info
-bin/
-build/
-develop-eggs/
-dist/
-eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-.installed.cfg
+*.egg-info/
+/_skbuild/
+/wheelhouse/
 
-.cache/
-.pytest_cache/
+# Testing
 .coverage
-.coverage*
-.tox
-.nox
+.coverage.*
+.hypothesis/
+.nox/
+.pytest_cache/
+.tox/
+*.cover
+*.profraw
 coverage.xml
-htmlcov
+htmlcov/
 
-docs/_build
+# Documentation
+docs/_build/
+docs/**/build/
+docs/api/
 
+# Environments
 .env
-.venv
+.env.*
+!.env.example
+!.env.*.example
+.venv/
 env/
 venv/
-ENV/
-env.bak/
-venv.bak/
 
-.ruff_cache/
+# Tool caches
+.cache/
 .mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.rumdl_cache/
 
-CLAUDE.md
+# Jupyter
+.ipynb_checkpoints/
+
+# Versioning
+python/**/_version.py
+src/**/_version.py
+
+# Editors
+.idea/
+.vs/
+.vscode/
+*.swp
+*~
+
+# Claude
 .claude/
+CLAUDE.md
 
+# Operating systems
 .DS_Store
 .DS_Store?
+._*
 .Spotlight-V100
 .Trashes
-._*
 Thumbs.db
-editor.swp
-editor~
 ehthumbs.db
-
-model_*.zip
-*.qasm
-*-checkpoint.ipynb
-
-src/**/_version.py
