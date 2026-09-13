@@ -86,7 +86,7 @@ intersphinx_mapping = {
     "gymnasium": ("https://gymnasium.farama.org/", None),
     "pytket": ("https://docs.quantinuum.com/tket/api-docs/", None),
     "bqskit": ("https://bqskit.readthedocs.io/en/latest/", None),
-    "mqt": ("https://mqt.readthedocs.io/en/latest/", None),
+    "mqt": ("https://mqt.readthedocs.io/en/stable/", None),
 }
 
 nbsphinx_execute = "never"

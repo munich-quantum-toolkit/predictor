@@ -1,6 +1,7 @@
 [![PyPI](https://img.shields.io/pypi/v/mqt.predictor?logo=pypi&style=flat-square)](https://pypi.org/project/mqt.predictor/)
 ![OS](https://img.shields.io/badge/os-linux%20%7C%20macos%20%7C%20windows-blue?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![DOI](https://img.shields.io/badge/TQC-10.1145/3673241-blue.svg?style=flat-square)](https://doi.org/10.1145/3673241)
 [![CI](https://img.shields.io/github/actions/workflow/status/munich-quantum-toolkit/predictor/ci.yml?branch=main&style=flat-square&logo=github&label=ci)](https://github.com/munich-quantum-toolkit/predictor/actions/workflows/ci.yml)
 [![CD](https://img.shields.io/github/actions/workflow/status/munich-quantum-toolkit/predictor/cd.yml?style=flat-square&logo=github&label=cd)](https://github.com/munich-quantum-toolkit/predictor/actions/workflows/cd.yml)
 [![Documentation](https://img.shields.io/readthedocs/mqt-predictor?logo=readthedocs&style=flat-square)](https://mqt.readthedocs.io/projects/predictor)
@@ -104,7 +105,7 @@ To support this endeavor, please consider:
   requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))
 - Citing our research in your publications (see
-  [References](https://mqt.readthedocs.io/projects/predictor/en/latest/references.html))
+  [References](https://mqt.readthedocs.io/projects/predictor/en/stable/references.html))
 - Using the MQT in research and teaching, and sharing feedback and use cases
 - Sponsoring us on GitHub: <https://github.com/sponsors/munich-quantum-toolkit>
 

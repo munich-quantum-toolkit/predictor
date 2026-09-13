@@ -52,7 +52,7 @@ suitable device for a given quantum circuit and figure of merit.
 Any device provided as a Qiskit `Target` object can be used with the MQT
 Predictor framework. MQT Bench provides a set of devices that can be used
 out-of-the-box which are available under
-[MQT Bench Devices and Parameters](https://mqt.readthedocs.io/projects/bench/en/latest/parameter.html).
+[MQT Bench Devices and Parameters](https://mqt.readthedocs.io/projects/bench/en/stable/parameter.html).
 Currently, the following devices are supported: So far, MQT Bench supports the
 following devices:
 
