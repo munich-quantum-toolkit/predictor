@@ -19,8 +19,9 @@ section outlines how to do that.
 
 ## Step 1: Add Devices
 
-All devices supported by [MQT Bench](https://github.com/cda-tum/mqt-bench) are
-natively supported. Currently, the following devices are available:
+All devices supported by
+[MQT Bench](https://github.com/munich-quantum-toolkit/bench) are natively
+supported. Currently, the following devices are available:
 
 ```{code-cell} ipython3
 :tags: [hide-input]
