@@ -6,12 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### End of support for Python 3.10
-
-Starting with this release, MQT Predictor no longer supports Python 3.10. As a
-result, MQT Predictor is no longer tested under Python 3.10 and requires Python
-3.11 or later.
-
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
@@ -36,10 +30,16 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
-### Qiskit 2.1.1 minimum
+### Qiskit 2.1 minimum
 
 The minimum Qiskit version increases from **1.3.3 to 2.1.1**, dropping support
 for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.1 or newer.
+
+### End of support for Python 3.10
+
+Starting with this release, MQT Predictor no longer supports Python 3.10. As a
+result, MQT Predictor is no longer tested under Python 3.10 and requires Python
+3.11 or later.
 
 ## [2.4.0]
 
