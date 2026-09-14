@@ -16,6 +16,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1
+  ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])

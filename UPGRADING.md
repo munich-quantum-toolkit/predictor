@@ -36,6 +36,11 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
+### Qiskit 2.1.1 minimum
+
+The minimum Qiskit version increases from **1.3.3 to 2.1.1**, dropping support
+for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.1 or newer.
+
 ## [2.4.0]
 
 ### Trained RL model names
