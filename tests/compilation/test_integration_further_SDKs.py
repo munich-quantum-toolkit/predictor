@@ -282,6 +282,23 @@ def test_routing_actions_route_circuit(
     assert applied_actions > 0
 
 
+def test_lookahead_swap_routes_cx_star() -> None:
+    """Route a CX star that needs more than one swap before another gate can run."""
+    device = get_device("ibm_falcon_127")
+    env = PredictorEnv(device=device)
+    circuit = QuantumCircuit(device.num_qubits)
+    for control in [15, 23, 24, 4, 21, 20, 34, 33, 43, 25, 42, 26, 40, 41, 27, 39]:
+        circuit.cx(control, 22)
+    circuit, layout = _lay_out(circuit, device)
+    _setup_env(env, circuit, layout, circuit.num_qubits)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "LookaheadSwap")
+
+    routed = env.apply_action(action_index)
+
+    assert env.is_circuit_routed(routed, device.build_coupling_map())
+    assert routed.count_ops()["cx"] == 16
+
+
 def test_optimization_actions_preserve_invariants(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,

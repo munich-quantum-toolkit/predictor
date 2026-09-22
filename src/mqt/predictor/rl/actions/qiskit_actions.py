@@ -380,14 +380,7 @@ def qiskit_routing_actions() -> list[Action]:
             CompilationOrigin.QISKIT,
             PassType.ROUTING,
             transpile_pass=lambda device: cast(
-                "list[Task]",
-                [
-                    LookaheadSwap(
-                        coupling_map=CouplingMap(device.build_coupling_map()),
-                        search_depth=1,
-                        search_width=1,
-                    )
-                ],
+                "list[Task]", [LookaheadSwap(coupling_map=CouplingMap(device.build_coupling_map()))]
             ),
         ),
     ]
