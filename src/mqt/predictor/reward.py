@@ -161,6 +161,8 @@ def estimated_success_probability(qc: QuantumCircuit, device: Target, precision:
             last_end_per_qubit[qubit] if last_operation_per_qubit[qubit] in {"measure", "reset"} else circuit_duration
         )
         idle_time = max(live_end - execution_time_per_qubit[qubit], 0.0)
+        if time_unit == "dt":
+            idle_time *= device.dt
         res *= np.exp(-idle_time / min(properties.t1, properties.t2))
     return float(np.round(res, precision).item())
 

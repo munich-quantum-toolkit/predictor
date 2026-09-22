@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+from math import exp
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -20,6 +21,11 @@ from qiskit.circuit.library import CXGate, Measure, XGate
 from qiskit.transpiler import InstructionProperties, Target
 
 from mqt.predictor.reward import crit_depth, esp_data_available, estimated_success_probability, expected_fidelity
+from mqt.predictor.rl.approx_reward import (
+    approximate_estimated_success_probability,
+    approximate_expected_fidelity,
+    average_target_calibration,
+)
 
 try:
     from qiskit.providers.backend import QubitProperties
@@ -149,3 +155,61 @@ def test_reward_missing_two_qubit_calibration(reward_function: str) -> None:
     reward = estimated_success_probability if reward_function == "estimated_success_probability" else expected_fidelity
     with pytest.raises(error_type, match=re.escape(expected_message)):
         reward(qc, target)
+
+
+def test_average_target_calibration() -> None:
+    """Average available calibration samples and fall back for uncalibrated gates."""
+    target = make_target(x_err=0.1, x_dur=2e-6, cx_err=0.3, cx_dur=4e-6, t1=8e-6, t2=6e-6)
+    target["x"][1,] = InstructionProperties(error=0.2, duration=4e-6)
+    target["measure"][0,] = InstructionProperties()
+    target["measure"][1,] = InstructionProperties()
+
+    errors, durations, coherence_time = average_target_calibration(target)
+
+    assert errors == pytest.approx({"x": 0.15, "cx": 0.3, "measure": 0.225})
+    assert durations == pytest.approx({"x": 3e-6, "cx": 4e-6, "measure": 3.5e-6})
+    assert coherence_time == pytest.approx(6e-6)
+
+
+@pytest.mark.parametrize("coherence_time", [None, 4e-6])
+def test_approximate_rewards(coherence_time: float | None) -> None:
+    """Translate non-native gates and include estimated idle time in ESP."""
+    target = make_target()
+    qc = QuantumCircuit(2)
+    qc.swap(0, 1)
+    qc.x(0)
+    qc.barrier()
+
+    errors = {"x": 0.1, "cx": 0.2}
+    gate_fidelity = 0.9 * 0.8**3
+    assert approximate_expected_fidelity(qc, device=target, error_rates=errors) == pytest.approx(gate_fidelity)
+    reward = approximate_estimated_success_probability(
+        qc,
+        device=target,
+        error_rates=errors,
+        gate_durations={"x": 2e-6, "cx": 4e-6},
+        coherence_time=coherence_time,
+        parallelism=1.0,
+        liveness=0.5,
+    )
+    idle_factor = 1.0 if coherence_time is None else exp(-3.5e-6 / coherence_time)
+    assert reward == pytest.approx(gate_fidelity * idle_factor)
+
+
+@pytest.mark.parametrize("measure_early", [False, True])
+@pytest.mark.parametrize("dt", [None, 1e-9])
+def test_estimated_success_probability_idle_time(dt: float | None, *, measure_early: bool) -> None:
+    """Stop counting idle decoherence after a qubit's final measurement."""
+    target = make_target(t1=2e-6, t2=4e-6)
+    target.dt = dt
+    qc = QuantumCircuit(2, 1)
+    qc.x(0)
+    qc.x(1)
+    qc.x(1)
+    qc.x(1)
+    if measure_early:
+        qc.measure(0, 0)
+
+    gate_fidelity = 0.99 ** (5 if measure_early else 4)
+    idle_factor = 1.0 if measure_early else exp(-1.0)
+    assert estimated_success_probability(qc, target) == pytest.approx(gate_fidelity * idle_factor)
