@@ -71,6 +71,17 @@ and capped at 999,999. Existing RL models must be retrained, and code that
 consumes `PredictorEnv` observations directly must handle the expanded schema
 and array values.
 
+### RL pass horizon
+
+A non-termination action that reaches `PredictorEnv.max_steps` now ends the
+episode with `terminated=True` and `truncated=False`. Code that checks the
+reason must use `info["termination_reason"]` instead of
+`info["truncation_reason"]` for `"max_steps_exceeded"`. The last pass keeps its
+intermediate reward or no-effect penalty; this reward is zero when intermediate
+rewards are disabled. RL training no longer bootstraps a value beyond this
+horizon. Explicit termination still returns the final circuit score, including
+in the last allowed slot. Pass failures and timeouts remain truncations.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
