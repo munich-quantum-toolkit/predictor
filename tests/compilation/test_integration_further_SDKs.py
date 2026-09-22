@@ -146,6 +146,21 @@ def test_qsd_unitary_synthesis_pass_applies_one_qsd_level(simple_circuit: Quantu
     assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRYGate)) == 1
 
 
+@pytest.mark.filterwarnings("ignore:__array__ implementation doesn't accept a copy keyword:DeprecationWarning")
+def test_qsd_unitary_synthesis_pass_preserves_single_qubit_target() -> None:
+    """A single-qubit partition retains its unitary without QSD decomposition."""
+    circuit = QuantumCircuit(1)
+    circuit.ry(0.37, 0)
+    bqskit_circuit = bqskit_actions.qiskit_to_bqskit(circuit)
+    unitary = bqskit_circuit.get_unitary()
+    synthesis_pass = bqskit_actions._QSDUnitarySynthesisPass()  # ruff: ignore[private-member-access]
+
+    decomposed = asyncio.run(synthesis_pass.synthesize(unitary, PassData(bqskit_circuit)))
+
+    assert decomposed.num_qudits == 1
+    assert decomposed.get_unitary().get_distance_from(unitary) < 1e-7
+
+
 def test_synthesis_actions_produce_native_gates(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
