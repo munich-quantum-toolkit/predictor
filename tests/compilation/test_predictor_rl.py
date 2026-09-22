@@ -157,7 +157,8 @@ def test_inference_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) 
     class FakeModel:
         """Minimal trained model replacement."""
 
-        def predict(self, _obs: object, *, action_masks: object) -> tuple[int, None]:
+        def predict(self, _obs: object, *, deterministic: bool, action_masks: object) -> tuple[int, None]:
+            assert not deterministic
             assert action_masks == []
             return predictor.env.actions_opt_indices[0], None
 
@@ -166,7 +167,8 @@ def test_inference_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) 
         predictor.env.state = qc
         return {}, 0, True, False, {}
 
-    def fake_reset(_qc: QuantumCircuit | str) -> tuple[dict[str, object], dict[str, object]]:
+    def fake_reset(_qc: QuantumCircuit | str, *, seed: int | None) -> tuple[dict[str, object], dict[str, object]]:
+        assert seed is None
         predictor.env.error_occurred = False
         return {}, {}
 
