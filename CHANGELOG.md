@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
-  `BasicSwap`, `LookaheadSwap`, `RemoveIdentityEquivalent`, and
+  `BasicSwap`, `RemoveIdentityEquivalent`, and
   `Optimize1qGatesSimpleCommutation` passes and the optional IBM-backed
   `AIRouting` and `AIRouting_opt` passes to the RL actions ([#794])
   ([**@flowerthrower**])

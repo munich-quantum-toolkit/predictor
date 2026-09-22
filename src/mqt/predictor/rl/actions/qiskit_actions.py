@@ -55,7 +55,6 @@ from qiskit.transpiler.passes import (
     FullAncillaAllocation,
     GatesInBasis,
     InverseCancellation,
-    LookaheadSwap,
     MinimumPoint,
     Optimize1qGatesDecomposition,
     Optimize1qGatesSimpleCommutation,
@@ -373,14 +372,6 @@ def qiskit_routing_actions() -> list[Action]:
             PassType.ROUTING,
             transpile_pass=lambda device: cast(
                 "list[Task]", [BasicSwap(coupling_map=CouplingMap(device.build_coupling_map()))]
-            ),
-        ),
-        DeferredDeviceAction(
-            "LookaheadSwap",
-            CompilationOrigin.QISKIT,
-            PassType.ROUTING,
-            transpile_pass=lambda device: cast(
-                "list[Task]", [LookaheadSwap(coupling_map=CouplingMap(device.build_coupling_map()))]
             ),
         ),
     ]
