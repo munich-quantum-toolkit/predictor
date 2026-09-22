@@ -18,7 +18,7 @@ from bqskit.ir.gates import MPRYGate, MPRZGate, VariableUnitaryGate
 from mqt.bench.targets import get_device
 from pytket.circuit import Node
 from qiskit import ClassicalRegister, QuantumCircuit
-from qiskit.circuit import Measure, StandardEquivalenceLibrary
+from qiskit.circuit import Measure, Qubit, StandardEquivalenceLibrary
 from qiskit.circuit.library import CXGate, CZGate, SXGate, XGate
 from qiskit.quantum_info import Operator
 from qiskit.transpiler import InstructionProperties, PassManager, Target, TranspileLayout
@@ -287,7 +287,8 @@ def test_layout_actions_establish_layout(
 @pytest.mark.parametrize("action_name", ["GraphPlacement", "NoiseAwarePlacement"])
 def test_tket_placement_actions_assign_every_input_qubit(action_name: str, env: PredictorEnv) -> None:
     """TKET placement actions assign active and idle input qubits to the device."""
-    circuit = QuantumCircuit(3)
+    circuit = QuantumCircuit(2)
+    circuit.add_bits([Qubit()])
     circuit.cx(0, 1)
     env.reset(circuit)
     action_index = next(index for index, action in env.action_set.items() if action.name == action_name)
@@ -298,6 +299,18 @@ def test_tket_placement_actions_assign_every_input_qubit(action_name: str, env: 
     assert set(circuit.qubits).issubset(env.layout.input_qubit_mapping)
     assert set(circuit.qubits).issubset(env.layout.initial_layout.get_virtual_bits())
     assert env.is_circuit_laid_out(compiled, env.layout)
+
+
+def test_tket_placement_failure_preserves_circuit(env: PredictorEnv) -> None:
+    """A failed placement preserves the input circuit and its unset layout."""
+    circuit = QuantumCircuit(env.device.num_qubits + 1)
+    for qubit in range(circuit.num_qubits - 1):
+        circuit.cx(qubit, qubit + 1)
+    env.reset(circuit)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "GraphPlacement")
+
+    assert env.apply_action(action_index) is circuit
+    assert env.layout is None
 
 
 def test_kak_decomposition_executes_on_mixed_two_qubit_block(env: PredictorEnv) -> None:
