@@ -58,7 +58,8 @@ class Predictor:
             mdp: The MDP transition policy. ``v2`` is the original strategy and
                 ``v3`` is the default.
             graph: Whether to use the opt-in GNN policy. Defaults to False.
-            gnn_config: Configuration for the GNN policy. Defaults to the prototype training configuration.
+            gnn_config: Configuration for the GNN policy. Defaults to ``GNNConfig()``.
+                Select ``GNNConfig.paper()`` explicitly for the tuned paper configuration.
         """
         logger.setLevel(logger_level)
 
@@ -161,20 +162,18 @@ class Predictor:
         test: bool = False,
         seed: int | None = None,
         pass_timeout: float | None = None,
-        iterations: int | None = None,
     ) -> None:
         """Trains all models for the given reward functions and device.
 
         Arguments:
-            timesteps: The number of timesteps for flat-policy training. Ignored by the GNN policy. Defaults to 1000.
+            timesteps: The number of timesteps to train either policy. Defaults to 1000.
+                SB3 completes full rollouts, so the actual number can exceed this budget.
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
             pass_timeout: Maximum duration in seconds for one compilation pass.
                 Defaults to None, which disables pass timeouts.
-            iterations: The number of GNN rollout iterations. Defaults to 1000, or 10 in test mode.
-                Ignored by the flat policy.
 
         Raises:
             ValueError: If ``pass_timeout`` is not positive.
@@ -211,7 +210,6 @@ class Predictor:
                     if test
                     else self.gnn_config
                 )
-                n_steps = effective_gnn_config.n_steps
                 graph_env = GNNObservationWrapper(self.env)
                 model = create_gnn_model(
                     graph_env,
@@ -234,12 +232,7 @@ class Predictor:
                 )
             # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
             # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
-            total_timesteps = (
-                n_steps * (iterations if iterations is not None else (10 if test else 1000))
-                if self.graph
-                else timesteps
-            )
-            model.learn(total_timesteps=total_timesteps, progress_bar=progress_bar)
+            model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
             model.save(get_path_trained_model() / self.model_name)
         finally:
             self.env.pass_timeout = original_pass_timeout

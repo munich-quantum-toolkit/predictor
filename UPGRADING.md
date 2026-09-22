@@ -6,6 +6,25 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### GNN RL models
+
+GNN support requires the optional `gnn` extra and `graph=True`. Select
+`GNNConfig.paper()` explicitly to use the tuned network and PPO settings.
+Training uses SB3's masked PPO and the same `timesteps` argument as the flat
+policy; the draft-only `iterations` argument has been removed. To convert an
+iteration budget, pass `timesteps=iterations * gnn_config.n_steps`. SB3
+completes whole rollouts, so the actual step count may exceed the requested
+budget.
+
+Prototype `.pt` checkpoints cannot be loaded because the action-output schema
+has changed. Retrain the GNN model to create an SB3 `.zip` checkpoint. The SB3
+trainer uses different advantage normalization, value clipping, KL stopping, and
+rollout semantics; the new model is not an exact reproduction of the old
+training implementation. See [GNN setup](docs/setup.md#gnn-policy).
+
+The minimum `sb3_contrib` version is now 2.3.0. The optional extra requires
+Torch Geometric 2.7.0 or newer, or 2.8.0 or newer on Python 3.14.
+
 ### Intermediate RL rewards
 
 `PredictorEnv` now enables intermediate rewards by default. For
