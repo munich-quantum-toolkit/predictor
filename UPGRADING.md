@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### RL pass horizon
+
+A non-termination action that reaches `PredictorEnv.max_steps` now ends the
+episode with `terminated=True` and `truncated=False`. Code that checks the
+reason must use `info["termination_reason"]` instead of
+`info["truncation_reason"]` for `"max_steps_exceeded"`. The reward remains zero.
+RL training no longer bootstraps a value beyond this horizon.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
