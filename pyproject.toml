@@ -77,17 +77,18 @@ email = "lukas.burgholzer@tum.de"
 name = "Patrick Hopf"
 email = "patrick.hopf@tum.de"
 
+[project.optional-dependencies]
+gnn = [
+  "torch-geometric>=2.7; python_version<'3.14'",
+  "torch-geometric>=2.8; python_version>='3.14'",
+]
+
 [project.urls]
 Homepage = "https://github.com/munich-quantum-toolkit/predictor"
 Issues = "https://github.com/munich-quantum-toolkit/predictor/issues"
 Discussions = "https://github.com/munich-quantum-toolkit/predictor/discussions"
 Research = "https://www.cda.cit.tum.de/research/quantum/"
 
-[project.optional-dependencies]
-gnn = [
-  "torch-geometric>=2.7.0; python_version < '3.14'",
-  "torch-geometric>=2.8.0; python_version >= '3.14'",
-]
 
 [dependency-groups]
 dev = [
