@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add an opt-in GNN policy with a tuned paper preset and SB3 training using
+  the shared timestep budget ([#800]) ([**@flowerthrower**])
 - ✨ Add opt-in per-pass timeouts for RL training and inference ([#798])
   ([**@flowerthrower**])
 - ✨ Add TKET's `KAKDecomposition`, `GraphPlacement`, and `NoiseAwarePlacement`
@@ -119,6 +121,7 @@ for previous changelogs._
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
+[#800]: https://github.com/munich-quantum-toolkit/predictor/pull/800
 [#798]: https://github.com/munich-quantum-toolkit/predictor/pull/798
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769

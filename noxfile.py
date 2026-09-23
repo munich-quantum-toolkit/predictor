@@ -87,7 +87,7 @@ def _run_tests(
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session, pytest_run_args=["-m", "not model_training"])
+    _run_tests(session, install_args=["--extra", "gnn"], pytest_run_args=["-m", "not model_training"])
 
 
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, venv_backend="uv", default=True)

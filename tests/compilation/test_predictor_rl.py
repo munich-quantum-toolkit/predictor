@@ -151,6 +151,27 @@ def test_training_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) -
     assert predictor.env.pass_timeout is None
 
 
+@pytest.mark.parametrize("test_mode", [False, True])
+def test_gnn_training_uses_requested_timesteps(monkeypatch: pytest.MonkeyPatch, test_mode: bool) -> None:
+    """Test that GNN training forwards the requested timestep budget in both modes."""
+    pytest.importorskip("torch_geometric")
+    gnn_module = import_module("mqt.predictor.rl.gnn")
+    config = gnn_module.GNNConfig.paper()
+    model = Mock()
+    create_model = Mock(return_value=model)
+    monkeypatch.setattr(gnn_module, "create_gnn_model", create_model)
+    predictor = Predictor(
+        figure_of_merit="expected_fidelity", device=get_device("ibm_falcon_27"), graph=True, gnn_config=config
+    )
+
+    predictor.train_model(timesteps=100_000, test=test_mode)
+
+    model.learn.assert_called_once_with(total_timesteps=100_000, progress_bar=not test_mode)
+    create_model.assert_called_once()
+    if not test_mode:
+        assert create_model.call_args.args[1] is config
+
+
 def test_inference_uses_temporary_pass_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that inference applies and restores its independent pass timeout."""
     observed_timeouts: list[float | None] = []

@@ -89,6 +89,43 @@ register_action(action)
 For other compilation sources, a new `CompilationOrigin` must be defined and
 conversions to/from Qiskit's `QuantumCircuit` must be implemented.
 
+### GNN Policy
+
+Install the optional graph dependencies with
+`uv pip install 'mqt.predictor[gnn]'`. Select the tuned network and PPO settings
+explicitly:
+
+```python
+from mqt.predictor.rl.gnn import GNNConfig
+
+rl_pred = RL_Predictor(
+    device=device,
+    figure_of_merit="expected_fidelity",
+    graph=True,
+    gnn_config=GNNConfig.paper(),
+)
+rl_pred.train_model(timesteps=100000, seed=0)
+```
+
+`graph=True` alone uses `GNNConfig()`, which has different network dimensions
+and learning rates. The paper preset configures the network and PPO; choose the
+device calibration, training circuits, MDP, reward settings, and `max_steps`
+separately for the experiment.
+
+Both policies use `timesteps` as the training budget. SB3 completes whole
+rollouts: with the preset's 2,048 steps per rollout, a requested budget of
+100,000 steps produces 100,352 steps. Record this effective budget with the
+experiment settings.
+
+The GNN uses SB3's masked PPO instead of the prototype's custom trainer. It
+retains the graph architecture and configured hyperparameters, while accepting
+SB3's minibatch advantage normalization, clipped-prediction value loss, and
+minibatch KL stopping. SB3 also continues unfinished episodes across rollouts
+and bootstraps truncated episodes from their final value estimate; terminated
+episodes are not bootstrapped. Rewards and termination flags come from
+`PredictorEnv`. This preserves the overall method but can produce different
+trained policies from the prototype.
+
 ## Step 3: Generate Training Data and Train ML Model
 
 Once the RL models are trained, generate the training data and train the

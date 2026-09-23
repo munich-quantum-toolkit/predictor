@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from qiskit.transpiler import Target
 
     from mqt.predictor.reward import figure_of_merit
+    from mqt.predictor.rl.gnn import GNNConfig, GNNObservationWrapper
 
 
 class Predictor:
@@ -41,6 +43,8 @@ class Predictor:
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
         mdp: MDPPolicy = "v3",
+        graph: bool = False,
+        gnn_config: GNNConfig | None = None,
     ) -> None:
         """Initializes the Predictor object.
 
@@ -53,6 +57,9 @@ class Predictor:
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
             mdp: The MDP transition policy. ``v2`` is the original strategy and
                 ``v3`` is the default.
+            graph: Whether to use the opt-in GNN policy. Defaults to False.
+            gnn_config: Configuration for the GNN policy. Defaults to ``GNNConfig()``.
+                Select ``GNNConfig.paper()`` explicitly for the tuned paper configuration.
         """
         logger.setLevel(logger_level)
 
@@ -66,7 +73,15 @@ class Predictor:
         )
         self.device_name = device.description
         self.figure_of_merit = figure_of_merit
-        self.model_name = f"model_{self.figure_of_merit}_{self.device_name}_{mdp}"
+        self.graph = graph
+        if graph:
+            from mqt.predictor.rl.gnn import GNNConfig  # ruff: ignore[import-outside-top-level]
+
+            self.gnn_config = gnn_config or GNNConfig()
+        else:
+            self.gnn_config = gnn_config
+        model_prefix = "gnn" if graph else "model"
+        self.model_name = f"{model_prefix}_{self.figure_of_merit}_{self.device_name}_{mdp}"
 
     def compile_as_predicted(
         self,
@@ -101,24 +116,33 @@ class Predictor:
                 self.env.tracer_output_path = tracer_output_path
             self.env.pass_timeout = pass_timeout
 
-            trained_rl_model = load_model(self.model_name)
+            trained_rl_model = load_model(self.model_name, graph=True) if self.graph else load_model(self.model_name)
 
-            obs, _ = self.env.reset(qc, seed=seed)
+            graph_env: GNNObservationWrapper | None = None
+            policy_env = self.env
+            if self.graph:
+                from mqt.predictor.rl.gnn import GNNObservationWrapper  # ruff: ignore[import-outside-top-level]
+
+                graph_env = GNNObservationWrapper(self.env)
+                policy_env = graph_env
+
+            obs, _ = policy_env.reset(qc, seed=seed)
 
             used_compilation_passes = []
             terminated = False
             truncated = False
             while not (terminated or truncated):
-                action_masks = get_action_masks(self.env)
+                action_masks = get_action_masks(policy_env)
+                policy_observation = graph_env.graph_observation if graph_env is not None else obs
                 action, _ = trained_rl_model.predict(
-                    obs,
+                    policy_observation,  # ty: ignore[invalid-argument-type]
                     deterministic=seed is not None,
                     action_masks=action_masks,
                 )
                 action = int(action)
                 action_item = self.env.action_set[action]
                 used_compilation_passes.append(action_item.name)
-                obs, _reward_val, terminated, truncated, _info = self.env.step(action)
+                obs, _reward_val, terminated, truncated, _info = policy_env.step(action)
 
             if not self.env.error_occurred:
                 return self.env.state, used_compilation_passes
@@ -142,7 +166,8 @@ class Predictor:
         """Trains all models for the given reward functions and device.
 
         Arguments:
-            timesteps: The number of timesteps to train the model. Defaults to 1000.
+            timesteps: The number of timesteps to train either policy. Defaults to 1000.
+                SB3 completes full rollouts, so the actual number can exceed this budget.
             verbose: The verbosity level. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
@@ -158,7 +183,7 @@ class Predictor:
             set_random_seed(seed)
         if test:
             # minimum training overhead
-            n_steps = max(timesteps, 2)
+            n_steps = 20 if self.graph else max(timesteps, 2)
             n_epochs = 1
             batch_size = n_steps
             progress_bar = False
@@ -173,17 +198,38 @@ class Predictor:
         self.env.pass_timeout = pass_timeout
         try:
             logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
-            model = MaskablePPO(
-                MaskableMultiInputActorCriticPolicy,
-                self.env,
-                verbose=verbose,
-                tensorboard_log=f"./{self.model_name}",
-                gamma=0.98,
-                n_steps=n_steps,
-                batch_size=batch_size,
-                n_epochs=n_epochs,
-                seed=seed,
-            )
+            if self.graph:
+                from mqt.predictor.rl.gnn import (  # ruff: ignore[import-outside-top-level]
+                    GNNObservationWrapper,
+                    create_gnn_model,
+                )
+
+                assert self.gnn_config is not None
+                effective_gnn_config = (
+                    replace(self.gnn_config, n_steps=n_steps, n_epochs=n_epochs, batch_size=batch_size)
+                    if test
+                    else self.gnn_config
+                )
+                graph_env = GNNObservationWrapper(self.env)
+                model = create_gnn_model(
+                    graph_env,
+                    effective_gnn_config,
+                    verbose=verbose,
+                    tensorboard_log=f"./{self.model_name}",
+                    seed=seed,
+                )
+            else:
+                model = MaskablePPO(
+                    MaskableMultiInputActorCriticPolicy,
+                    self.env,
+                    verbose=verbose,
+                    tensorboard_log=f"./{self.model_name}",
+                    gamma=0.98,
+                    n_steps=n_steps,
+                    batch_size=batch_size,
+                    n_epochs=n_epochs,
+                    seed=seed,
+                )
             # Training Loop: In each iteration, the agent collects n_steps steps (rollout),
             # updates the policy for n_epochs, and then repeats the process until total_timesteps steps have been taken.
             model.learn(total_timesteps=timesteps, progress_bar=progress_bar)
@@ -192,11 +238,12 @@ class Predictor:
             self.env.pass_timeout = original_pass_timeout
 
 
-def load_model(model_name: str) -> MaskablePPO:
+def load_model(model_name: str, *, graph: bool = False) -> MaskablePPO:
     """Loads a trained model from the trained model folder.
 
     Arguments:
         model_name: The name of the model to be loaded.
+        graph: Whether the model uses the GNN policy. Defaults to False.
 
     Returns:
         The loaded model.
@@ -206,6 +253,10 @@ def load_model(model_name: str) -> MaskablePPO:
     """
     path = get_path_trained_model()
     if Path(path / (model_name + ".zip")).is_file():
+        if graph:
+            from mqt.predictor.rl.gnn import GNNMaskablePPO  # ruff: ignore[import-outside-top-level]
+
+            return GNNMaskablePPO.load(path / (model_name + ".zip"))
         return MaskablePPO.load(path / (model_name + ".zip"))
 
     error_msg = f"The RL model '{model_name}' is not trained yet. Please train the model before using it."
@@ -222,6 +273,7 @@ def rl_compile(
     mdp: MDPPolicy = "v3",
     seed: int | None = None,
     pass_timeout: float | None = None,
+    graph: bool = False,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -237,6 +289,8 @@ def rl_compile(
         seed: The seed for reproducible deterministic inference and randomized Qiskit actions. Defaults to None.
         pass_timeout: Maximum duration in seconds for one compilation pass.
             Defaults to None, which disables pass timeouts.
+        graph: Whether to use the opt-in GNN policy. Ignored when ``predictor_singleton`` is provided.
+            Defaults to False.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -257,6 +311,7 @@ def rl_compile(
             device=device,
             tracer_output_path=tracer_output_path,
             mdp=mdp,
+            graph=graph,
         )
         return predictor.compile_as_predicted(qc, seed=seed, pass_timeout=pass_timeout)
 
