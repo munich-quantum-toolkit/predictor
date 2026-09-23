@@ -77,8 +77,8 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     qc_terminal.rz(0.5, 2)
 
     # 2. Mock the feature dictionaries that the RL environment normally passes
-    features_baseline = create_feature_dict(qc_baseline)
-    features_terminal = create_feature_dict(qc_terminal)
+    features_baseline = create_feature_dict(qc_baseline, device.num_qubits)
+    features_terminal = create_feature_dict(qc_terminal, device.num_qubits)
 
     # 3. Use the actual `record_step` API instead of manually building CompilationSteps
     tracer.record_step(
