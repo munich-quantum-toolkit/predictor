@@ -58,8 +58,9 @@ releases may include breaking changes.
 
 ### Fixed
 
-- 🐛 Treat the hard RL pass horizon as terminal to prevent value bootstrapping
-  beyond it ([#830]) ([**@flowerthrower**])
+- 🐛 Score complete RL compilations at the hard pass horizon and terminate
+  failed attempts without value bootstrapping. Include the remaining pass budget
+  in flat and GNN observations ([#830]) ([**@flowerthrower**])
 
 ## [2.4.0] - 2026-07-13
 

@@ -159,9 +159,10 @@ GLOBAL_FEATURE_NAMES = (
     "csx",
     "rxx",
     "rzz",
+    "remaining_steps",
 )
 NODE_FEATURE_DIM = 52
-GLOBAL_FEATURE_DIM = 36
+GLOBAL_FEATURE_DIM = 37
 NODE_SCALAR_DIM = NODE_FEATURE_DIM - len(NODE_OPERATION_NAMES)
 
 _GATE_INDICES = "gate_indices"

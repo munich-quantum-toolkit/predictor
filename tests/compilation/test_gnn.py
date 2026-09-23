@@ -18,6 +18,7 @@ import pytest
 import torch
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
+from qiskit.converters import circuit_to_dag, dag_to_circuit
 from qiskit.qasm2 import dump
 from qiskit.quantum_info import Operator
 
@@ -81,6 +82,7 @@ def test_graph_observation_preserves_dag_features() -> None:
     circuit.cx(0, 1)
     circuit.rz(np.pi / 2, 1)
     flat_observation = create_feature_dict(circuit, 27)
+    flat_observation["remaining_steps"] = np.array([0.5], dtype=np.float32)
 
     graph = gnn.create_graph_observation(circuit, flat_observation)
 
@@ -129,7 +131,10 @@ def test_gnn_masked_training_and_saved_inference(
     circuit = env.state.copy()
     empty_circuit = QuantumCircuit(2)
     graphs = [
-        gnn.create_graph_observation(empty_circuit, create_feature_dict(empty_circuit, env.device.num_qubits)),
+        gnn.create_graph_observation(
+            empty_circuit,
+            {**create_feature_dict(empty_circuit, env.device.num_qubits), "remaining_steps": np.array([1.0])},
+        ),
         graph_env.graph_observation,
     ]
     batch, vectorized = policy.obs_to_tensor(graphs)
@@ -155,24 +160,37 @@ def test_gnn_masked_training_and_saved_inference(
     loaded_policy.set_training_mode(False)
     with torch.no_grad():
         torch.testing.assert_close(loaded_policy.predict_values(batch), values)
+    with pytest.raises(RuntimeError, match="Error occurred during compilation"):
+        predictor.compile_as_predicted(circuit)
+
+    monkeypatch.setattr(
+        env,
+        "action_masks",
+        lambda: [
+            action.name == ("InverseCancellation" if env.num_steps == 0 else "TrivialLayout")
+            for action in env.action_set.values()
+        ],
+    )
     compiled, passes = predictor.compile_as_predicted(circuit)
-    assert len(passes) == 2
-    assert set(passes) <= {"CommutativeCancellation", "InverseCancellation"}
-    assert Operator(compiled).equiv(Operator(circuit))
+    assert passes == ["InverseCancellation", "TrivialLayout"]
+    assert not env.error_occurred
+    compiled_dag = circuit_to_dag(compiled)
+    compiled_dag.remove_qubits(*compiled.qubits[circuit.num_qubits :])
+    assert Operator(dag_to_circuit(compiled_dag)).equiv(Operator(circuit))
 
 
-@pytest.mark.parametrize("ending", ["terminate", "failure", "horizon"])
+@pytest.mark.parametrize("ending", ["terminate", "failure", "horizon", "truncation"])
 def test_gnn_bootstraps_only_the_truncated_terminal_graph(
     gnn_predictor: Predictor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: str
 ) -> None:
     """Use the final graph on truncation, without bootstrapping a terminated episode."""
     env = gnn_predictor.env
     env.intermediate_reward = ending == "horizon"
-    env.max_steps = 1
+    env.max_steps = None if ending == "truncation" else 1
     action_index = (
-        next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
-        if ending == "horizon"
-        else env.action_terminate_index
+        env.action_terminate_index
+        if ending == "terminate"
+        else next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
     )
     action_mask = [index == action_index for index in env.action_set]
     monkeypatch.setattr(env, "action_masks", lambda: action_mask)
@@ -186,6 +204,14 @@ def test_gnn_bootstraps_only_the_truncated_terminal_graph(
 
     if ending != "horizon":
         monkeypatch.setattr(env, "apply_action", apply_action)
+    if ending == "truncation":
+        step = env.step
+
+        def truncate(action: int) -> tuple:
+            observation, reward, terminated, _truncated, info = step(action)
+            return observation, reward, terminated, True, info
+
+        monkeypatch.setattr(env, "step", truncate)
     assert gnn_predictor.gnn_config is not None
     model = gnn.create_gnn_model(
         gnn.GNNObservationWrapper(env), gnn_predictor.gnn_config, verbose=0, tensorboard_log=str(tmp_path), seed=7
@@ -198,10 +224,9 @@ def test_gnn_bootstraps_only_the_truncated_terminal_graph(
 
     model.learn(total_timesteps=4)
 
-    expected_reward = env.no_effect_penalty if ending == "horizon" else 0.0
-    if ending == "failure":
-        expected_reward = env.no_effect_penalty + model.gamma * 5
+    expected_reward = model.gamma * 5 if ending == "truncation" else env.no_effect_penalty
     np.testing.assert_allclose(model.rollout_buffer.rewards, expected_reward)
     assert model.rollout_buffer.episode_starts.all()
     buffer = cast("GNNMaskableDictRolloutBuffer", model.rollout_buffer)
     assert {graph.num_nodes for graph in buffer.graph_observations} == {4}
+    assert all(graph["global_features"][0, -1] == 1 for graph in buffer.graph_observations)

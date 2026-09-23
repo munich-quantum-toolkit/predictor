@@ -71,16 +71,27 @@ and capped at 999,999. Existing RL models must be retrained, and code that
 consumes `PredictorEnv` observations directly must handle the expanded schema
 and array values.
 
-### RL pass horizon
+### RL rewards and episode endings
 
-A non-termination action that reaches `PredictorEnv.max_steps` now ends the
-episode with `terminated=True` and `truncated=False`. Code that checks the
-reason must use `info["termination_reason"]` instead of
-`info["truncation_reason"]` for `"max_steps_exceeded"`. The last pass keeps its
-intermediate reward or no-effect penalty; this reward is zero when intermediate
-rewards are disabled. RL training no longer bootstraps a value beyond this
-horizon. Explicit termination still returns the final circuit score, including
-in the last allowed slot. Pass failures and timeouts remain truncations.
+Explicit `Terminate` and the hard `PredictorEnv.max_steps` limit return the
+final circuit score once if synthesis, layout, and routing are complete.
+Otherwise, they return `no_effect_penalty` and mark compilation as failed. The
+terminal score replaces the last pass's intermediate reward. Earlier
+intermediate rewards are unchanged. Inference raises `RuntimeError` for
+incomplete results.
+
+The hard horizon, pass failures, and pass timeouts now end with
+`terminated=True` and `truncated=False`, so PPO does not bootstrap beyond these
+endings. Use `info["termination_reason"]` instead of `info["truncation_reason"]`
+for `"max_steps_exceeded"`. Pass errors use `"termination_reason": "pass_error"`
+and `info["error"]` instead of `"Truncated because of error"`. External
+truncations still bootstrap from the final observation.
+
+Flat observations and GNN global features now include `remaining_steps`, the
+remaining fraction of the pass budget in `[0, 1]` (`1` when unlimited).
+`max_steps` must be positive or `None`. GNN global features increase from 36 to
+37; node features are unchanged. Retrain existing flat and GNN models for the
+new observation schema.
 
 ### Atomic BQSKit compilation actions
 

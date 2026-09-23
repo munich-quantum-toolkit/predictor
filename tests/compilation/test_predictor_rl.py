@@ -63,6 +63,7 @@ def test_predictor_env_reset_from_string() -> None:
         dump(qc, f)
     observation, _ = predictor.env.reset(qc=qasm_path)
 
+    assert observation.pop("remaining_steps")[0] == 1
     assert observation == create_feature_dict(qc, device.num_qubits)
     assert observation["num_qubits"][0] == pytest.approx(qc.num_qubits / device.num_qubits)
 
@@ -102,8 +103,8 @@ def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
 @pytest.mark.parametrize("intermediate_reward", [False, True])
-def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch, *, intermediate_reward: bool) -> None:
-    """Test that a pass timeout truncates the current episode."""
+def test_predictor_env_terminates_timed_out_pass(monkeypatch: pytest.MonkeyPatch, *, intermediate_reward: bool) -> None:
+    """Test that an aborted pass ends the compilation with a failure penalty."""
     env = predictorenv_module.PredictorEnv(
         device=get_device("ibm_falcon_27"),
         pass_timeout=0.01,
@@ -114,13 +115,16 @@ def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch,
     env.reset(qc)
     monkeypatch.setattr(env, "apply_action", lambda _action: time.sleep(1))
 
-    _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
+    obs, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
 
     assert reward_val == env.no_effect_penalty
-    assert not terminated
-    assert truncated
+    assert terminated
+    assert not truncated
+    assert env.error_occurred
+    assert obs["remaining_steps"][0] == 0
     assert info == {
-        "Truncated because of error": "TimeoutError: Compilation pass exceeded the timeout of 0.01 seconds."
+        "termination_reason": "pass_error",
+        "error": "TimeoutError: Compilation pass exceeded the timeout of 0.01 seconds.",
     }
 
 
@@ -318,11 +322,11 @@ def test_warning_for_unidirectional_device() -> None:
 
 
 @pytest.mark.parametrize("intermediate_reward", [False, True])
-@pytest.mark.parametrize("num_x_gates", [1, 3])
+@pytest.mark.parametrize("final_action", ["InverseCancellation", "TrivialLayout"])
 def test_predictor_env_terminates_at_max_steps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, num_x_gates: int, *, intermediate_reward: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, final_action: str, *, intermediate_reward: bool
 ) -> None:
-    """Keep the final pass reward without bootstrapping beyond the hard horizon."""
+    """Score complete circuits at the horizon and penalize incomplete compilations."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(
         device=device,
@@ -332,20 +336,23 @@ def test_predictor_env_terminates_at_max_steps(
         tracer_output_path=tmp_path / "trace.json",
     )
     qc = QuantumCircuit(1)
-    for _ in range(num_x_gates):
+    for _ in range(3):
         qc.x(0)
     dump(qc, tmp_path / "circuit_1.qasm")
-    env.reset(qc)
-    action_index = next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
-    average_error = sum(properties.error for properties in device["x"].values()) / len(device["x"])
-    expected_reward = (1 - average_error) - (1 - average_error) ** 3 if num_x_gates == 3 else env.no_effect_penalty
-    if not intermediate_reward:
-        expected_reward = 0.0
+    observation, _ = env.reset(qc)
+    assert observation["remaining_steps"][0] == 1
+    assert env.observation_space.contains(observation)
+    action_index = next(index for index, action in env.action_set.items() if action.name == final_action)
+    complete = final_action == "TrivialLayout"
+    expected_reward = (1 - device["x"][0,].error) ** 3 if complete else env.no_effect_penalty
 
-    _, reward_val, terminated, truncated, info = env.step(action_index)
+    observation, reward_val, terminated, truncated, info = env.step(action_index)
 
     assert reward_val == pytest.approx(expected_reward)
-    assert env.state.count_ops() == {"x": 1}
+    assert env.state.count_ops() == {"x": 3 if complete else 1}
+    assert env.error_occurred is not complete
+    assert observation["remaining_steps"][0] == 0
+    assert env.observation_space.contains(observation)
     assert terminated
     assert not truncated
     assert info["termination_reason"] == "max_steps_exceeded"
@@ -369,11 +376,20 @@ def test_predictor_env_terminates_at_max_steps(
     assert model.rollout_buffer.episode_starts.all()
 
 
+@pytest.mark.parametrize("max_steps", [0, -1])
+def test_predictor_env_rejects_nonpositive_max_steps(max_steps: int) -> None:
+    """The normalized remaining budget requires a positive horizon."""
+    with pytest.raises(ValueError, match=re.escape("max_steps must be positive.")):
+        predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), max_steps=max_steps)
+
+
 @pytest.mark.parametrize("reward_function", ["expected_fidelity", "estimated_success_probability"])
 @pytest.mark.parametrize("intermediate_reward", [False, True])
-@pytest.mark.parametrize("max_steps", [None, 4])
+@pytest.mark.parametrize(
+    ("max_steps", "final_action"), [(None, "terminate"), (4, "terminate"), (4, "InverseCancellation")]
+)
 def test_predictor_env_intermediate_rewards(
-    reward_function: figure_of_merit, max_steps: int | None, *, intermediate_reward: bool
+    reward_function: figure_of_merit, max_steps: int | None, final_action: str, *, intermediate_reward: bool
 ) -> None:
     """Reward comparable improvements, switch baselines at layout, and retain terminal rewards."""
     device = get_device("ibm_falcon_27")
@@ -394,7 +410,8 @@ def test_predictor_env_intermediate_rewards(
     average_error = sum(properties.error for properties in device["x"].values()) / len(device["x"])
     expected_delta = 2.0 * ((1 - average_error) - (1 - average_error) ** 3)
 
-    _, reward, terminated, truncated, _ = env.step(optimization)
+    observation, reward, terminated, truncated, _ = env.step(optimization)
+    assert observation["remaining_steps"][0] == pytest.approx(0.75 if max_steps else 1)
     assert reward == pytest.approx(expected_delta if intermediate_reward else 0.0)
     assert env.state.count_ops() == {"x": 1}
     assert not terminated
@@ -411,7 +428,8 @@ def test_predictor_env_intermediate_rewards(
     assert not terminated
     assert not truncated
 
-    _, reward, terminated, truncated, _ = env.step(env.action_terminate_index)
+    action_index = next(index for index, action in env.action_set.items() if action.name == final_action)
+    _, reward, terminated, truncated, _ = env.step(action_index)
     assert reward == pytest.approx(1 - device["x"][0,].error)
     assert terminated
     assert not truncated
@@ -657,13 +675,18 @@ def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch)
     observed_training_modes: list[bool] = []
 
     class TerminatingModel:
-        """Return the terminate action immediately."""
+        """Lay out the circuit before terminating."""
 
         @staticmethod
         def predict(_observation: object, *, deterministic: bool, action_masks: object) -> tuple[int, None]:
             assert action_masks is not None
             qiskit_actions_seeded = predictor.env.configure_qiskit_action_seeding(enabled=False)
+            predictor.env.configure_qiskit_action_seeding(enabled=qiskit_actions_seeded)
             observed_inference_modes.append((deterministic, qiskit_actions_seeded))
+            if predictor.env.num_steps == 0:
+                return next(
+                    index for index, action in predictor.env.action_set.items() if action.name == "TrivialLayout"
+                ), None
             return predictor.env.action_terminate_index, None
 
     class NoOpModel:
@@ -688,7 +711,7 @@ def test_predictor_scopes_qiskit_action_seeding(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(predictor_module, "MaskablePPO", NoOpModel)
     predictor.train_model(timesteps=1, test=True)
 
-    assert observed_inference_modes == [(False, False), (True, True)]
+    assert observed_inference_modes == [(False, False), (False, False), (True, True), (True, True)]
     assert observed_training_modes == [False]
 
 
