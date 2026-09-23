@@ -367,7 +367,6 @@ def test_predictor_env_qiskit_routing_composes_final_layout() -> None:
     assert env.layout.final_index_layout() == [0, 1, 2]
 
 
-
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
     actions_registry = vars(actions_registry_module)
