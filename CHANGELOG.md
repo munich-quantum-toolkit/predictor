@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add TKET's `KAKDecomposition`, `GraphPlacement`, and `NoiseAwarePlacement`
+  passes to the RL actions ([#796]) ([**@flowerthrower**])
 - ✨ Add BQSKit's `QSDPass` to the RL synthesis actions ([#795])
   ([**@flowerthrower**])
 - ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
@@ -37,6 +39,8 @@ releases may include breaking changes.
   ([#831]) ([**@flowerthrower**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
+- 🐛 Mask TKET layout and routing actions for circuits containing operations
+  wider than two qubits ([#796]) ([**@flowerthrower**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
@@ -110,6 +114,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
