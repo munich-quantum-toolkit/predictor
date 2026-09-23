@@ -339,6 +339,34 @@ def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
     assert Operator(optimized).equiv(Operator(circuit))
 
 
+def test_predictor_env_qiskit_routing_composes_final_layout() -> None:
+    """Test that Qiskit routing composes an existing output permutation."""
+    target = Target(num_qubits=3, description="bidirectional line")
+    target.add_instruction(
+        CXGate(),
+        {
+            (0, 1): InstructionProperties(),
+            (1, 0): InstructionProperties(),
+            (1, 2): InstructionProperties(),
+            (2, 1): InstructionProperties(),
+        },
+    )
+    env = predictorenv_module.PredictorEnv(device=target)
+    circuit = QuantumCircuit(3)
+    circuit.swap(0, 1)
+    circuit.cx(1, 2)
+    env.reset(circuit)
+
+    elide_index = next(index for index, action in env.action_set.items() if action.name == "ElidePermutations")
+    env.state = env.apply_action(elide_index)
+    assert env.layout is not None
+    assert env.layout.final_index_layout() == [1, 0, 2]
+
+    basic_swap_index = next(index for index, action in env.action_set.items() if action.name == "BasicSwap")
+    env.state = env.apply_action(basic_swap_index)
+    assert env.layout.final_index_layout() == [0, 1, 2]
+
+
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
     actions_registry = vars(actions_registry_module)

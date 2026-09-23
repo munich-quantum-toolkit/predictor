@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add Qiskit's `TrivialLayout`, `ElidePermutations`, `SabreSwap`,
+  `BasicSwap`, `RemoveIdentityEquivalent`, and
+  `Optimize1qGatesSimpleCommutation` passes to the RL actions ([#794])
+  ([**@flowerthrower**])
 - ✨ Expand and compact the RL observation with normalized OpenQASM operation
   frequencies and one-element `float32` qubit-count and depth arrays, and
   include measurements in the shared ML feature schema ([#758])
@@ -104,6 +108,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731

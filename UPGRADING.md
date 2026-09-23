@@ -6,6 +6,22 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Expanded Qiskit action set
+
+The RL action space now includes the following Qiskit passes:
+
+- the `TrivialLayout` and `ElidePermutations` layout actions;
+- the `SabreSwap` and `BasicSwap` routing actions; and
+- the `RemoveIdentityEquivalent` and `Optimize1qGatesSimpleCommutation`
+  optimization actions.
+
+`ElidePermutations` establishes a trivial layout in the same action so its
+output permutation remains part of the canonical layout.
+
+Existing RL models must be retrained because the action-space size and the
+indices of later actions have changed. Code that persists or selects actions by
+numeric index must be updated.
+
 ### RL observation features
 
 The RL observation now includes normalized frequencies for supported OpenQASM
