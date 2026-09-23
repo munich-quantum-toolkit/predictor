@@ -15,7 +15,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 if TYPE_CHECKING:
     from gymnasium.spaces import Space
@@ -51,6 +51,9 @@ from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, Figu
 
 logger = logging.getLogger("mqt-predictor")
 
+MDPPolicy = Literal["v2", "v3"]
+MDP_POLICIES: frozenset[str] = frozenset(get_args(MDPPolicy))
+
 
 class PredictorEnv(Env):
     """Predictor environment for reinforcement learning."""
@@ -62,6 +65,7 @@ class PredictorEnv(Env):
         path_training_circuits: Path | None = None,
         max_steps: int | None = None,
         tracer_output_path: str | Path | None = None,
+        mdp: MDPPolicy = "v3",
     ) -> None:
         """Initializes the PredictorEnv object.
 
@@ -71,14 +75,26 @@ class PredictorEnv(Env):
             path_training_circuits: The path to the training circuits folder. Defaults to None, which uses the default path.
             max_steps: The maximum number of actions per episode. Defaults to None, which means no step limit is enforced.
             tracer_output_path: Path to export the compilation trace JSON. Defaults to None.
+            mdp: The MDP transition policy. ``v2`` is the original MQT Predictor
+                strategy. ``v3`` is the default and is permissive before layout while
+                preserving the established compilation structure afterwards.
 
         Raises:
-            ValueError: If the reward function is "estimated_success_probability" and no calibration data is available for the device or if the reward function is "estimated_hellinger_distance" and no trained model is available for the device.
+            ValueError: If ``mdp`` is unsupported, if the reward function is
+                "estimated_success_probability" and no calibration data is available
+                for the device, or if the reward function is
+                "estimated_hellinger_distance" and no trained model is available for
+                the device.
         """
-        logger.info("Init env: " + reward_function)
+        logger.info("Init env: %s", reward_function)
+
+        if mdp not in MDP_POLICIES:
+            msg = f"Unsupported MDP policy: {mdp}."
+            raise ValueError(msg)
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
         self.max_steps = max_steps
+        self.mdp = mdp
 
         self.action_set = {}
         self.actions_synthesis_indices = []
@@ -86,7 +102,8 @@ class PredictorEnv(Env):
         self.actions_routing_indices = []
         self.actions_mapping_indices = []
         self.actions_opt_indices = []
-        self.actions_final_optimization_indices = []  # TODO: currently not used; will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/666
+        self.actions_final_optimization_indices = []
+        self.actions_structure_preserving_indices = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -118,6 +135,8 @@ class PredictorEnv(Env):
         for elem in action_dict[PassType.OPT]:
             self.action_set[index] = elem
             self.actions_opt_indices.append(index)
+            if elem.preserves_layout and elem.preserves_routing and elem.preserves_synthesis:
+                self.actions_structure_preserving_indices.append(index)
             index += 1
         for elem in action_dict[PassType.MAPPING]:
             self.action_set[index] = elem
@@ -403,15 +422,16 @@ class PredictorEnv(Env):
 
         # Reset caches and evaluate initial baseline state
         self._current_foms = {}
-        self._current_synthesized = self.is_circuit_synthesized(self.state)
-        self._current_laid_out = self.is_circuit_laid_out(self.state, self.layout) if self.layout else False
-        self._current_routed = (
-            self.is_circuit_routed(self.state, CouplingMap(self.device.build_coupling_map()))
-            if self._current_laid_out
-            else False
-        )
-
-        self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        self.valid_actions = self.determine_valid_actions_for_state()
+        if self.mdp == "v2":
+            self.valid_actions = self.actions_synthesis_indices + self.actions_opt_indices
+        else:
+            self.valid_actions = (
+                self.actions_synthesis_indices
+                + self.actions_mapping_indices
+                + self.actions_layout_indices
+                + self.actions_opt_indices
+            )
 
         self.error_occurred = False
 
@@ -434,7 +454,7 @@ class PredictorEnv(Env):
                 device=self.device,
                 circuit_name=current_circuit_name,
                 figure_of_merit=self.reward_function,
-                mdp_policy="paper",  # Fallback since mdp refactoring is not yet implemented
+                mdp_policy=self.mdp,
             )
 
             # Record baseline
@@ -596,6 +616,65 @@ class PredictorEnv(Env):
                     return False
         return True
 
+    def _valid_actions_v2(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
+        """Return valid action indices for the v2 MDP policy."""
+        # Initial state
+        if not synthesized and not laid_out and not routed:
+            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
+
+        if synthesized and not laid_out and not routed:
+            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
+
+        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
+        if not synthesized and laid_out and not routed:
+            return [*self.actions_synthesis_indices, *self.actions_routing_indices, *self.actions_opt_indices]
+
+        # Not *depicted* in paper; necessary because of layout-only passes
+        if synthesized and laid_out and not routed:
+            return [*self.actions_routing_indices]
+
+        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
+        if not synthesized and laid_out and routed:
+            return [*self.actions_synthesis_indices, *self.actions_opt_indices]
+
+        # Final state
+        if synthesized and laid_out and routed:
+            return [self.action_terminate_index, *self.actions_opt_indices]
+
+        return []
+
+    def _valid_actions_v3(self, synthesized: bool, laid_out: bool, routed: bool) -> list[int]:
+        """Return valid action indices for the v3 MDP policy."""
+        if not synthesized and not laid_out:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_mapping_indices,
+                *self.actions_layout_indices,
+                *self.actions_opt_indices,
+            ]
+
+        if synthesized and not laid_out:
+            return [*self.actions_mapping_indices, *self.actions_layout_indices, *self.actions_opt_indices]
+
+        if not synthesized and laid_out and not routed:
+            return [
+                *self.actions_synthesis_indices,
+                *self.actions_routing_indices,
+                *self.actions_structure_preserving_indices,
+            ]
+
+        if synthesized and laid_out and not routed:
+            return [*self.actions_routing_indices, *self.actions_structure_preserving_indices]
+
+        if not synthesized and laid_out and routed:
+            return [*self.actions_synthesis_indices, *self.actions_structure_preserving_indices]
+
+        return [
+            self.action_terminate_index,
+            *self.actions_structure_preserving_indices,
+            *self.actions_final_optimization_indices,
+        ]
+
     def determine_valid_actions_for_state(self) -> list[int]:
         """Select structurally valid action indices for the current circuit state.
 
@@ -621,36 +700,7 @@ class PredictorEnv(Env):
         laid_out = self._current_laid_out
         routed = self._current_routed
 
-        actions = []
+        if self.mdp == "v2":
+            return self._valid_actions_v2(synthesized, laid_out, routed)
 
-        # Initial state
-        if not synthesized and not laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
-
-        if synthesized and not laid_out and not routed:
-            actions.extend(self.actions_mapping_indices)
-            actions.extend(self.actions_layout_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Not *depicted* in paper; necessary because optimization can destroy the native gate set
-        if not synthesized and laid_out and not routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_routing_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Not *depicted* in paper; necessary because of layout-only passes
-        if synthesized and laid_out and not routed:
-            actions.extend(self.actions_routing_indices)
-
-        # Not *depicted* in paper; necessary because routing can insert non-native SWAPs
-        if not synthesized and laid_out and routed:
-            actions.extend(self.actions_synthesis_indices)
-            actions.extend(self.actions_opt_indices)
-
-        # Final state
-        if synthesized and laid_out and routed:
-            actions.extend([self.action_terminate_index])
-            actions.extend(self.actions_opt_indices)
-
-        return actions
+        return self._valid_actions_v3(synthesized, laid_out, routed)

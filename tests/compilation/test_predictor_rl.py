@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -19,6 +20,7 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
+from qiskit.quantum_info import Clifford, Operator
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
@@ -34,6 +36,9 @@ from mqt.predictor.rl.actions import (
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from mqt.predictor.rl.predictorenv import MDPPolicy
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -65,6 +70,40 @@ def test_predictor_env_hellinger_error() -> None:
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
 
 
+def test_predictor_env_rejects_unsupported_mdp() -> None:
+    """Test that unsupported MDP policies are rejected at runtime."""
+    invalid_mdp = cast("MDPPolicy", "unsupported")
+
+    with pytest.raises(ValueError, match=re.escape("Unsupported MDP policy: unsupported.")):
+        predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=invalid_mdp)
+
+
+@pytest.mark.parametrize(
+    ("mdp", "expected_action_groups"),
+    [
+        pytest.param("v2", ("synthesis", "optimization"), id="v2"),
+        pytest.param("v3", ("synthesis", "mapping", "layout", "optimization"), id="v3"),
+    ],
+)
+def test_predictor_env_reset_uses_mdp_initial_actions(
+    mdp: MDPPolicy,
+    expected_action_groups: tuple[str, ...],
+) -> None:
+    """Test that reset initializes the action set for the selected MDP."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), mdp=mdp)
+
+    env.reset(QuantumCircuit(1))
+
+    action_groups = {
+        "synthesis": env.actions_synthesis_indices,
+        "mapping": env.actions_mapping_indices,
+        "layout": env.actions_layout_indices,
+        "optimization": env.actions_opt_indices,
+    }
+    expected_actions = {action for group in expected_action_groups for action in action_groups[group]}
+    assert set(env.valid_actions) == expected_actions
+
+
 @pytest.mark.model_training
 def test_qcompile_with_newly_trained_models() -> None:
     """Test the qcompile function with a newly trained model.
@@ -77,14 +116,12 @@ def test_qcompile_with_newly_trained_models() -> None:
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
-    model_name = "model_" + figure_of_merit + "_" + device.description
+    model_name = predictor.model_name
     model_path = Path(get_path_trained_model() / (model_name + ".zip"))
     if not model_path.exists():
         with pytest.raises(
             FileNotFoundError,
-            match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
-            ),
+            match=re.escape(f"The RL model '{model_name}' is not trained yet. Please train the model before using it."),
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
@@ -137,33 +174,98 @@ def test_predictor_env_truncates_at_max_steps() -> None:
     assert info["truncation_reason"] == "max_steps_exceeded"
 
 
-def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
-    """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
+@pytest.mark.parametrize(
+    ("synthesized", "laid_out", "routed"),
+    [
+        pytest.param(False, False, False, id="initial"),
+        pytest.param(True, False, False, id="synthesized"),
+        pytest.param(False, True, False, id="laid-out"),
+        pytest.param(True, True, False, id="synthesized-laid-out"),
+        pytest.param(False, True, True, id="laid-out-routed"),
+        pytest.param(True, True, True, id="final"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("mdp", "expected_action_groups_by_state"),
+    [
+        pytest.param(
+            "v2",
+            {
+                (False, False, False): ("synthesis", "optimization"),
+                (True, False, False): ("mapping", "layout", "optimization"),
+                (False, True, False): ("synthesis", "routing", "optimization"),
+                (True, True, False): ("routing",),
+                (False, True, True): ("synthesis", "optimization"),
+                (True, True, True): ("terminate", "optimization"),
+            },
+            id="v2",
+        ),
+        pytest.param(
+            "v3",
+            {
+                (False, False, False): ("synthesis", "mapping", "layout", "optimization"),
+                (True, False, False): ("mapping", "layout", "optimization"),
+                (False, True, False): ("synthesis", "routing", "structure-preserving"),
+                (True, True, False): ("routing", "structure-preserving"),
+                (False, True, True): ("synthesis", "structure-preserving"),
+                (True, True, True): ("terminate", "structure-preserving", "final-optimization"),
+            },
+            id="v3",
+        ),
+    ],
+)
+def test_predictor_env_actions_for_mdp_state(
+    monkeypatch: pytest.MonkeyPatch,
+    mdp: MDPPolicy,
+    expected_action_groups_by_state: dict[tuple[bool, bool, bool], tuple[str, ...]],
+    synthesized: bool,
+    laid_out: bool,
+    routed: bool,
+) -> None:
+    """Test the exact valid actions for every reachable state of each MDP."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device)
+    env = predictorenv_module.PredictorEnv(device=device, mdp=mdp)
     qc = QuantumCircuit(3)
     qc.h(0)
     qc.cx(0, 2)
     env.reset(qc)
 
-    env.layout = TranspileLayout(
-        initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
-        input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
-        _output_qubit_list=qc.qubits,
-        _input_qubit_count=qc.num_qubits,
-    )
+    if laid_out:
+        env.layout = TranspileLayout(
+            initial_layout=Layout({qubit: index for index, qubit in enumerate(qc.qubits)}),
+            input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
+            final_layout=None,
+            _output_qubit_list=qc.qubits,
+            _input_qubit_count=qc.num_qubits,
+        )
+
+    monkeypatch.setattr(env, "is_circuit_synthesized", lambda _circuit: synthesized)
+    monkeypatch.setattr(env, "is_circuit_laid_out", lambda _circuit, _layout: laid_out)
+    monkeypatch.setattr(env, "is_circuit_routed", lambda _circuit, _coupling_map: routed)
+
+    action_groups = {
+        "synthesis": env.actions_synthesis_indices,
+        "mapping": env.actions_mapping_indices,
+        "layout": env.actions_layout_indices,
+        "routing": env.actions_routing_indices,
+        "optimization": env.actions_opt_indices,
+        "structure-preserving": env.actions_structure_preserving_indices,
+        "final-optimization": env.actions_final_optimization_indices,
+        "terminate": [env.action_terminate_index],
+    }
+    expected_action_groups = expected_action_groups_by_state[synthesized, laid_out, routed]
+    expected_actions = {action for group in expected_action_groups for action in action_groups[group]}
 
     valid_actions = env.determine_valid_actions_for_state()
 
-    assert set(env.actions_synthesis_indices).issubset(valid_actions)
-    assert set(env.actions_routing_indices).issubset(valid_actions)
-    assert set(env.actions_opt_indices).issubset(valid_actions)
-    assert env.action_terminate_index not in valid_actions
+    assert set(valid_actions) == expected_actions
 
 
-def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that Qiskit routing actions update the tracked final layout."""
+@pytest.mark.parametrize("already_routed", [False, True])
+def test_predictor_env_qiskit_routing_updates_final_layout(
+    monkeypatch: pytest.MonkeyPatch, already_routed: bool
+) -> None:
+    """Test that Qiskit routing preserves an existing output permutation."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(2)
@@ -175,7 +277,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
     env.layout = TranspileLayout(
         initial_layout=initial_layout,
         input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
+        final_layout=final_layout if already_routed else None,
         _output_qubit_list=qc.qubits,
         _input_qubit_count=qc.num_qubits,
     )
@@ -201,7 +303,37 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
     altered_qc = env.apply_action(action_index=routing_action_index)
 
     assert altered_qc is env.state
-    assert env.layout.final_layout is final_layout
+    assert env.layout.routing_permutation() == ([0, 1] if already_routed else [1, 0])
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
+    """Test Clifford optimization on standard gates and existing Clifford blocks."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"))
+    definition = QuantumCircuit(1)
+    definition.h(0)
+    for _ in range(4):
+        definition.s(0)
+    circuit = QuantumCircuit(1)
+    if wrapped:
+        circuit.append(Clifford(definition), [0])
+    else:
+        circuit = definition
+    env.reset(circuit)
+
+    if wrapped:
+        cancellation_index = next(
+            index for index, action in env.action_set.items() if action.name == "CommutativeCancellation"
+        )
+        assert env.apply_action(cancellation_index).count_ops() == {"clifford": 1}
+
+    optimize_cliffords_index = next(
+        index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
+    )
+    optimized = env.apply_action(optimize_cliffords_index)
+    assert "clifford" not in optimized.count_ops()
+    assert optimized.size() == 1
+    assert Operator(optimized).equiv(Operator(circuit))
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,10 +12,19 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add selectable `v2` and `v3` RL MDP strategies, make `v3` the default, and
+  use the selected strategy in compilation traces and model artifact names
+  ([#755]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 
 ### Changed
 
+- 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,
+  independently of measurements ([#831]) ([**@flowerthrower**])
+- 🐛 Unroll custom gate definitions before RL basis translation and collect and
+  decompose Clifford blocks for optimization ([#831]) ([**@flowerthrower**])
+- 🐛 Bound the VF2 layout search to prevent training stalls on symmetric devices
+  ([#831]) ([**@flowerthrower**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -86,9 +95,11 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#755]: https://github.com/munich-quantum-toolkit/predictor/pull/755
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
