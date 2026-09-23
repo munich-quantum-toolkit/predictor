@@ -59,7 +59,7 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Treat the hard RL pass horizon as terminal to prevent value bootstrapping
-  beyond it ([#801]) ([**@flowerthrower**])
+  beyond it ([#830]) ([**@flowerthrower**])
 
 ## [2.4.0] - 2026-07-13
 
@@ -125,7 +125,7 @@ for previous changelogs._
 
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#758]: https://github.com/munich-quantum-toolkit/predictor/pull/758
-[#801]: https://github.com/munich-quantum-toolkit/predictor/pull/801
+[#830]: https://github.com/munich-quantum-toolkit/predictor/pull/830
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#800]: https://github.com/munich-quantum-toolkit/predictor/pull/800
 [#798]: https://github.com/munich-quantum-toolkit/predictor/pull/798

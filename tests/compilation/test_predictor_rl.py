@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
 import pytest
+import torch
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from pytket.architecture import Architecture
@@ -100,10 +101,14 @@ def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> 
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
-def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("intermediate_reward", [False, True])
+def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch, *, intermediate_reward: bool) -> None:
     """Test that a pass timeout truncates the current episode."""
     env = predictorenv_module.PredictorEnv(
-        device=get_device("ibm_falcon_27"), pass_timeout=0.01, intermediate_reward=False
+        device=get_device("ibm_falcon_27"),
+        pass_timeout=0.01,
+        max_steps=1,
+        intermediate_reward=intermediate_reward,
     )
     qc = QuantumCircuit(1)
     env.reset(qc)
@@ -312,25 +317,64 @@ def test_warning_for_unidirectional_device() -> None:
         Predictor(figure_of_merit="expected_fidelity", device=target)
 
 
-def test_predictor_env_terminates_at_max_steps() -> None:
-    """Test that the environment terminates episodes that hit the step limit."""
+@pytest.mark.parametrize("intermediate_reward", [False, True])
+@pytest.mark.parametrize("num_x_gates", [1, 3])
+def test_predictor_env_terminates_at_max_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, num_x_gates: int, *, intermediate_reward: bool
+) -> None:
+    """Keep the final pass reward without bootstrapping beyond the hard horizon."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device, max_steps=1, intermediate_reward=False)
+    env = predictorenv_module.PredictorEnv(
+        device=device,
+        max_steps=1,
+        intermediate_reward=intermediate_reward,
+        path_training_circuits=tmp_path,
+        tracer_output_path=tmp_path / "trace.json",
+    )
     qc = QuantumCircuit(1)
-    qc.h(0)
+    for _ in range(num_x_gates):
+        qc.x(0)
+    dump(qc, tmp_path / "circuit_1.qasm")
     env.reset(qc)
+    action_index = next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
+    average_error = sum(properties.error for properties in device["x"].values()) / len(device["x"])
+    expected_reward = (1 - average_error) - (1 - average_error) ** 3 if num_x_gates == 3 else env.no_effect_penalty
+    if not intermediate_reward:
+        expected_reward = 0.0
 
-    _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
+    _, reward_val, terminated, truncated, info = env.step(action_index)
 
-    assert reward_val == 0
+    assert reward_val == pytest.approx(expected_reward)
+    assert env.state.count_ops() == {"x": 1}
     assert terminated
     assert not truncated
     assert info["termination_reason"] == "max_steps_exceeded"
+    assert env.tracer is not None
+    assert env.tracer.steps[-1].reward == round(reward_val, 6)
+    assert env.tracer.steps[-1].is_terminal
+    assert (tmp_path / "trace.json").is_file()
+
+    monkeypatch.setattr(env, "action_masks", lambda: [index == action_index for index in env.action_set])
+    model = predictor_module.MaskablePPO(
+        predictor_module.MaskableMultiInputActorCriticPolicy,
+        env,
+        n_steps=2,
+        batch_size=2,
+        n_epochs=1,
+        seed=7,
+    )
+    monkeypatch.setattr(model.policy, "predict_values", lambda _obs: torch.full((1, 1), 5.0, device=model.device))
+    model.learn(total_timesteps=2)
+    assert model.rollout_buffer.rewards.flatten() == pytest.approx([expected_reward, expected_reward])
+    assert model.rollout_buffer.episode_starts.all()
 
 
 @pytest.mark.parametrize("reward_function", ["expected_fidelity", "estimated_success_probability"])
 @pytest.mark.parametrize("intermediate_reward", [False, True])
-def test_predictor_env_intermediate_rewards(reward_function: figure_of_merit, *, intermediate_reward: bool) -> None:
+@pytest.mark.parametrize("max_steps", [None, 4])
+def test_predictor_env_intermediate_rewards(
+    reward_function: figure_of_merit, max_steps: int | None, *, intermediate_reward: bool
+) -> None:
     """Reward comparable improvements, switch baselines at layout, and retain terminal rewards."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(
@@ -339,6 +383,7 @@ def test_predictor_env_intermediate_rewards(reward_function: figure_of_merit, *,
         intermediate_reward=intermediate_reward,
         reward_scale=2.0,
         no_effect_penalty=-0.05,
+        max_steps=max_steps,
     )
     qc = QuantumCircuit(1)
     for _ in range(3):

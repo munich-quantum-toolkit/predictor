@@ -161,24 +161,31 @@ def test_gnn_masked_training_and_saved_inference(
     assert Operator(compiled).equiv(Operator(circuit))
 
 
-@pytest.mark.parametrize("truncated", [False, True])
+@pytest.mark.parametrize("ending", ["terminate", "failure", "horizon"])
 def test_gnn_bootstraps_only_the_truncated_terminal_graph(
-    gnn_predictor: Predictor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, truncated: bool
+    gnn_predictor: Predictor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: str
 ) -> None:
     """Use the final graph on truncation, without bootstrapping a terminated episode."""
     env = gnn_predictor.env
-    env.intermediate_reward = False
-    action_mask = [index == env.action_terminate_index for index in env.action_set]
+    env.intermediate_reward = ending == "horizon"
+    env.max_steps = 1
+    action_index = (
+        next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
+        if ending == "horizon"
+        else env.action_terminate_index
+    )
+    action_mask = [index == action_index for index in env.action_set]
     monkeypatch.setattr(env, "action_masks", lambda: action_mask)
 
     def apply_action(_action: int) -> QuantumCircuit:
         env.state.x(0)
-        if truncated:
+        if ending == "failure":
             msg = "Compilation failed after changing the circuit."
             raise RuntimeError(msg)
         return env.state
 
-    monkeypatch.setattr(env, "apply_action", apply_action)
+    if ending != "horizon":
+        monkeypatch.setattr(env, "apply_action", apply_action)
     assert gnn_predictor.gnn_config is not None
     model = gnn.create_gnn_model(
         gnn.GNNObservationWrapper(env), gnn_predictor.gnn_config, verbose=0, tensorboard_log=str(tmp_path), seed=7
@@ -191,7 +198,9 @@ def test_gnn_bootstraps_only_the_truncated_terminal_graph(
 
     model.learn(total_timesteps=4)
 
-    expected_reward = env.no_effect_penalty + model.gamma * 5 if truncated else 0
+    expected_reward = env.no_effect_penalty if ending == "horizon" else 0.0
+    if ending == "failure":
+        expected_reward = env.no_effect_penalty + model.gamma * 5
     np.testing.assert_allclose(model.rollout_buffer.rewards, expected_reward)
     assert model.rollout_buffer.episode_starts.all()
     buffer = cast("GNNMaskableDictRolloutBuffer", model.rollout_buffer)
