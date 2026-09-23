@@ -48,6 +48,7 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 if TYPE_CHECKING:
     from numpy.random import Generator
 
+    from mqt.predictor.reward import figure_of_merit
     from mqt.predictor.rl.predictorenv import MDPPolicy, PredictorEnv
 
 
@@ -101,14 +102,16 @@ def test_predictor_env_rejects_nonpositive_pass_timeout(pass_timeout: float) -> 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is unavailable")
 def test_predictor_env_truncates_timed_out_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that a pass timeout truncates the current episode."""
-    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"), pass_timeout=0.01)
+    env = predictorenv_module.PredictorEnv(
+        device=get_device("ibm_falcon_27"), pass_timeout=0.01, intermediate_reward=False
+    )
     qc = QuantumCircuit(1)
     env.reset(qc)
     monkeypatch.setattr(env, "apply_action", lambda _action: time.sleep(1))
 
     _, reward_val, terminated, truncated, info = env.step(env.actions_opt_indices[0])
 
-    assert reward_val == 0
+    assert reward_val == env.no_effect_penalty
     assert not terminated
     assert truncated
     assert info == {
@@ -291,7 +294,7 @@ def test_warning_for_unidirectional_device() -> None:
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
     device = get_device("ibm_falcon_27")
-    env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
+    env = predictorenv_module.PredictorEnv(device=device, max_steps=1, intermediate_reward=False)
     qc = QuantumCircuit(1)
     qc.h(0)
     env.reset(qc)
@@ -302,6 +305,50 @@ def test_predictor_env_truncates_at_max_steps() -> None:
     assert not terminated
     assert truncated
     assert info["truncation_reason"] == "max_steps_exceeded"
+
+
+@pytest.mark.parametrize("reward_function", ["expected_fidelity", "estimated_success_probability"])
+@pytest.mark.parametrize("intermediate_reward", [False, True])
+def test_predictor_env_intermediate_rewards(reward_function: figure_of_merit, *, intermediate_reward: bool) -> None:
+    """Reward comparable improvements, switch baselines at layout, and retain terminal rewards."""
+    device = get_device("ibm_falcon_27")
+    env = predictorenv_module.PredictorEnv(
+        device=device,
+        reward_function=reward_function,
+        intermediate_reward=intermediate_reward,
+        reward_scale=2.0,
+        no_effect_penalty=-0.05,
+    )
+    qc = QuantumCircuit(1)
+    for _ in range(3):
+        qc.x(0)
+    env.reset(qc)
+    optimization = next(index for index, action in env.action_set.items() if action.name == "InverseCancellation")
+    layout = next(index for index, action in env.action_set.items() if action.name == "TrivialLayout")
+    average_error = sum(properties.error for properties in device["x"].values()) / len(device["x"])
+    expected_delta = 2.0 * ((1 - average_error) - (1 - average_error) ** 3)
+
+    _, reward, terminated, truncated, _ = env.step(optimization)
+    assert reward == pytest.approx(expected_delta if intermediate_reward else 0.0)
+    assert env.state.count_ops() == {"x": 1}
+    assert not terminated
+    assert not truncated
+
+    _, reward, terminated, truncated, _ = env.step(optimization)
+    assert reward == pytest.approx(-0.05 if intermediate_reward else 0.0)
+    assert not terminated
+    assert not truncated
+
+    _, reward, terminated, truncated, _ = env.step(layout)
+    assert reward == 0
+    assert env.action_terminate_index in env.valid_actions
+    assert not terminated
+    assert not truncated
+
+    _, reward, terminated, truncated, _ = env.step(env.action_terminate_index)
+    assert reward == pytest.approx(1 - device["x"][0,].error)
+    assert terminated
+    assert not truncated
 
 
 @pytest.mark.parametrize(
