@@ -141,12 +141,12 @@ class PredictorEnv(Env):
                 before termination.
             reward_scale: Multiplier applied to intermediate reward changes.
             no_effect_penalty: Reward for optimization actions that do not improve
-                the figure of merit.
+                the figure of merit and for failed compilations.
             pass_timeout: Maximum duration in seconds for one compilation pass.
                 Defaults to None, which disables pass timeouts.
 
         Raises:
-            ValueError: If ``mdp`` is unsupported, ``pass_timeout`` is not positive,
+            ValueError: If ``mdp`` is unsupported, ``max_steps`` or ``pass_timeout`` is not positive,
                 if the reward function is
                 "estimated_success_probability" and no calibration data is available
                 for the device, or if the reward function is
@@ -157,6 +157,9 @@ class PredictorEnv(Env):
 
         if mdp not in MDP_POLICIES:
             msg = f"Unsupported MDP policy: {mdp}."
+            raise ValueError(msg)
+        if max_steps is not None and max_steps <= 0:
+            msg = "max_steps must be positive."
             raise ValueError(msg)
 
         self.path_training_circuits = path_training_circuits or get_path_training_circuits()
@@ -257,6 +260,7 @@ class PredictorEnv(Env):
             "entanglement_ratio": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            "remaining_steps": Box(low=0, high=1, shape=(1,), dtype=np.float32),
         }
 
         # Step-level cache to prevent double-computation
@@ -357,6 +361,15 @@ class PredictorEnv(Env):
                 self.tracer.save_to_json(out_path)
                 logger.info("Trace exported to: %s", out_path.resolve())
 
+    def _get_observation(self) -> dict[str, Any]:
+        """Include the remaining fraction of the episode's pass budget."""
+        obs = create_feature_dict(self.state, self.device.num_qubits)
+        remaining_steps = (
+            max(0, self.max_steps - self.num_steps) / self.max_steps if self.max_steps is not None else 1.0
+        )
+        obs["remaining_steps"] = np.array([remaining_steps], dtype=np.float32)
+        return obs
+
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information.
 
@@ -379,6 +392,7 @@ class PredictorEnv(Env):
         )
 
         start_time = time.perf_counter()
+        self.num_steps += 1
         try:
             self.used_actions.append(action_name)
             previous_reward = (
@@ -393,11 +407,11 @@ class PredictorEnv(Env):
             action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
-            obs = create_feature_dict(self.state, self.device.num_qubits)
+            obs = self._get_observation()
 
             # Trace the error before aborting
             self._collect_tracer_data(
-                step_index=self.num_steps + 1,
+                step_index=self.num_steps,
                 action_name=action_name,
                 action_type=action_type,
                 action_duration=action_duration,
@@ -408,13 +422,12 @@ class PredictorEnv(Env):
             return (
                 obs,  # features
                 self.no_effect_penalty,  # reward
-                False,  # terminated
-                True,  # truncated
-                {"Truncated because of error": f"{type(exc).__name__}: {exc}"},  # info
+                True,  # terminated
+                False,  # truncated
+                {"termination_reason": "pass_error", "error": f"{type(exc).__name__}: {exc}"},
             )
 
         self.state: QuantumCircuit = altered_qc
-        self.num_steps += 1
 
         self.state._layout = self.layout  # ruff: ignore[private-member-access]
 
@@ -422,38 +435,25 @@ class PredictorEnv(Env):
         self._current_foms = {}
 
         self.valid_actions = self.determine_valid_actions_for_state()
-        if len(self.valid_actions) == 0:
+        reached_horizon = self.max_steps is not None and self.num_steps >= self.max_steps
+        done = action == self.action_terminate_index or reached_horizon
+        if not done and len(self.valid_actions) == 0:
             msg = "No valid actions left."
             raise RuntimeError(msg)
 
-        if action == self.action_terminate_index:
-            reward_val = self.calculate_reward()
-            done = True
+        if done:
+            self.error_occurred = self.action_terminate_index not in self.valid_actions
+            reward_val = self.no_effect_penalty if self.error_occurred else self.calculate_reward()
         elif previous_reward is not None:
             reward_val = self._calculate_intermediate_reward(
                 action,
                 previous_reward,
                 previous_compilation_state,
             )
-            done = False
         else:
             reward_val = 0
-            done = False
 
-        obs = create_feature_dict(self.state, self.device.num_qubits)
-
-        # Trace+truncate if step limit is reached
-        if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
-            self._collect_tracer_data(
-                step_index=self.num_steps,
-                action_name=action_name,
-                action_type=action_type,
-                action_duration=action_duration,
-                reward_val=reward_val,
-                feature_vector=obs,
-                done=True,
-            )
-            return obs, reward_val, False, True, {"truncation_reason": "max_steps_exceeded"}
+        obs = self._get_observation()
 
         # Trace the successful step
         self._collect_tracer_data(
@@ -466,7 +466,12 @@ class PredictorEnv(Env):
             done=done,
         )
 
-        return obs, reward_val, done, False, {}
+        info = {}
+        if reached_horizon and action != self.action_terminate_index:
+            info["termination_reason"] = "max_steps_exceeded"
+        elif self.error_occurred:
+            info["termination_reason"] = "invalid_circuit"
+        return obs, reward_val, done, False, info
 
     def get_fom(self, fom_name: str) -> float:
         """Gets a figure of merit, calculating it only if not already cached for the current step."""
@@ -632,7 +637,7 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
-        obs = create_feature_dict(self.state, self.device.num_qubits)
+        obs = self._get_observation()
 
         # Setup tracer for the new episode
         if self.tracer_output_path is not None:
