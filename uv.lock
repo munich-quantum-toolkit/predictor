@@ -1474,7 +1474,7 @@ requires-dist = [
     { name = "pytket", marker = "python_full_version >= '3.14'", specifier = ">=2.4" },
     { name = "pytket-qiskit", specifier = ">=0.71.1" },
     { name = "pytket-qiskit", marker = "python_full_version >= '3.14'", specifier = ">=0.78" },
-    { name = "qiskit", specifier = ">=2.1.1" },
+    { name = "qiskit", specifier = ">=2.1.1,<3" },
     { name = "rich", specifier = ">=12.6" },
     { name = "sb3-contrib", specifier = ">=2" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
