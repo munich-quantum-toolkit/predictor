@@ -20,6 +20,7 @@ import contextlib
 import os
 import shutil
 import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import nox
@@ -66,6 +67,9 @@ def _run_tests(
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    if os.name == "nt" and (compiler := shutil.which("cl.exe")):
+        # Git Bash's link.exe shadows MSVC when building Qiskit from source.
+        env["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER"] = str(Path(compiler).with_name("link.exe"))
 
     if extra_command:
         session.run(*extra_command, env=env)
