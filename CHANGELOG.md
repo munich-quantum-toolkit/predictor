@@ -17,7 +17,7 @@ releases may include breaking changes.
 ### Changed
 
 - ♻️ Use Qiskit's native layout continuation between compilation actions
-  (requires Qiskit 2.6).
+  (requires Qiskit 2.6) ([#841]) ([**@flowerthrower**]).
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -88,6 +88,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#841]: https://github.com/munich-quantum-toolkit/predictor/pull/841
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
