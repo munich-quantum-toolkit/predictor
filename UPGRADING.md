@@ -30,10 +30,18 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
-### Qiskit 2.1 minimum
+### Qiskit 2.6 minimum
 
-The minimum Qiskit version increases from **1.3.3 to 2.1.1**, dropping support
-for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.1 or newer.
+Qiskit 2.6 is required to preserve layout metadata between compilation actions.
+Until its release, `uv sync` uses the pinned Qiskit development revision
+containing
+[Qiskit #16827](https://github.com/Qiskit/qiskit/pull/16827).
+Building that development revision requires Qiskit's Rust and C build
+toolchains.
+
+For direct users of `rl.actions.qiskit_actions`, `run_qiskit_action` no longer
+accepts `input_qubit_count`. The `VF2PostLayout` action now applies its layout
+itself, replacing the `postprocess_vf2postlayout` helper.
 
 ### End of support for Python 3.10
 

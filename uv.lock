@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1478,7 +1478,7 @@ requires-dist = [
     { name = "pytket", marker = "python_full_version >= '3.14'", specifier = ">=2.4" },
     { name = "pytket-qiskit", specifier = ">=0.71.1" },
     { name = "pytket-qiskit", marker = "python_full_version >= '3.14'", specifier = ">=0.78" },
-    { name = "qiskit", specifier = ">=2.1.1,<3" },
+    { name = "qiskit", url = "https://github.com/Qiskit/qiskit/archive/87899fce700f298d85b22c506e27690210524be7.tar.gz" },
     { name = "rich", specifier = ">=12.6" },
     { name = "sb3-contrib", specifier = ">=2" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
@@ -2816,8 +2816,8 @@ wheels = [
 
 [[package]]
 name = "qiskit"
-version = "2.5.2"
-source = { registry = "https://pypi.org/simple" }
+version = "2.6.0.dev0"
+source = { url = "https://github.com/Qiskit/qiskit/archive/87899fce700f298d85b22c506e27690210524be7.tar.gz" }
 dependencies = [
     { name = "dill" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -2828,21 +2828,35 @@ dependencies = [
     { name = "stevedore" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/b3/9e080540cf1dedc6ce36d9c346f0d1e17772fb646c09049b609271acf5a0/qiskit-2.5.2.tar.gz", hash = "sha256:cf05388c717392cff5d01be4ea9b45652c2709a5c697c174428d8863089b6247", size = 4261177, upload-time = "2026-08-13T19:08:14.183Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/66/92681da23c4f4502fabe16cb23c7c98d141ae1e25a2f14fdd8e351ae8ef8/qiskit-2.5.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4aa7ddb0d9c1cd14298bf2fdd242646a5e0eaeebdebd2f31d5d2a018c75fa744", size = 9349327, upload-time = "2026-08-13T19:08:56.878Z" },
-    { url = "https://files.pythonhosted.org/packages/60/c4/26f9f63a6954b69778b7401822e7855ed62194c959562e4ad3645e5ebfca/qiskit-2.5.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c559ee1e2a92b5ded6a130f1fd8dc4bea19a5b35e99d39180889746f12550666", size = 8740831, upload-time = "2026-08-13T19:08:04.199Z" },
-    { url = "https://files.pythonhosted.org/packages/43/42/0eb83d0eefd6a1d3752db43839c327c39d67b2ef060b2b1da8fcd3424dc5/qiskit-2.5.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:2835e38af67932e592562c7b1b6b7fadd015bd1101a1320e2c5051de12508428", size = 9035471, upload-time = "2026-08-13T19:08:06.86Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/37/b09591e2386b0c4773d2c405ace6e89552366fc798df7f3ee72b46b26603/qiskit-2.5.2-cp310-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:d7940da5ea03d638bace6f9cc47bb892502c85a9c05eebe1cbe3c0e693586109", size = 9954423, upload-time = "2026-08-13T19:08:59.707Z" },
-    { url = "https://files.pythonhosted.org/packages/ed/92/404d085301365d79a06a1ae34b4292e35a510a22a32ec0b5a8e8ee1d87dd/qiskit-2.5.2-cp310-abi3-manylinux_2_28_s390x.whl", hash = "sha256:c2eab89804161dd927d25d521c6c43af1bcd17042e6b02124166d6d07a9c9cb1", size = 11160496, upload-time = "2026-08-13T19:09:02.586Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/32/1e411db90b68a6096275186e7fc57ea16d99355fc3b498182845dd5419ff/qiskit-2.5.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:28fcb983e565b8f027a13ef43cda7aaeb1f1a6caf9df07408708abcf7bc0b59d", size = 9753072, upload-time = "2026-08-13T19:08:09.439Z" },
-    { url = "https://files.pythonhosted.org/packages/c2/b4/61872b4ba4319c685615123739b25a3c42abc0f057c4a4889f7b3cad8c7b/qiskit-2.5.2-cp310-abi3-win_amd64.whl", hash = "sha256:d436cd45db22ea0132be815930d7c90343774756da9620dee68714968966f65e", size = 9451684, upload-time = "2026-08-13T19:08:11.872Z" },
-]
+sdist = { hash = "sha256:ed87b4fe6be2094d021e220b291ee4bd47c12fbf70d08e9520e3d78dd0e00b02" }
 
 [package.optional-dependencies]
 qasm3-import = [
     { name = "qiskit-qasm3-import" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "dill", specifier = ">=0.3" },
+    { name = "matplotlib", marker = "extra == 'visualization'", specifier = ">=3.3" },
+    { name = "numpy", specifier = ">=2.0,<3" },
+    { name = "pillow", marker = "extra == 'visualization'", specifier = ">=4.2.1" },
+    { name = "pydot", marker = "extra == 'visualization'" },
+    { name = "pylatexenc", marker = "extra == 'visualization'", specifier = ">=1.4" },
+    { name = "python-constraint", marker = "extra == 'csp-layout-pass'", specifier = ">=1.4" },
+    { name = "qiskit", extras = ["crosstalk-pass", "csp-layout-pass", "qasm3-import", "qpy-compat", "visualization"], marker = "extra == 'all'" },
+    { name = "qiskit-qasm3-import", marker = "extra == 'qasm3-import'", specifier = ">=0.1.0" },
+    { name = "rustworkx", specifier = ">=0.15.0" },
+    { name = "scipy", specifier = ">=1.14" },
+    { name = "seaborn", marker = "extra == 'visualization'", specifier = ">=0.9.0" },
+    { name = "stevedore", specifier = ">=3.0.0" },
+    { name = "symengine", marker = "extra == 'qpy-compat'", specifier = ">=0.11,<0.14" },
+    { name = "sympy", marker = "extra == 'qpy-compat'", specifier = ">1.3" },
+    { name = "sympy", marker = "extra == 'visualization'", specifier = ">=1.3" },
+    { name = "typing-extensions" },
+    { name = "z3-solver", marker = "extra == 'crosstalk-pass'", specifier = ">=4.7" },
+]
+provides-extras = ["qasm3-import", "visualization", "crosstalk-pass", "csp-layout-pass", "qpy-compat", "all"]
 
 [[package]]
 name = "qiskit-ibm-runtime"

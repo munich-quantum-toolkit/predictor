@@ -16,6 +16,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Use Qiskit's native layout continuation between compilation actions
+  (requires Qiskit 2.6).
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])

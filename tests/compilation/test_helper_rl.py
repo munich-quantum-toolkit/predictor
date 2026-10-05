@@ -19,7 +19,7 @@ from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
-from qiskit.transpiler import PassManager
+from qiskit.transpiler import PassManager, PropertySet
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
 from mqt.predictor.rl.actions import (
@@ -27,7 +27,6 @@ from mqt.predictor.rl.actions import (
     get_actions_by_pass_type,
 )
 from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
-from mqt.predictor.rl.actions.qiskit_actions import postprocess_vf2postlayout
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 
 if TYPE_CHECKING:
@@ -109,10 +108,13 @@ def test_vf2_layout_and_postlayout() -> None:
     assert post_layout_passes is not None
 
     pm = PassManager(post_layout_passes)
-    altered_qc = pm.run(qc_transpiled)
+    property_set = PropertySet()
+    qc_transpiled.layout.write_into_property_set(property_set)
+    altered_qc = pm.run(qc_transpiled, property_set=property_set)
 
     assert pm.property_set["VF2PostLayout_stop_reason"] == VF2PostLayoutStopReason.SOLUTION_FOUND
 
-    _, pass_manager = postprocess_vf2postlayout(altered_qc, pm.property_set["post_layout"], qc_transpiled.layout)
-
-    assert initial_layout_before != pass_manager.property_set["initial_layout"]
+    assert altered_qc.layout is not None
+    assert initial_layout_before != altered_qc.layout.initial_layout
+    assert altered_qc.layout.input_qubit_mapping == qc_transpiled.layout.input_qubit_mapping
+    assert len(altered_qc.layout.final_index_layout()) == qc.num_qubits
