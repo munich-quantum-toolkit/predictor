@@ -27,11 +27,13 @@ from mqt.predictor.rl.actions import (
     get_actions_by_pass_type,
 )
 from mqt.predictor.rl.actions.bqskit_actions import bqskit_to_qiskit, get_bqskit_native_gates
+from mqt.predictor.rl.actions.qiskit_actions import run_qiskit_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    import pytest
     from qiskit.passmanager.base_tasks import Task
     from qiskit.transpiler import Target
 
@@ -76,24 +78,24 @@ def test_bqskit_to_qiskit_converts_u1q_to_r_gate() -> None:
     assert qc.data[0].operation.params == [0.1, 0.2]
 
 
-def test_vf2_layout_and_postlayout() -> None:
+def test_vf2_layout_and_postlayout(caplog: pytest.LogCaptureFixture) -> None:
     """Test the VF2Layout and VF2PostLayout passes."""
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
+    vf2_layout_action = next(
+        action for action in get_actions_by_pass_type()[PassType.LAYOUT] if action.name == "VF2Layout"
+    )
 
     for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
-        passes: list[Task] | None = None
-        for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
-            if layout_action.name == "VF2Layout":
-                factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
-                passes = factory(dev)
-                break
-        assert passes is not None
-        pm = PassManager(passes)
-        layouted_qc = pm.run(qc)
+        layouted_qc, _ = run_qiskit_action(vf2_layout_action, qc, dev, None)
         assert layouted_qc.layout is not None
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
     dev_success = get_device("ibm_falcon_27")
+    qft_qc = get_benchmark("qft", BenchmarkLevel.ALG, 3).decompose()
+    _, layout = run_qiskit_action(vf2_layout_action, qft_qc, dev_success, None)
+    assert layout is None
+    assert "VF2Layout pass did not find a solution. Reason: VF2LayoutStopReason.NO_SOLUTION_FOUND" in caplog.text
+
     qc_transpiled = transpile(qc, target=dev_success, optimization_level=0)
     assert qc_transpiled.layout is not None
 
