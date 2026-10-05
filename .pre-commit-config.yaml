@@ -64,6 +64,7 @@ repos:
     rev: 0.12.19
     hooks:
       - id: uv-lock
+        args: [--check, --offline]
         priority: 0
 
   ## Check for common capitalization mistakes
