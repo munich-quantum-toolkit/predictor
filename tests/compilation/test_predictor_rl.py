@@ -19,6 +19,7 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
+from qiskit.quantum_info import Clifford, Operator
 from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import GatesInBasis
 
@@ -162,8 +163,11 @@ def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -
     assert env.action_terminate_index not in valid_actions
 
 
-def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that Qiskit routing actions update the tracked final layout."""
+@pytest.mark.parametrize("already_routed", [False, True])
+def test_predictor_env_qiskit_routing_updates_final_layout(
+    monkeypatch: pytest.MonkeyPatch, already_routed: bool
+) -> None:
+    """Test that Qiskit routing preserves an existing output permutation."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(2)
@@ -175,7 +179,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
     env.layout = TranspileLayout(
         initial_layout=initial_layout,
         input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
+        final_layout=final_layout if already_routed else None,
         _output_qubit_list=qc.qubits,
         _input_qubit_count=qc.num_qubits,
     )
@@ -201,7 +205,37 @@ def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.M
     altered_qc = env.apply_action(action_index=routing_action_index)
 
     assert altered_qc is env.state
-    assert env.layout.final_layout is final_layout
+    assert env.layout.routing_permutation() == ([0, 1] if already_routed else [1, 0])
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
+    """Test Clifford optimization on standard gates and existing Clifford blocks."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_falcon_27"))
+    definition = QuantumCircuit(1)
+    definition.h(0)
+    for _ in range(4):
+        definition.s(0)
+    circuit = QuantumCircuit(1)
+    if wrapped:
+        circuit.append(Clifford(definition), [0])
+    else:
+        circuit = definition
+    env.reset(circuit)
+
+    if wrapped:
+        cancellation_index = next(
+            index for index, action in env.action_set.items() if action.name == "CommutativeCancellation"
+        )
+        assert env.apply_action(cancellation_index).count_ops() == {"clifford": 1}
+
+    optimize_cliffords_index = next(
+        index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
+    )
+    optimized = env.apply_action(optimize_cliffords_index)
+    assert "clifford" not in optimized.count_ops()
+    assert optimized.size() == 1
+    assert Operator(optimized).equiv(Operator(circuit))
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
