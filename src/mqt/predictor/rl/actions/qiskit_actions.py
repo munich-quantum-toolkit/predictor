@@ -31,10 +31,9 @@ from qiskit.circuit.library import (
     YGate,
     ZGate,
 )
-from qiskit.converters import circuit_to_dag, dag_to_circuit
-from qiskit.passmanager import ConditionalController
+from qiskit.passmanager import ConditionalController, PropertySet
 from qiskit.passmanager.flow_controllers import DoWhileController
-from qiskit.transpiler import CouplingMap, PassManager, TranspileLayout
+from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
@@ -42,6 +41,7 @@ from qiskit.transpiler.passes import (
     CommutativeCancellation,
     CommutativeInverseCancellation,
     ConsolidateBlocks,
+    Decompose,
     DenseLayout,
     Depth,
     EnlargeWithAncilla,
@@ -73,9 +73,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from qiskit import QuantumCircuit
-    from qiskit.passmanager import PropertySet
     from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import Layout, Target
+    from qiskit.transpiler import Target, TranspileLayout
 
     from mqt.predictor.rl.actions.base import Action
 
@@ -207,7 +206,10 @@ def qiskit_final_optimization_action() -> Action:
         "VF2PostLayout",
         CompilationOrigin.QISKIT,
         PassType.FINAL_OPT,
-        transpile_pass=lambda device: [VF2PostLayout(target=device)],
+        transpile_pass=lambda device: [
+            VF2PostLayout(target=device),
+            ConditionalController(ApplyLayout(), condition=lambda property_set: bool(property_set["post_layout"])),
+        ],
     )
 
 
@@ -276,72 +278,11 @@ def qiskit_synthesis_action() -> Action:
     )
 
 
-def postprocess_vf2postlayout(
-    qc: QuantumCircuit, post_layout: Layout, layout_before: TranspileLayout
-) -> tuple[QuantumCircuit, ApplyLayout]:
-    """Postprocess a quantum circuit after VF2 layout assignment.
-
-    Args:
-        qc: The quantum circuit to transform.
-        post_layout: The layout computed after routing.
-        layout_before: The layout before post-routing adjustment.
-
-    Returns:
-        A tuple of the transformed circuit and the ApplyLayout used.
-    """
-    apply_layout = ApplyLayout()
-    apply_layout.property_set["layout"] = layout_before.initial_layout
-    apply_layout.property_set["original_qubit_indices"] = layout_before.input_qubit_mapping
-    apply_layout.property_set["final_layout"] = layout_before.final_layout
-    apply_layout.property_set["post_layout"] = post_layout
-
-    altered_qc = apply_layout.run(circuit_to_dag(qc))
-    return dag_to_circuit(altered_qc), apply_layout
-
-
-def _postprocess_layout_action(
-    action: Action,
-    property_set: PropertySet,
-    altered_qc: QuantumCircuit,
-    layout: TranspileLayout | None,
-    input_qubit_count: int | None = None,
-) -> tuple[QuantumCircuit, TranspileLayout | None]:
-    """Update Qiskit's layout metadata after passes that can create or alter layouts."""
-    if action.name == "VF2PostLayout":
-        assert property_set["VF2PostLayout_stop_reason"] is not None
-        post_layout = property_set["post_layout"]
-        if post_layout:
-            assert layout is not None
-            altered_qc, apply_layout = postprocess_vf2postlayout(altered_qc, post_layout, layout)
-            property_set = apply_layout.property_set
-    elif action.name == "VF2Layout":
-        if property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
-            logger.warning(
-                "VF2Layout pass did not find a solution. Reason: %s",
-                property_set["VF2Layout_stop_reason"],
-            )
-        else:
-            assert property_set["layout"]
-    else:
-        assert property_set["layout"]
-
-    if property_set["layout"]:
-        return altered_qc, TranspileLayout(
-            initial_layout=property_set["layout"],
-            input_qubit_mapping=property_set["original_qubit_indices"],
-            final_layout=property_set["final_layout"],
-            _input_qubit_count=input_qubit_count,
-            _output_qubit_list=altered_qc.qubits,
-        )
-    return altered_qc, layout
-
-
 def run_qiskit_action(
     action: Action,
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
-    input_qubit_count: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     # Build the concrete Qiskit pass list for given action.
@@ -360,18 +301,16 @@ def run_qiskit_action(
     else:
         pm = PassManager(passes)
 
-    altered_qc = pm.run(circuit)
+    pm.append(Decompose(gates_to_decompose="unitary", apply_synthesis=True))
+    property_set = PropertySet()
+    if layout is not None:
+        layout.write_into_property_set(property_set)
+    altered_qc = pm.run(circuit, property_set=property_set)
 
-    if action.pass_type in {PassType.LAYOUT, PassType.MAPPING, PassType.FINAL_OPT}:
-        altered_qc, layout = _postprocess_layout_action(action, pm.property_set, altered_qc, layout, input_qubit_count)
-    elif action.pass_type == PassType.ROUTING and layout and pm.property_set["final_layout"] is not None:
-        layout.final_layout = pm.property_set["final_layout"]
+    if action.name == "VF2Layout" and pm.property_set["VF2Layout_stop_reason"] != VF2LayoutStopReason.SOLUTION_FOUND:
+        logger.warning("VF2Layout pass did not find a solution. Reason: %s", pm.property_set["VF2Layout_stop_reason"])
 
-    if altered_qc.count_ops().get("unitary"):
-        # Custom "unitary" gates can not be processed further by other passes
-        altered_qc = altered_qc.decompose(gates_to_decompose="unitary")
-
-    return altered_qc, layout
+    return altered_qc, altered_qc.layout
 
 
 def is_qiskit_action_available(action: Action, device: Target) -> bool:

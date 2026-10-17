@@ -519,7 +519,6 @@ class PredictorEnv(Env):
                 circuit=self.state,
                 device=self.device,
                 layout=self.layout,
-                input_qubit_count=self.num_qubits_uncompiled_circuit,
             )
         elif action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(

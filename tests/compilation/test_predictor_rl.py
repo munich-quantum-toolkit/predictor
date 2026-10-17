@@ -19,8 +19,8 @@ from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
-from qiskit.transpiler import InstructionProperties, Layout, Target, TranspileLayout
-from qiskit.transpiler.passes import GatesInBasis
+from qiskit.transpiler import CouplingMap, InstructionProperties, Layout, Target, TranspileLayout
+from qiskit.transpiler.passes import BasicSwap, GatesInBasis
 
 from mqt.predictor.rl import Predictor, rl_compile
 from mqt.predictor.rl import predictorenv as predictorenv_module
@@ -29,7 +29,6 @@ from mqt.predictor.rl.actions import (
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
-    qiskit_actions,
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
@@ -162,46 +161,38 @@ def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -
     assert env.action_terminate_index not in valid_actions
 
 
-def test_predictor_env_qiskit_routing_updates_final_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_predictor_env_qiskit_routing_updates_final_layout() -> None:
     """Test that Qiskit routing actions update the tracked final layout."""
     device = get_device("ibm_falcon_27")
     env = predictorenv_module.PredictorEnv(device=device)
-    qc = QuantumCircuit(2)
-    qc.cx(0, 1)
+    qc = QuantumCircuit(3)
+    qc.cx(0, 2)
     env.reset(qc)
 
     initial_layout = Layout({qubit: index for index, qubit in enumerate(qc.qubits)})
-    final_layout = Layout({qc.qubits[0]: 1, qc.qubits[1]: 0})
+    final_layout = Layout({qc.qubits[0]: 1, qc.qubits[1]: 2, qc.qubits[2]: 0})
     env.layout = TranspileLayout(
         initial_layout=initial_layout,
         input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=None,
+        final_layout=final_layout,
         _output_qubit_list=qc.qubits,
         _input_qubit_count=qc.num_qubits,
     )
 
-    class FakePassManager:
-        """Minimal PassManager replacement that exposes a final layout."""
-
-        def __init__(self, _passes: object) -> None:
-            self.property_set = {"final_layout": final_layout}
-
-        def run(self, circuit: QuantumCircuit) -> QuantumCircuit:
-            return circuit
-
-    monkeypatch.setattr(qiskit_actions, "PassManager", FakePassManager)
     action = DeviceIndependentAction(
-        name="SyntheticQiskitRouting",
+        name="BasicSwap",
         pass_type=PassType.ROUTING,
-        transpile_pass=[],
+        transpile_pass=[BasicSwap(CouplingMap.from_line(3))],
         origin=CompilationOrigin.QISKIT,
     )
     routing_action_index = next(iter(env.actions_routing_indices))
     env.action_set[routing_action_index] = action
     altered_qc = env.apply_action(action_index=routing_action_index)
 
-    assert altered_qc is env.state
-    assert env.layout.final_layout is final_layout
+    assert env.layout is altered_qc.layout
+    assert env.layout.initial_layout == initial_layout
+    assert env.layout.routing_permutation() == [0, 2, 1]
+    assert final_layout == Layout({qc.qubits[0]: 1, qc.qubits[1]: 2, qc.qubits[2]: 0})
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
