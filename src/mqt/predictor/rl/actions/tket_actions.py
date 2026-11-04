@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import operator
 from typing import TYPE_CHECKING, cast
 
 from pytket import Qubit
@@ -20,6 +19,7 @@ from pytket.circuit import Node
 from pytket.extensions.qiskit import qiskit_to_tk, tk_to_qiskit
 from pytket.passes import CliffordSimp, FullPeepholeOptimise, PeepholeOptimise2Q, RemoveRedundancies, RoutingPass
 from pytket.placement import place_with_map
+from pytket.predicates import CompilationUnit
 from qiskit.transpiler import Layout
 
 from mqt.predictor.rl.actions.base import CompilationOrigin, DeferredDeviceAction, DeviceIndependentAction, PassType
@@ -107,23 +107,13 @@ def tket_routing_action() -> Action:
     )
 
 
-def final_layout_pytket_to_qiskit(pytket_circuit: Circuit, qiskit_circuit: QuantumCircuit) -> Layout:
-    """Converts a final layout from pytket to qiskit."""
-    pytket_layout = pytket_circuit.qubit_readout
-    size_circuit = pytket_circuit.n_qubits
-    qiskit_layout = {}
-    qiskit_qreg = qiskit_circuit.qregs[0]
-
-    pytket_layout = dict(sorted(pytket_layout.items(), key=operator.itemgetter(1)))
-
-    for node, qubit_index in pytket_layout.items():
-        qiskit_layout[node.index[0]] = qiskit_qreg[qubit_index]
-
-    for i in range(size_circuit):
-        if i not in set(pytket_layout.values()):
-            qiskit_layout[i] = qiskit_qreg[i]
-
-    return Layout(input_dict=qiskit_layout)
+def final_layout_pytket_to_qiskit(compilation_unit: CompilationUnit, qiskit_circuit: QuantumCircuit) -> Layout:
+    """Convert TKET's routing map into a permutation of the input circuit's wires."""
+    return Layout({
+        qiskit_circuit.qubits[source.index[0]]: destination.index[0]
+        for source, destination in compilation_unit.final_map.items()
+        if isinstance(source, Qubit)
+    })
 
 
 def run_tket_action(
@@ -139,9 +129,15 @@ def run_tket_action(
         passes = factory(device)
     else:
         passes = cast("list[Task]", action.transpile_pass)
+    compilation_unit = None
     for pass_ in passes:
         assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
-        pass_.apply(tket_qc)
+        if action.pass_type == PassType.ROUTING and isinstance(pass_, TketBasePass):
+            compilation_unit = CompilationUnit(tket_qc)
+            pass_.apply(compilation_unit)
+            tket_qc = compilation_unit.circuit
+        else:
+            pass_.apply(tket_qc)
 
     qbs = tket_qc.qubits
     tket_qc.rename_units({qbs[i]: Qubit("q", i) for i in range(len(qbs))})
@@ -149,7 +145,16 @@ def run_tket_action(
 
     if action.pass_type == PassType.ROUTING:
         assert layout is not None
-        layout.final_layout = final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+        assert compilation_unit is not None
+        routing_layout = final_layout_pytket_to_qiskit(compilation_unit, circuit)
+        final_layout = (
+            layout.final_layout.compose(routing_layout, circuit.qubits) if layout.final_layout else routing_layout
+        )
+        layout.final_layout = Layout({
+            altered_qc.qubits[circuit.find_bit(qubit).index]: physical
+            for qubit, physical in final_layout.get_virtual_bits().items()
+        })
+        layout._output_qubit_list = altered_qc.qubits  # ruff: ignore[private-member-access]
 
     return altered_qc, layout
 
