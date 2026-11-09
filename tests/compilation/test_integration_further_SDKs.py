@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from mqt.bench.targets import get_device
-from qiskit import QuantumCircuit
+from qiskit import ClassicalRegister, QuantumCircuit
 from qiskit.circuit import StandardEquivalenceLibrary
+from qiskit.quantum_info import Operator
 from qiskit.transpiler import PassManager, TranspileLayout
 from qiskit.transpiler.passes import (
     ApplyLayout,
@@ -157,6 +158,19 @@ def test_synthesis_actions_produce_native_gates(
             )
 
 
+def test_qiskit_synthesis_handles_custom_gates(simple_circuit: QuantumCircuit, env: PredictorEnv) -> None:
+    """Test that Qiskit synthesis translates custom gates without changing their operation."""
+    circuit = QuantumCircuit(simple_circuit.num_qubits)
+    circuit.append(simple_circuit.to_gate(), circuit.qubits)
+    _setup_env(env, circuit, None, circuit.num_qubits)
+
+    synthesis_index = next(index for index, action in env.action_set.items() if action.name == "BasisTranslator")
+    compiled = env.apply_action(synthesis_index)
+
+    assert env.is_circuit_synthesized(compiled)
+    assert Operator(compiled).equiv(Operator(circuit))
+
+
 def test_layout_actions_establish_layout(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
@@ -218,11 +232,16 @@ def test_mapping_actions_establish_layout_and_route(
     assert applied_actions > 0
 
 
+@pytest.mark.parametrize("measurements", [False, True])
 def test_routing_actions_route_circuit(
     simple_circuit: QuantumCircuit,
     env: PredictorEnv,
+    measurements: bool,
 ) -> None:
     """Invariant: every routing action produces a circuit where all 2-qubit gates respect the coupling map."""
+    if measurements:
+        simple_circuit.add_register(ClassicalRegister(2))
+        simple_circuit.measure([0, 2], [1, 0])
     coupling_map = env.device.build_coupling_map()
     applied_actions = 0
 
@@ -239,18 +258,26 @@ def test_routing_actions_route_circuit(
         assert env.is_circuit_routed(routed, coupling_map), (
             f"{action.name} on {env.device.description} VIOLATED INVARIANT: circuit not properly routed after action"
         )
-        # Check BQSKit routing translates its output permutation into Qiskit layout bookkeeping correctly.
-        if action.origin == CompilationOrigin.BQSKIT:
+        # Check SDK routing translates its output permutation into Qiskit layout bookkeeping correctly.
+        if action.origin in {CompilationOrigin.BQSKIT, CompilationOrigin.TKET}:
             assert env.layout is not None
             assert env.layout.final_layout is not None
-            assert set(env.layout.final_layout.get_virtual_bits()).issubset(routed.qubits)
+            assert set(env.layout.final_layout.get_virtual_bits()) == set(routed.qubits)
             assert env.layout._output_qubit_list == routed.qubits  # ruff: ignore[private-member-access]
+            previous_permutation = env.layout.routing_permutation()
+            if measurements:
+                for instruction in routed.data:
+                    if instruction.operation.name == "measure":
+                        input_qubit = {0: 2, 1: 0}[routed.find_bit(instruction.clbits[0]).index]
+                        assert previous_permutation[input_qubit] == routed.find_bit(instruction.qubits[0]).index
 
             _setup_env(env, routed, env.layout, n_qubits)
             rerouted = env.apply_action(idx)
             assert env.layout.final_layout is not None
-            assert set(env.layout.final_layout.get_virtual_bits()).issubset(rerouted.qubits)
+            assert set(env.layout.final_layout.get_virtual_bits()) == set(rerouted.qubits)
             assert env.layout._output_qubit_list == rerouted.qubits  # ruff: ignore[private-member-access]
+            if action.origin == CompilationOrigin.TKET:
+                assert env.layout.routing_permutation() == previous_permutation
 
     assert applied_actions > 0
 
