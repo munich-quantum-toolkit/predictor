@@ -156,7 +156,8 @@ class PredictorEnv(Env):
         self.rng = np.random.default_rng(10)
 
         spaces: dict[str, Space] = {
-            "num_qubits": Discrete(128),
+            # Preserve the encoding used by existing models for smaller devices.
+            "num_qubits": Discrete(max(128, self.device.num_qubits + 1)),
             "depth": Discrete(1000000),
             "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
             "critical_depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),

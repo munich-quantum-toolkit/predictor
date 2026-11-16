@@ -81,7 +81,7 @@ def test_vf2_layout_and_postlayout() -> None:
     """Test the VF2Layout and VF2PostLayout passes."""
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
-    for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
+    for dev in [get_device("ibm_heron_156"), get_device("quantinuum_h2_56")]:
         passes: list[Task] | None = None
         for layout_action in get_actions_by_pass_type()[PassType.LAYOUT]:
             if layout_action.name == "VF2Layout":
@@ -94,7 +94,7 @@ def test_vf2_layout_and_postlayout() -> None:
         assert layouted_qc.layout is not None
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
-    dev_success = get_device("ibm_falcon_27")
+    dev_success = get_device("ibm_heron_156")
     qc_transpiled = transpile(qc, target=dev_success, optimization_level=0)
     assert qc_transpiled.layout is not None
 

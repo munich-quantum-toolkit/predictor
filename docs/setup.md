@@ -44,7 +44,7 @@ circuits in QASM format.
 from mqt.predictor.rl import Predictor as RL_Predictor
 from mqt.bench.targets import get_device
 
-device = get_device("ibm_falcon_27")
+device = get_device("ibm_heron_156")
 rl_pred = RL_Predictor(device=device, figure_of_merit="expected_fidelity")
 rl_pred.train_model(timesteps=100000)
 ```
@@ -93,8 +93,8 @@ from mqt.predictor.ml import setup_device_predictor
 from mqt.bench.targets import get_device
 
 devices = [
-    get_device("ibm_falcon_27"),
-    get_device("ibm_eagle_127"),
+    get_device("ibm_heron_156"),
+    get_device("iqm_crystal_20"),
     get_device("quantinuum_h2_56"),
 ]
 setup_device_predictor(
