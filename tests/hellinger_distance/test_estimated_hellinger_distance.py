@@ -258,7 +258,7 @@ def test_predict_device_for_estimated_hellinger_distance_no_device_provided() ->
     training_data = TrainingData(X_train=rng.random((n_samples, 1)), y_train=rng.random(n_samples))
 
     pred = ml_Predictor(
-        figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27"), get_device("ibm_falcon_127")]
+        figure_of_merit="hellinger_distance", devices=[get_device("ibm_heron_156"), get_device("quantinuum_h2_56")]
     )
     with pytest.raises(
         ValueError, match=re.escape("A single device must be provided for Hellinger distance model training.")

@@ -6,6 +6,20 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### MQT Bench 2.4
+
+MQT Predictor now requires MQT Bench 2.4 or newer.
+
+MQT Bench 2.4 removes the `ibm_falcon_27`, `ibm_falcon_127`, and `ibm_eagle_127`
+devices. The examples now use `ibm_heron_156`. Update device lookups and retrain
+the RL and ML models for the replacement target. Existing models for retired
+devices cannot be reused for a different device. Custom Qiskit targets remain
+supported for older hardware.
+
+Retrain RL models for devices with 128 or more qubits. Their qubit-count
+observation space now includes the full device width. The encoding for smaller
+devices is unchanged.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
@@ -30,10 +44,10 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
-### Qiskit 2.1 minimum
+### Qiskit 2.5 minimum
 
-The minimum Qiskit version increases from **1.3.3 to 2.1.1**, dropping support
-for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.1 or newer.
+The minimum Qiskit version increases from **1.3.3 to 2.5.2** to match MQT Bench
+2.4's requirement. Upgrade Qiskit to 2.5.2 or newer.
 
 ### End of support for Python 3.10
 
