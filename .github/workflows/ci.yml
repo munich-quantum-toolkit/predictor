@@ -7,6 +7,11 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   merge_group:
   workflow_dispatch:
+    inputs:
+      full_rl_training:
+        description: Run 1,024 RL steps on the full training corpus with the standard policy
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -51,7 +56,10 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           save-cache: false
-      - run: uvx nox -s model-training --verbose -- --durations=6 --cov --cov-report=xml:coverage-model-training.xml
+      - name: Run model-training tests
+        env:
+          PYTEST_ADDOPTS: ${{ (github.event_name == 'push' || inputs.full_rl_training) && '--full-rl-training' || '' }}
+        run: uvx nox -s model-training --verbose -- --durations=6 --cov --cov-report=xml:coverage-model-training.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: coverage-model-training.xml
