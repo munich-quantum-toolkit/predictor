@@ -114,13 +114,13 @@ for previous changelogs._
 
 <!-- Contributor -->
 
-[**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@nquetschlich**]: https://github.com/nquetschlich
 [**@flowerthrower**]: https://github.com/flowerthrower
 [**@denialhaag**]: https://github.com/denialhaag
 [**@bachase**]: https://github.com/bachase
 [**@Shaobo-Zhou**]: https://github.com/Shaobo-Zhou
 [**@linus-hologram**]: https://github.com/linus-hologram
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 
 <!-- General links -->
 
