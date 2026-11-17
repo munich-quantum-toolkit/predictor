@@ -49,11 +49,10 @@ for details about the individual passes.
 The minimum Qiskit version increases from **1.3.3 to 2.5.2** to match MQT Bench
 2.4's requirement. Upgrade Qiskit to 2.5.2 or newer.
 
-### End of support for Python 3.10
+### Python 3.11.5 minimum
 
-Starting with this release, MQT Predictor no longer supports Python 3.10. As a
-result, MQT Predictor is no longer tested under Python 3.10 and requires Python
-3.11 or later.
+MQT Predictor requires Python 3.11.5 or newer. If you use Python 3.10 or Python
+3.11.0–3.11.4, upgrade Python before updating MQT Predictor.
 
 ## [2.4.0]
 
