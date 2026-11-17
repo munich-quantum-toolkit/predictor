@@ -16,8 +16,7 @@ releases may include breaking changes.
 
 ### Changed
 
-- ⬆️ Require Python 3.11.5 or newer, matching MQT Bench ([MQT Bench #1164])
-  ([**@simon1hofmann**])
+- ⬆️ Require Python 3.11.5 or newer ([**@simon1hofmann**])
 - ⬆️ Update MQT Bench to 2.4, adopt supported device models, and extend RL
   observations to devices with more than 127 qubits ([#880]) ([**@denialhaag**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
@@ -90,7 +89,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[MQT Bench #1164]: https://github.com/munich-quantum-toolkit/bench/pull/1164
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
