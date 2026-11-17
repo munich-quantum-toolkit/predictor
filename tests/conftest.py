@@ -6,17 +6,23 @@
 #
 # Licensed under the MIT License
 
-"""Clean-up fixtures for the tests."""
+"""Shared fixtures and cleanup for the tests."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import pytest
 
 from mqt.predictor.ml.helper import get_path_training_data as ml_get_path_training_data
+from mqt.predictor.ml.predictor import RANDOM_FOREST_PARAM_GRID
 from mqt.predictor.rl.helper import get_path_trained_model as rl_get_path_trained_model
 
-if TYPE_CHECKING:
-    import pytest
+
+@pytest.fixture
+def small_forest_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test both bootstrap modes with the first candidate for each other forest parameter."""
+    for name, values in RANDOM_FOREST_PARAM_GRID.items():
+        if name != "bootstrap":
+            monkeypatch.setitem(RANDOM_FOREST_PARAM_GRID, name, values[:1])
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # ruff:ignore[unused-function-argument]

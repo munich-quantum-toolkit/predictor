@@ -124,7 +124,7 @@ class Predictor:
         Arguments:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
             verbose: The verbosity level. Defaults to 2.
-            test: Whether to train the model for testing purposes. Defaults to False.
+            test: Use a smaller policy and a single training epoch for integration tests.
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
         """
@@ -153,6 +153,7 @@ class Predictor:
             n_steps=n_steps,
             batch_size=batch_size,
             n_epochs=n_epochs,
+            policy_kwargs={"net_arch": [8, 8]} if test else None,
             seed=seed,
         )
         # Training Loop: In each iteration, the agent collects n_steps steps (rollout),

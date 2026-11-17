@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from gymnasium.spaces import Dict, Discrete
@@ -34,7 +35,7 @@ from mqt.predictor.rl.actions import (
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
-from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -85,7 +86,7 @@ def test_predictor_env_hellinger_error() -> None:
 
 
 @pytest.mark.model_training
-def test_qcompile_with_newly_trained_models() -> None:
+def test_qcompile_with_newly_trained_models(tmp_path: Path) -> None:
     """Test the qcompile function with a newly trained model.
 
     Important: Those trained models are used in later tests and must not be deleted.
@@ -94,7 +95,11 @@ def test_qcompile_with_newly_trained_models() -> None:
     figure_of_merit = "expected_fidelity"
     device = get_device("ibm_heron_156")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
-    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+    # Run the full rollout on small training circuits and compile a held-out GHZ circuit.
+    with ZipFile(get_path_training_circuits() / "training_data_compilation.zip") as archive:
+        for name in ("dj_indep_qiskit_3.qasm", "graphstate_indep_tket_4.qasm", "qft_indep_qiskit_3.qasm"):
+            archive.extract(name, tmp_path)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device, path_training_circuits=tmp_path)
 
     model_name = "model_" + figure_of_merit + "_" + device.description
     model_path = Path(get_path_trained_model() / (model_name + ".zip"))
