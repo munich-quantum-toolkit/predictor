@@ -21,7 +21,7 @@ readme = "README.md"
 keywords = [ "compilation", "machine learning", "MQT", "prediction", "quantum computing" ]
 license = "MIT"
 license-files = [ "LICENSE" ]
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -60,7 +60,7 @@ dependencies = [
   "sb3-contrib>=2",
   "scikit-learn>=1.5.2",
   "scikit-learn>=1.7.2; python_version>='3.14'",
-  "tensorboard>=2.17",
+  "tensorboard>=2.17.1",
   "tensorboard>=2.18; python_version>='3.14'",
   "tqdm>=4.66",
 ]
