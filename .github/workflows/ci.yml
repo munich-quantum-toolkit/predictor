@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       full_rl_training:
-        description: Run 1,024 RL steps on the full training corpus with the standard policy
+        description: Run 512 RL steps on the full training corpus with the standard policy
         type: boolean
         default: false
 

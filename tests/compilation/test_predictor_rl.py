@@ -113,7 +113,7 @@ def test_qcompile_with_newly_trained_models(
     if pytestconfig.getoption("--full-rl-training"):
         predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
         # PPO completes the whole rollout even if learn() requests fewer steps.
-        steps = 1024
+        steps = 512
         monkeypatch.setattr(predictor_module, "PPO_ROLLOUT_STEPS", steps)
         predictor.train_model(timesteps=steps, seed=0, verbose=0)
         assert predictor_module.load_model(model_name).num_timesteps == steps

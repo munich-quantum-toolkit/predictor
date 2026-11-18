@@ -19,7 +19,7 @@ from mqt.predictor.rl.helper import get_path_trained_model as rl_get_path_traine
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Allow the RL integration test to exercise the full training corpus."""
-    parser.addoption("--full-rl-training", action="store_true", help="Run 1,024 RL steps with the standard policy.")
+    parser.addoption("--full-rl-training", action="store_true", help="Run 512 RL steps with the standard policy.")
 
 
 @pytest.fixture
