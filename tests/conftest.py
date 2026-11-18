@@ -17,11 +17,6 @@ from mqt.predictor.ml.predictor import RANDOM_FOREST_PARAM_GRID
 from mqt.predictor.rl.helper import get_path_trained_model as rl_get_path_trained_model
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    """Allow the RL integration test to exercise the full training corpus."""
-    parser.addoption("--full-rl-training", action="store_true", help="Run 512 RL steps with the standard policy.")
-
-
 @pytest.fixture
 def small_forest_grid(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test both bootstrap modes with the first candidate for each other forest parameter."""

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from zipfile import ZipFile
 
 import pytest
 from gymnasium.spaces import Dict, Discrete
@@ -36,7 +35,7 @@ from mqt.predictor.rl.actions import (
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
-from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
+from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -87,9 +86,7 @@ def test_predictor_env_hellinger_error() -> None:
 
 
 @pytest.mark.model_training
-def test_qcompile_with_newly_trained_models(
-    tmp_path: Path, pytestconfig: pytest.Config, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_qcompile_with_newly_trained_models(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the qcompile function with a newly trained model.
 
     Important: Those trained models are used in later tests and must not be deleted.
@@ -110,19 +107,12 @@ def test_qcompile_with_newly_trained_models(
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
-    if pytestconfig.getoption("--full-rl-training"):
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
-        # PPO completes the whole rollout even if learn() requests fewer steps.
-        steps = 512
-        monkeypatch.setattr(predictor_module, "PPO_ROLLOUT_STEPS", steps)
-        predictor.train_model(timesteps=steps, seed=0, verbose=0)
-        assert predictor_module.load_model(model_name).num_timesteps == steps
-    else:
-        with ZipFile(get_path_training_circuits() / "training_data_compilation.zip") as archive:
-            for name in ("dj_indep_qiskit_3.qasm", "graphstate_indep_tket_4.qasm", "qft_indep_qiskit_3.qasm"):
-                archive.extract(name, tmp_path)
-        predictor = Predictor(figure_of_merit=figure_of_merit, device=device, path_training_circuits=tmp_path)
-        predictor.train_model(timesteps=512, test=True, seed=0)
+    predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
+    # PPO completes the whole rollout even if learn() requests fewer steps.
+    steps = 512
+    monkeypatch.setattr(predictor_module, "PPO_ROLLOUT_STEPS", steps)
+    predictor.train_model(timesteps=steps, seed=0, verbose=0)
+    assert predictor_module.load_model(model_name).num_timesteps == steps
 
     qc_compiled, compilation_information = rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
 
