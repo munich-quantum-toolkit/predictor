@@ -44,7 +44,7 @@ jobs:
   model-training:
     name: 🐍 Model training
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !github.event.pull_request.draft
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -75,6 +75,10 @@ jobs:
   python-coverage:
     name: 🐍 Coverage
     needs: [python-tests, model-training]
+    if: >-
+      !cancelled() && needs.python-tests.result == 'success' &&
+      (needs.model-training.result == 'success' ||
+       (github.event.pull_request.draft && needs.model-training.result == 'skipped'))
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     permissions:
       contents: read
@@ -127,7 +131,11 @@ jobs:
           allowed-skips: >-
             ${{
               !fromJSON(needs.change-detection.outputs.run-python-tests)
-              && 'python-tests,model-training,python-coverage,' || ''
+              && 'python-tests,python-coverage,' || ''
+            }}
+            ${{
+              (github.event.pull_request.draft || !fromJSON(needs.change-detection.outputs.run-python-tests))
+              && 'model-training,' || ''
             }}
             ${{
               !fromJSON(needs.change-detection.outputs.run-python-linter)
