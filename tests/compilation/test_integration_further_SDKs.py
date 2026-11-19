@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import pytest
 from mqt.bench.targets import get_device
+from pytket.architecture import Architecture
 from pytket.circuit import Node
+from pytket.passes import RoutingPass
 from qiskit import ClassicalRegister, QuantumCircuit
 from qiskit.circuit import Measure, Qubit, StandardEquivalenceLibrary
 from qiskit.circuit.library import CXGate, CZGate, SXGate, XGate
@@ -27,7 +29,8 @@ from qiskit.transpiler.passes import (
     TrivialLayout,
 )
 
-from mqt.predictor.rl.actions import CompilationOrigin, PassType, tket_actions
+from mqt.predictor.rl.actions import CompilationOrigin, DeviceIndependentAction, PassType, tket_actions
+from mqt.predictor.rl.actions.tket_actions import PreProcessTKETRoutingAfterQiskitLayout, run_tket_action
 from mqt.predictor.rl.predictorenv import PredictorEnv
 
 
@@ -339,6 +342,29 @@ def test_mapping_actions_establish_layout_and_route(
         )
 
     assert applied_actions > 0
+
+
+def test_tket_routing_action_composes_its_passes(simple_circuit: QuantumCircuit, target: Target) -> None:
+    """The output layout tracks measurements through both passes of a routing action."""
+    simple_circuit.measure_all()
+    placed, layout = _lay_out(simple_circuit, target)
+    routing = RoutingPass(Architecture(list(target.build_coupling_map())))
+    action = DeviceIndependentAction(
+        "RouteTwice",
+        CompilationOrigin.TKET,
+        PassType.ROUTING,
+        [PreProcessTKETRoutingAfterQiskitLayout(), routing, routing],
+    )
+
+    routed, layout = run_tket_action(action, placed, target, layout)
+
+    assert layout is not None
+    measured = {
+        routed.find_bit(inst.clbits[0]).index: routed.find_bit(inst.qubits[0]).index
+        for inst in routed.data
+        if inst.operation.name == "measure"
+    }
+    assert measured == dict(enumerate(layout.final_index_layout()))
 
 
 @pytest.mark.parametrize("measurements", [False, True])
