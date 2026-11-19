@@ -63,7 +63,7 @@ The `device` object captures a snapshot of the backend hardware the circuit is
 being compiled for. This ensures the trace is entirely self-contained, even if
 the actual hardware specifications change in the future.
 
-- **`name`**: The identifier of the target device (e.g., `ibm_washington`).
+- **`name`**: The identifier of the target device (e.g., `ibm_heron_156`).
 - **`device_qubits`**: The total number of physical qubits available on the
   device.
 - **`native_gates`**: A list of the basic gate instructions supported natively

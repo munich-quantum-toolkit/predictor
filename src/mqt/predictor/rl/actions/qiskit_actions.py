@@ -38,6 +38,7 @@ from qiskit.transpiler.passes import (
     ApplyLayout,
     BasisTranslator,
     Collect2qBlocks,
+    CollectCliffords,
     CommutativeCancellation,
     CommutativeInverseCancellation,
     ConsolidateBlocks,
@@ -56,6 +57,7 @@ from qiskit.transpiler.passes import (
     SabreLayout,
     Size,
     UnitarySynthesis,
+    UnrollCustomDefinitions,
     VF2Layout,
     VF2PostLayout,
 )
@@ -148,7 +150,11 @@ def qiskit_optimization_actions() -> list[Action]:
             "OptimizeCliffords",
             CompilationOrigin.QISKIT,
             PassType.OPT,
-            [OptimizeCliffords()],
+            [
+                CollectCliffords(),
+                OptimizeCliffords(),
+                Decompose(gates_to_decompose="clifford", apply_synthesis=True),
+            ],
             preserves_layout=True,
             preserves_routing=False,
             preserves_synthesis=False,
@@ -237,7 +243,7 @@ def qiskit_layout_actions() -> list[Action]:
             transpile_pass=lambda device: cast(
                 "list[Task]",
                 [
-                    VF2Layout(target=device),
+                    VF2Layout(target=device, call_limit=50_000, max_trials=2500),
                     ConditionalController(
                         [
                             FullAncillaAllocation(coupling_map=CouplingMap(device.build_coupling_map())),
@@ -273,7 +279,11 @@ def qiskit_synthesis_action() -> Action:
         CompilationOrigin.QISKIT,
         PassType.SYNTHESIS,
         transpile_pass=lambda device: cast(
-            "list[Task]", [BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names)]
+            "list[Task]",
+            [
+                UnrollCustomDefinitions(StandardEquivalenceLibrary, basis_gates=device.operation_names),
+                BasisTranslator(StandardEquivalenceLibrary, target_basis=device.operation_names),
+            ],
         ),
     )
 

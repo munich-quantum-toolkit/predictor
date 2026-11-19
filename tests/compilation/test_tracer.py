@@ -41,7 +41,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     trace_file = tmp_path / "test_trace.json"
 
     # Obtain real device data and setup other mock data
-    device = get_device("ibm_falcon_127")
+    device = get_device("ibm_heron_156")
 
     tracer = CompilationTracer.from_initial_state(
         device=device,
@@ -125,7 +125,7 @@ def test_compilation_tracer_generates_valid_json(tmp_path: Path) -> None:
     assert trace_data["mdp_policy"] == "mock_policy"
     assert trace_data["schema_version"] == "1.0.0"
     assert trace_data["total_duration"] == pytest.approx(0.15)
-    assert trace_data["device"]["name"] == "ibm_falcon_127"
+    assert trace_data["device"]["name"] == "ibm_heron_156"
     assert "timestamp" in trace_data, "Tracer JSON is missing the timestamp."
 
     # Validate Step Array Length

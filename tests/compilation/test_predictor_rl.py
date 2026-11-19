@@ -14,11 +14,13 @@ import re
 from pathlib import Path
 
 import pytest
+from gymnasium.spaces import Dict, Discrete
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
+from qiskit.quantum_info import Clifford, Operator
 from qiskit.transpiler import CouplingMap, InstructionProperties, Layout, Target, TranspileLayout
 from qiskit.transpiler.passes import BasicSwap, GatesInBasis
 
@@ -37,13 +39,31 @@ from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 def test_predictor_env_reset_from_string() -> None:
     """Test the reset function of the predictor environment with a quantum circuit given as a string as input."""
-    device = get_device("ibm_eagle_127")
+    device = get_device("ibm_heron_156")
     predictor = Predictor(figure_of_merit="expected_fidelity", device=device)
     qasm_path = Path("test.qasm")
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
     assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
+
+
+@pytest.mark.parametrize(("device_name", "num_qubit_values"), [("quantinuum_h2_56", 128), ("ibm_heron_156", 157)])
+def test_predictor_env_observation_space_covers_device(device_name: str, num_qubit_values: int) -> None:
+    """Test device-width observations while preserving the encoding for smaller devices."""
+    device = get_device(device_name)
+    env = predictorenv_module.PredictorEnv(device=device)
+    qc = QuantumCircuit(device.num_qubits)
+    qc.h(0)
+    qc.cx(0, 1)
+
+    observation, _ = env.reset(qc=qc)
+
+    assert env.observation_space.contains(observation)
+    assert isinstance(env.observation_space, Dict)
+    num_qubits_space = env.observation_space["num_qubits"]
+    assert isinstance(num_qubits_space, Discrete)
+    assert num_qubits_space.n == num_qubit_values
 
 
 def test_predictor_env_esp_error() -> None:
@@ -57,9 +77,9 @@ def test_predictor_env_esp_error() -> None:
 
 def test_predictor_env_hellinger_error() -> None:
     """Test the predictor environment with the Estimated Hellinger Distance as figure of merit and a missing model."""
-    device = get_device("ibm_falcon_27")
+    device = get_device("ibm_heron_156")
     with pytest.raises(
-        ValueError, match=re.escape("Missing trained model for Hellinger distance estimates on ibm_falcon_27.")
+        ValueError, match=re.escape("Missing trained model for Hellinger distance estimates on ibm_heron_156.")
     ):
         Predictor(figure_of_merit="estimated_hellinger_distance", device=device)
 
@@ -72,7 +92,7 @@ def test_qcompile_with_newly_trained_models() -> None:
     To test ESP as well, training must be done with a device that provides all relevant information (i.e. T1, T2 and gate times).
     """
     figure_of_merit = "expected_fidelity"
-    device = get_device("ibm_falcon_127")
+    device = get_device("ibm_heron_156")
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predictor = Predictor(figure_of_merit=figure_of_merit, device=device)
 
@@ -82,7 +102,7 @@ def test_qcompile_with_newly_trained_models() -> None:
         with pytest.raises(
             FileNotFoundError,
             match=re.escape(
-                "The RL model 'model_expected_fidelity_ibm_falcon_127' is not trained yet. Please train the model before using it."
+                "The RL model 'model_expected_fidelity_ibm_heron_156' is not trained yet. Please train the model before using it."
             ),
         ):
             rl_compile(qc, device=device, figure_of_merit=figure_of_merit)
@@ -122,7 +142,7 @@ def test_warning_for_unidirectional_device() -> None:
 
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
-    device = get_device("ibm_falcon_27")
+    device = get_device("ibm_heron_156")
     env = predictorenv_module.PredictorEnv(device=device, max_steps=1)
     qc = QuantumCircuit(1)
     qc.h(0)
@@ -138,7 +158,7 @@ def test_predictor_env_truncates_at_max_steps() -> None:
 
 def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -> None:
     """Test valid actions for a laid-out circuit that still needs synthesis and routing."""
-    device = get_device("ibm_falcon_27")
+    device = get_device("ibm_heron_156")
     env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(3)
     qc.h(0)
@@ -161,9 +181,10 @@ def test_predictor_env_actions_after_layout_with_non_native_unrouted_circuit() -
     assert env.action_terminate_index not in valid_actions
 
 
-def test_predictor_env_qiskit_routing_updates_final_layout() -> None:
+@pytest.mark.parametrize("already_routed", [False, True])
+def test_predictor_env_qiskit_routing_updates_final_layout(already_routed: bool) -> None:
     """Test that Qiskit routing actions update the tracked final layout."""
-    device = get_device("ibm_falcon_27")
+    device = get_device("ibm_heron_156")
     env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(3)
     qc.cx(0, 2)
@@ -174,7 +195,7 @@ def test_predictor_env_qiskit_routing_updates_final_layout() -> None:
     env.layout = TranspileLayout(
         initial_layout=initial_layout,
         input_qubit_mapping={qubit: index for index, qubit in enumerate(qc.qubits)},
-        final_layout=final_layout,
+        final_layout=final_layout if already_routed else None,
         _output_qubit_list=qc.qubits,
         _input_qubit_count=qc.num_qubits,
     )
@@ -191,8 +212,38 @@ def test_predictor_env_qiskit_routing_updates_final_layout() -> None:
 
     assert env.layout is altered_qc.layout
     assert env.layout.initial_layout == initial_layout
-    assert env.layout.routing_permutation() == [0, 2, 1]
+    assert env.layout.routing_permutation() == ([0, 2, 1] if already_routed else [1, 0, 2])
     assert final_layout == Layout({qc.qubits[0]: 1, qc.qubits[1]: 2, qc.qubits[2]: 0})
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
+    """Test Clifford optimization on standard gates and existing Clifford blocks."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_heron_156"))
+    definition = QuantumCircuit(1)
+    definition.h(0)
+    for _ in range(4):
+        definition.s(0)
+    circuit = QuantumCircuit(1)
+    if wrapped:
+        circuit.append(Clifford(definition), [0])
+    else:
+        circuit = definition
+    env.reset(circuit)
+
+    if wrapped:
+        cancellation_index = next(
+            index for index, action in env.action_set.items() if action.name == "CommutativeCancellation"
+        )
+        assert env.apply_action(cancellation_index).count_ops() == {"clifford": 1}
+
+    optimize_cliffords_index = next(
+        index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
+    )
+    optimized = env.apply_action(optimize_cliffords_index)
+    assert "clifford" not in optimized.count_ops()
+    assert optimized.size() == 1
+    assert Operator(optimized).equiv(Operator(circuit))
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,9 +265,10 @@ def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_qcompile_generates_trace_file(tmp_path: Path) -> None:
     """Test that rl_compile correctly generates a trace JSON file when tracing is enabled."""
     figure_of_merit = "expected_fidelity"
-    device = get_device("ibm_falcon_127")
+    device = get_device("ibm_heron_156")
 
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    # Trace a circuit that the model-training test already compiled successfully.
+    qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
 
     qc_compiled, compilation_information = rl_compile(
         qc, device=device, figure_of_merit=figure_of_merit, tracer_output_path=tmp_path

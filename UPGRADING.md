@@ -6,6 +6,20 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### MQT Bench 2.4
+
+MQT Predictor now requires MQT Bench 2.4 or newer.
+
+MQT Bench 2.4 removes the `ibm_falcon_27`, `ibm_falcon_127`, and `ibm_eagle_127`
+devices. The examples now use `ibm_heron_156`. Update device lookups and retrain
+the RL and ML models for the replacement target. Existing models for retired
+devices cannot be reused for a different device. Custom Qiskit targets remain
+supported for older hardware.
+
+Retrain RL models for devices with 128 or more qubits. Their qubit-count
+observation space now includes the full device width. The encoding for smaller
+devices is unchanged.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no
@@ -32,15 +46,11 @@ for details about the individual passes.
 
 ### Qiskit 2.6 minimum
 
-Qiskit 2.6 is required to preserve layout metadata between compilation actions.
-Until its release, `uv sync` uses the pinned Qiskit development revision
-containing
-[Qiskit #16827](https://github.com/Qiskit/qiskit/pull/16827).
-Building that development revision requires Qiskit's Rust and C build
-toolchains.
+Upgrade to Qiskit 2.6.0 or newer. MQT Predictor uses its native layout
+continuation to preserve qubit mappings between compilation actions.
 
 For direct users of `rl.actions.qiskit_actions`, `run_qiskit_action` no longer
-accepts `input_qubit_count`. The `VF2PostLayout` action now applies its layout
+accepts `input_qubit_count`. The `VF2PostLayout` action applies its layout
 itself, replacing the `postprocess_vf2postlayout` helper.
 
 ### End of support for Python 3.10

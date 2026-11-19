@@ -85,12 +85,12 @@ def test_vf2_layout_and_postlayout(caplog: pytest.LogCaptureFixture) -> None:
         action for action in get_actions_by_pass_type()[PassType.LAYOUT] if action.name == "VF2Layout"
     )
 
-    for dev in [get_device("ibm_falcon_27"), get_device("quantinuum_h2_56")]:
+    for dev in [get_device("ibm_heron_156"), get_device("quantinuum_h2_56")]:
         layouted_qc, _ = run_qiskit_action(vf2_layout_action, qc, dev, None)
         assert layouted_qc.layout is not None
         assert len(layouted_qc.layout.initial_layout) == dev.num_qubits
 
-    dev_success = get_device("ibm_falcon_27")
+    dev_success = get_device("ibm_heron_156")
     qft_qc = get_benchmark("qft", BenchmarkLevel.ALG, 3).decompose()
     _, layout = run_qiskit_action(vf2_layout_action, qft_qc, dev_success, None)
     assert layout is None

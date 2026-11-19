@@ -34,8 +34,8 @@ except ImportError:
 
 @pytest.fixture
 def device() -> Target:
-    """Return the ibm_falcon_27 device."""
-    return get_device("ibm_falcon_27")
+    """Return the ibm_heron_156 device."""
+    return get_device("ibm_heron_156")
 
 
 @pytest.fixture

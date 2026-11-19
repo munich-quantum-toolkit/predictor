@@ -16,8 +16,17 @@ releases may include breaking changes.
 
 ### Changed
 
-- ♻️ Use Qiskit's native layout continuation between compilation actions
-  (requires Qiskit 2.6) ([#841]) ([**@flowerthrower**]).
+- ♻️ Use Qiskit's native layout continuation between compilation actions and
+  require Qiskit 2.6.0 or newer ([#841]) ([**@flowerthrower**])
+- 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,
+  independently of measurements ([#831]) ([**@flowerthrower**])
+- 🐛 Unroll custom gate definitions before RL basis translation and collect and
+  decompose Clifford blocks for optimization ([#831]) ([**@flowerthrower**])
+- 🐛 Bound the VF2 layout search to prevent training stalls on symmetric devices
+  ([#831]) ([**@flowerthrower**])
+- ⬆️ Require Python 3.11.5 or newer ([#883]) ([**@simon1hofmann**])
+- ⬆️ Update MQT Bench to 2.4, adopt supported device models, and extend RL
+  observations to devices with more than 127 qubits ([#880]) ([**@denialhaag**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
@@ -89,6 +98,9 @@ for previous changelogs._
 <!-- PR links -->
 
 [#841]: https://github.com/munich-quantum-toolkit/predictor/pull/841
+[#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
+[#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
+[#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
@@ -119,6 +131,7 @@ for previous changelogs._
 [**@bachase**]: https://github.com/bachase
 [**@Shaobo-Zhou**]: https://github.com/Shaobo-Zhou
 [**@linus-hologram**]: https://github.com/linus-hologram
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 
 <!-- General links -->
 
