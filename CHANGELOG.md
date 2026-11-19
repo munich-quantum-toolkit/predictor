@@ -22,6 +22,8 @@ releases may include breaking changes.
 
 - 🎨 Group RL optimization actions immediately after synthesis in the policy
   action space ([#794]) ([**@flowerthrower**], [**@Shaobo-Zhou**])
+- 🐛 Report incomplete RL compilation at the step limit instead of returning a
+  partial circuit ([#885]) ([**@flowerthrower**])
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
   require Qiskit 2.6.1 or newer ([#887]) ([**@flowerthrower**])
 - 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,

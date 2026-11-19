@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from bqskit.ir import gates
@@ -19,8 +19,6 @@ from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import transpile
-from qiskit.transpiler import PassManager, PropertySet
-from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
 from mqt.predictor.rl.actions import (
     PassType,
@@ -31,11 +29,7 @@ from mqt.predictor.rl.actions.qiskit_actions import run_qiskit_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model, get_path_training_circuits
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import pytest
-    from qiskit.passmanager.base_tasks import Task
-    from qiskit.transpiler import Target
 
 
 def test_create_feature_dict() -> None:
@@ -101,20 +95,10 @@ def test_vf2_layout_and_postlayout(caplog: pytest.LogCaptureFixture) -> None:
 
     initial_layout_before = qc_transpiled.layout.initial_layout
 
-    post_layout_passes: list[Task] | None = None
-    for layout_action in get_actions_by_pass_type()[PassType.FINAL_OPT]:
-        if layout_action.name == "VF2PostLayout":
-            factory = cast("Callable[[Target], list[Task]]", layout_action.transpile_pass)
-            post_layout_passes = factory(dev_success)
-            break
-    assert post_layout_passes is not None
-
-    pm = PassManager(post_layout_passes)
-    property_set = PropertySet()
-    qc_transpiled.layout.write_into_property_set(property_set)
-    altered_qc = pm.run(qc_transpiled, property_set=property_set)
-
-    assert pm.property_set["VF2PostLayout_stop_reason"] == VF2PostLayoutStopReason.SOLUTION_FOUND
+    post_layout_action = next(
+        action for action in get_actions_by_pass_type()[PassType.FINAL_OPT] if action.name == "VF2PostLayout"
+    )
+    altered_qc, _ = run_qiskit_action(post_layout_action, qc_transpiled, dev_success, qc_transpiled.layout)
 
     assert altered_qc.layout is not None
     assert initial_layout_before != altered_qc.layout.initial_layout

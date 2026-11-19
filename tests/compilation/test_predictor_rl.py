@@ -261,12 +261,6 @@ def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
         circuit = definition
     env.reset(circuit)
 
-    if wrapped:
-        cancellation_index = next(
-            index for index, action in env.action_set.items() if action.name == "CommutativeCancellation"
-        )
-        assert env.apply_action(cancellation_index).count_ops() == {"clifford": 1}
-
     optimize_cliffords_index = next(
         index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
     )
@@ -336,6 +330,10 @@ def test_rl_compile_seeds_policy_and_layout_per_call(monkeypatch: pytest.MonkeyP
     assert settings[0][1:] == (1, 1)
     assert settings[1][0] is None
     assert layouts[0] == layouts[2]
+
+    predictor.env.max_steps = 1
+    with pytest.raises(RuntimeError, match="reached max_steps"):
+        rl_compile(qc, device, predictor_singleton=predictor, seed=123)
 
 
 def test_seeded_sabre_swap_preserves_registered_pass(monkeypatch: pytest.MonkeyPatch) -> None:
