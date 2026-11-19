@@ -20,6 +20,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🎨 Group RL optimization actions immediately after synthesis in the policy
+  action space ([#794]) ([**@flowerthrower**], [**@Shaobo-Zhou**])
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
   require Qiskit 2.6.1 or newer ([#887]) ([**@flowerthrower**])
 - 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,

@@ -149,6 +149,27 @@ def test_warning_for_unidirectional_device() -> None:
         Predictor(figure_of_merit="expected_fidelity", device=target)
 
 
+def test_predictor_env_action_indices_follow_pass_type_order() -> None:
+    """Policy indices group actions by pass type and preserve order within each group."""
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_heron_156"))
+    action_groups = (
+        (PassType.SYNTHESIS, env.actions_synthesis_indices),
+        (PassType.OPT, env.actions_opt_indices),
+        (PassType.LAYOUT, env.actions_layout_indices),
+        (PassType.ROUTING, env.actions_routing_indices),
+        (PassType.MAPPING, env.actions_mapping_indices),
+        (PassType.FINAL_OPT, env.actions_final_optimization_indices),
+    )
+    registered_actions = get_actions_by_pass_type()
+
+    for pass_type, indices in action_groups:
+        assert [env.action_set[index] for index in indices] == registered_actions[pass_type]
+    assert [index for _, indices in action_groups for index in indices] == list(range(env.action_terminate_index))
+    assert env.action_set[env.action_terminate_index].name == "terminate"
+    assert isinstance(env.action_space, Discrete)
+    assert env.action_space.n == env.action_terminate_index + 1
+
+
 def test_predictor_env_truncates_at_max_steps() -> None:
     """Test that the environment truncates episodes that hit the step limit."""
     device = get_device("ibm_heron_156")

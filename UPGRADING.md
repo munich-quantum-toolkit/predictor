@@ -15,7 +15,7 @@ policies that can repeat an action, set `max_steps` on the `Predictor` to bound
 the episode. Omit the seed to keep sampling actions from the policy.
 
 Passing a seed to `Predictor.train_model` or `PredictorEnv.reset` also seeds
-training-circuit selection. Existing models can use the new inference option.
+training-circuit selection.
 
 ### MQT Bench 2.4
 
@@ -34,8 +34,20 @@ devices is unchanged.
 ### Qiskit compilation actions
 
 The RL compiler can select `TrivialLayout`, `SabreSwap`,
-`RemoveIdentityEquivalent`, and `Optimize1qGatesSimpleCommutation`. Retrain
-existing RL policies for the expanded action space.
+`RemoveIdentityEquivalent`, and `Optimize1qGatesSimpleCommutation`. Action
+indices now follow this order of pass types, with registration order preserved
+within each type.
+
+1. Synthesis
+2. Optimization
+3. Layout
+4. Routing
+5. Mapping
+6. Final optimization
+7. Termination
+
+Retrain existing RL policies for the expanded action space. Update any code that
+stores numeric action indices.
 
 ### Atomic BQSKit compilation actions
 
