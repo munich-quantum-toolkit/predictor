@@ -37,6 +37,7 @@ from mqt.predictor.rl.actions import (
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
+from mqt.predictor.rl.actions.tket_actions import run_tket_action
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
 
 
@@ -274,10 +275,8 @@ def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
         register_action(action)
 
 
-def test_registered_tket_layout_action_requires_exactly_one_placement(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Registered TKET layout actions reject ambiguous placement payloads."""
-    actions_registry = vars(actions_registry_module)
-    monkeypatch.setitem(actions_registry, "_ACTIONS", actions_registry["_ACTIONS"].copy())
+def test_tket_layout_action_requires_exactly_one_placement() -> None:
+    """TKET layout actions reject ambiguous placement payloads."""
     device = get_device("ibm_heron_156")
     placement = Placement(Architecture(list(device.build_coupling_map())))
     action = DeviceIndependentAction(
@@ -286,16 +285,11 @@ def test_registered_tket_layout_action_requires_exactly_one_placement(monkeypatc
         transpile_pass=[placement, placement],
         origin=CompilationOrigin.TKET,
     )
-    register_action(action)
-    env = predictorenv_module.PredictorEnv(device=device)
-    env.reset(QuantumCircuit(2))
-    action_index = next(index for index, registered in env.action_set.items() if registered is action)
-
     with pytest.raises(
         TypeError,
         match=re.escape("TKET layout action AmbiguousTKETPlacement must provide exactly one placement."),
     ):
-        env.apply_action(action_index)
+        run_tket_action(action, QuantumCircuit(2), device, None)
 
 
 @pytest.mark.model_training
