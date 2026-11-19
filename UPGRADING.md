@@ -31,6 +31,12 @@ Retrain RL models for devices with 128 or more qubits. Their qubit-count
 observation space now includes the full device width. The encoding for smaller
 devices is unchanged.
 
+### Qiskit compilation actions
+
+The RL compiler can select `TrivialLayout`, `SabreSwap`,
+`RemoveIdentityEquivalent`, and `Optimize1qGatesSimpleCommutation`. Retrain
+existing RL policies for the expanded action space.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no

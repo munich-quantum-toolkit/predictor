@@ -339,6 +339,91 @@ def test_seeded_sabre_swap_preserves_registered_pass(monkeypatch: pytest.MonkeyP
     assert settings == [(123, 1), (17, 4)]
 
 
+@pytest.fixture
+def line_env() -> predictorenv_module.PredictorEnv:
+    """Provide a three-qubit target with nearest-neighbor interactions."""
+    target = Target.from_configuration(
+        basis_gates=["rz", "sx", "x", "cx"], coupling_map=CouplingMap.from_line(3), num_qubits=3
+    )
+    target.description = "bidirectional line"
+    return predictorenv_module.PredictorEnv(device=target)
+
+
+def _apply_qiskit_action(env: predictorenv_module.PredictorEnv, name: str) -> QuantumCircuit:
+    index = next(i for i, action in env.action_set.items() if action.name == name)
+    env.state = env.apply_action(index)
+    return env.state
+
+
+def test_qiskit_trivial_layout_keeps_logical_order(line_env: predictorenv_module.PredictorEnv) -> None:
+    """Layout pads a narrow circuit and keeps its logical qubits in order."""
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    line_env.reset(circuit)
+
+    laid_out = _apply_qiskit_action(line_env, "TrivialLayout")
+
+    assert laid_out.num_qubits == 3
+    assert line_env.layout is not None
+    assert line_env.layout.final_index_layout() == [0, 1]
+
+
+def test_qiskit_sabre_routes_and_tracks_measurements(line_env: predictorenv_module.PredictorEnv) -> None:
+    """SABRE routes a nonadjacent interaction and preserves logical measurement results."""
+    circuit = QuantumCircuit(3)
+    circuit.x(0)
+    circuit.cx(0, 2)
+    circuit.measure_all()
+    line_env.reset(circuit)
+    _apply_qiskit_action(line_env, "TrivialLayout")
+
+    routed = _apply_qiskit_action(line_env, "SabreSwap")
+
+    assert line_env.is_circuit_routed(routed, CouplingMap.from_line(3))
+    assert line_env.layout is not None
+    final = line_env.layout.final_index_layout()
+    assert sorted(final) == [0, 1, 2]
+    assert routed.count_ops().get("swap", 0) >= 1
+    measured = {
+        routed.find_bit(item.clbits[0]).index: routed.find_bit(item.qubits[0]).index
+        for item in routed.data
+        if item.operation.name == "measure"
+    }
+    assert measured == dict(enumerate(final))
+
+
+def test_qiskit_sabre_preserves_layout_on_fully_connected_target() -> None:
+    """A target with global two-qubit gates needs no SWAP insertion."""
+    target = Target.from_configuration(basis_gates=["rz", "sx", "x", "cx"], num_qubits=3)
+    circuit = QuantumCircuit(3)
+    circuit.cx(0, 2)
+    trivial_layout = next(action for action in qiskit_actions.qiskit_layout_actions() if action.name == "TrivialLayout")
+    placed, layout = qiskit_actions.run_qiskit_action(trivial_layout, circuit, target, None)
+
+    routed, layout = qiskit_actions.run_qiskit_action(qiskit_actions.qiskit_routing_action(), placed, target, layout)
+
+    assert routed.count_ops() == {"cx": 1}
+    assert layout is not None
+    assert layout.final_index_layout() == [0, 1, 2]
+
+
+@pytest.mark.parametrize("name", ["RemoveIdentityEquivalent", "Optimize1qGatesSimpleCommutation"])
+def test_qiskit_optimizations_preserve_unitary(line_env: predictorenv_module.PredictorEnv, name: str) -> None:
+    """The identity and commutation passes remove redundant rotations across a CX."""
+    circuit = QuantumCircuit(2)
+    angle = np.pi / 3 if name == "Optimize1qGatesSimpleCommutation" else 0
+    circuit.rz(angle, 0)
+    circuit.cx(0, 1)
+    if angle:
+        circuit.rz(-angle, 0)
+    line_env.reset(circuit)
+
+    optimized = _apply_qiskit_action(line_env, name)
+
+    assert optimized.count_ops() == {"cx": 1}
+    assert Operator(optimized).equiv(Operator(circuit))
+
+
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the register_action function."""
     actions_registry = vars(actions_registry_module)

@@ -53,11 +53,14 @@ from qiskit.transpiler.passes import (
     InverseCancellation,
     MinimumPoint,
     Optimize1qGatesDecomposition,
+    Optimize1qGatesSimpleCommutation,
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
+    RemoveIdentityEquivalent,
     SabreLayout,
     SabreSwap,
     Size,
+    TrivialLayout,
     UnitarySynthesis,
     UnrollCustomDefinitions,
     VF2Layout,
@@ -170,6 +173,26 @@ def qiskit_optimization_actions() -> list[Action]:
             preserves_routing=True,
             preserves_synthesis=False,
         ),
+        DeviceIndependentAction(
+            "RemoveIdentityEquivalent",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            [RemoveIdentityEquivalent()],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
+        ),
+        DeferredDeviceAction(
+            "Optimize1qGatesSimpleCommutation",
+            CompilationOrigin.QISKIT,
+            PassType.OPT,
+            transpile_pass=lambda device: [
+                Optimize1qGatesSimpleCommutation(basis=device.operation_names, run_to_completion=True)
+            ],
+            preserves_layout=True,
+            preserves_routing=True,
+            preserves_synthesis=True,
+        ),
     ]
 
 
@@ -259,7 +282,34 @@ def qiskit_layout_actions() -> list[Action]:
                 ],
             ),
         ),
+        DeferredDeviceAction(
+            "TrivialLayout",
+            CompilationOrigin.QISKIT,
+            PassType.LAYOUT,
+            transpile_pass=lambda device: [
+                TrivialLayout(device),
+                FullAncillaAllocation(device),
+                EnlargeWithAncilla(),
+                ApplyLayout(),
+            ],
+        ),
     ]
+
+
+def qiskit_routing_action() -> Action:
+    """Return the Qiskit SABRE routing action."""
+
+    def routing_passes(device: Target) -> list[Task]:
+        if device.build_coupling_map() is None:
+            return []
+        return [SabreSwap(device, heuristic="decay")]
+
+    return DeferredDeviceAction(
+        "SabreSwap",
+        CompilationOrigin.QISKIT,
+        PassType.ROUTING,
+        transpile_pass=routing_passes,
+    )
 
 
 def qiskit_mapping_action() -> Action:
