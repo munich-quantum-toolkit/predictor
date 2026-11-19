@@ -12,10 +12,14 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Seed RL circuit sampling and Qiskit layout passes, and select greedy RL
+  inference with an explicit seed ([#885]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 
 ### Changed
 
+- 🐛 Report incomplete RL compilation at the step limit instead of returning a
+  partial circuit ([#885]) ([**@flowerthrower**])
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
   require Qiskit 2.6.1 or newer ([#887]) ([**@flowerthrower**])
 - 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,
@@ -97,6 +101,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#885]: https://github.com/munich-quantum-toolkit/predictor/pull/885
 [#887]: https://github.com/munich-quantum-toolkit/predictor/pull/887
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883

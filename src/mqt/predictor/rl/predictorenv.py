@@ -154,6 +154,7 @@ class PredictorEnv(Env):
 
         self.has_parameterized_gates = False
         self.rng = np.random.default_rng(10)
+        self.seeded_rng: np.random.Generator | None = None
 
         spaces: dict[str, Space] = {
             # Preserve the encoding used by existing models for smaller devices.
@@ -383,6 +384,8 @@ class PredictorEnv(Env):
             The initial state and additional information.
         """
         super().reset(seed=seed)
+        if seed is not None:
+            self.seeded_rng = self.np_random
         if isinstance(qc, QuantumCircuit):
             self.state = qc
             self.filename = ""
@@ -392,7 +395,12 @@ class PredictorEnv(Env):
             self.filename = str(qc)
             current_circuit_name = Path(str(qc)).stem
         else:
-            self.state, self.filename = get_state_sample(self.device.num_qubits, self.path_training_circuits, self.rng)
+            self.state, self.filename = get_state_sample(
+                self.device.num_qubits,
+                self.path_training_circuits,
+                self.rng if self.seeded_rng is None else self.seeded_rng,
+                sort_files=self.seeded_rng is not None,
+            )
             current_circuit_name = Path(self.filename).stem
 
         self.action_space = Discrete(len(self.action_set.keys()))
@@ -520,6 +528,7 @@ class PredictorEnv(Env):
                 circuit=self.state,
                 device=self.device,
                 layout=self.layout,
+                seed=None if self.seeded_rng is None else int(self.seeded_rng.integers(2**31 - 1)),
             )
         elif action.origin == CompilationOrigin.TKET:
             altered_qc, self.layout = run_tket_action(
