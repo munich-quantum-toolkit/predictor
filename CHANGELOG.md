@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Seed RL circuit sampling and Qiskit layout passes, and select greedy RL
+  inference with an explicit seed ([#885]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 
 ### Changed
@@ -97,6 +99,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#885]: https://github.com/munich-quantum-toolkit/predictor/pull/885
 [#887]: https://github.com/munich-quantum-toolkit/predictor/pull/887
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from copy import copy
 from typing import TYPE_CHECKING, cast
 
 from qiskit.circuit import StandardEquivalenceLibrary
@@ -55,6 +56,7 @@ from qiskit.transpiler.passes import (
     OptimizeCliffords,
     RemoveDiagonalGatesBeforeMeasure,
     SabreLayout,
+    SabreSwap,
     Size,
     UnitarySynthesis,
     UnrollCustomDefinitions,
@@ -288,11 +290,27 @@ def qiskit_synthesis_action() -> Action:
     )
 
 
+def _with_qiskit_seed(task: Task, seed: int) -> Task:
+    """Configure a per-run copy of a randomized Qiskit layout or routing pass."""
+    if not isinstance(task, (SabreLayout, SabreSwap, VF2Layout, VF2PostLayout)):
+        return task
+    seeded_task = copy(task)
+    seeded_task.seed = seed
+    if isinstance(seeded_task, SabreLayout):
+        # Qiskit otherwise picks the trial counts from the number of CPUs.
+        seeded_task.layout_trials = 1
+        seeded_task.swap_trials = 1
+    elif isinstance(seeded_task, SabreSwap):
+        seeded_task.trials = 1
+    return seeded_task
+
+
 def run_qiskit_action(
     action: Action,
     circuit: QuantumCircuit,
     device: Target,
     layout: TranspileLayout | None,
+    seed: int | None = None,
 ) -> tuple[QuantumCircuit, TranspileLayout | None]:
     """Apply a Qiskit action and return the updated circuit and layout metadata."""
     # Build the concrete Qiskit pass list for given action.
@@ -304,6 +322,9 @@ def run_qiskit_action(
         passes = factory(device)
     else:
         passes = cast("list[Task]", action.transpile_pass)
+
+    if seed is not None:
+        passes = [_with_qiskit_seed(task, seed) for task in passes]
 
     if action.name == "QiskitO3" and isinstance(action, DeferredDeviceAction):
         assert action.do_while is not None

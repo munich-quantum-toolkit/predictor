@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 from gymnasium.spaces import Dict, Discrete
 from mqt.bench import BenchmarkLevel, get_benchmark
@@ -21,20 +23,27 @@ from qiskit import QuantumCircuit
 from qiskit.circuit.library import CXGate
 from qiskit.qasm2 import dump
 from qiskit.quantum_info import Clifford, Operator
-from qiskit.transpiler import CouplingMap, InstructionProperties, Layout, Target, TranspileLayout
-from qiskit.transpiler.passes import BasicSwap, GatesInBasis
+from qiskit.transpiler import CouplingMap, InstructionProperties, Layout, PassManager, Target, TranspileLayout
+from qiskit.transpiler.passes import BasicSwap, GatesInBasis, SabreLayout, SabreSwap
 
 from mqt.predictor.rl import Predictor, rl_compile
+from mqt.predictor.rl import predictor as predictor_module
 from mqt.predictor.rl import predictorenv as predictorenv_module
 from mqt.predictor.rl.actions import (
     CompilationOrigin,
     DeviceIndependentAction,
     PassType,
     get_actions_by_pass_type,
+    qiskit_actions,
     register_action,
 )
 from mqt.predictor.rl.actions import registry as actions_registry_module
 from mqt.predictor.rl.helper import create_feature_dict, get_path_trained_model
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from qiskit.passmanager.base_tasks import Task
 
 
 def test_predictor_env_reset_from_string() -> None:
@@ -244,6 +253,90 @@ def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
     assert "clifford" not in optimized.count_ops()
     assert optimized.size() == 1
     assert Operator(optimized).equiv(Operator(circuit))
+
+
+def test_seeded_resets_sample_a_repeatable_sequence(tmp_path: Path) -> None:
+    """The initial seed controls circuit selection across subsequent episode resets."""
+    filenames = ["c_2.qasm", "a_2.qasm", "b_2.qasm"]
+    qc = QuantumCircuit(2)
+    qc.cx(0, 1)
+    for filename in filenames:
+        with (tmp_path / filename).open("w", encoding="utf-8") as stream:
+            dump(qc, stream)
+
+    env = predictorenv_module.PredictorEnv(device=get_device("ibm_heron_156"), path_training_circuits=tmp_path)
+    samples = []
+    for seed in (123, None, None, None):
+        env.reset(seed=seed)
+        samples.append(Path(env.filename).name)
+
+    rng = np.random.default_rng(123)
+    assert samples == [sorted(filenames)[rng.integers(len(filenames))] for _ in samples]
+
+
+def test_rl_compile_seeds_policy_and_layout_per_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A seeded compilation repeats its SABRE layout without changing later calls."""
+    device = get_device("ibm_heron_156")
+    predictor = Predictor("expected_fidelity", device, max_steps=2)
+    qc = QuantumCircuit(2)
+    qc.cx(0, 1)
+    modes: list[bool] = []
+    settings: list[tuple[int | None, int, int]] = []
+
+    class MappingPolicy:
+        """Choose synthesis, then SABRE mapping."""
+
+        @staticmethod
+        def predict(_obs: object, *, action_masks: Sequence[bool], deterministic: bool) -> tuple[int, None]:
+            modes.append(deterministic)
+            name = "QiskitSabreMapping" if predictor.env.used_actions else "BasisTranslator"
+            index = next(i for i, action in predictor.env.action_set.items() if action.name == name)
+            assert action_masks[index]
+            return index, None
+
+    def capture_passes(passes: list[Task]) -> PassManager:
+        settings.extend(
+            (task.seed, task.layout_trials, task.swap_trials) for task in passes if isinstance(task, SabreLayout)
+        )
+        return PassManager(passes)
+
+    monkeypatch.setattr(predictor_module, "load_model", lambda _name: MappingPolicy())
+    monkeypatch.setattr(qiskit_actions, "PassManager", capture_passes)
+    layouts = []
+    for seed in (123, None, 123):
+        compiled, actions = rl_compile(qc, device, predictor_singleton=predictor, seed=seed)
+        assert actions == ["BasisTranslator", "QiskitSabreMapping"]
+        assert compiled.layout is not None
+        layouts.append(compiled.layout.final_index_layout())
+
+    assert modes == [True, True, False, False, True, True]
+    assert settings[0] == settings[2]
+    assert settings[0][0] is not None
+    assert settings[0][1:] == (1, 1)
+    assert settings[1][0] is None
+    assert layouts[0] == layouts[2]
+
+
+def test_seeded_sabre_swap_preserves_registered_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Seeding a registered routing action affects only that invocation."""
+    swap = SabreSwap(CouplingMap.from_line(3), seed=17, trials=4)
+    action = DeviceIndependentAction("SabreSwap", CompilationOrigin.QISKIT, PassType.ROUTING, [swap])
+    qc = QuantumCircuit(3)
+    qc.cx(0, 2)
+    device = get_device("ibm_heron_156")
+    settings = []
+
+    def capture_passes(passes: list[Task]) -> PassManager:
+        task = passes[0]
+        assert isinstance(task, SabreSwap)
+        settings.append((task.seed, task.trials))
+        return PassManager(passes)
+
+    monkeypatch.setattr(qiskit_actions, "PassManager", capture_passes)
+    for seed in (123, None):
+        qiskit_actions.run_qiskit_action(action, qc, device, layout=None, seed=seed)
+
+    assert settings == [(123, 1), (17, 4)]
 
 
 def test_register_action(monkeypatch: pytest.MonkeyPatch) -> None:

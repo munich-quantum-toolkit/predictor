@@ -67,12 +67,14 @@ class Predictor:
         self,
         qc: QuantumCircuit | str,
         tracer_output_path: str | Path | None = None,
+        seed: int | None = None,
     ) -> tuple[QuantumCircuit, list[str]]:
         """Compiles a given quantum circuit such that the given figure of merit is maximized by using the respectively trained optimized compiler.
 
         Arguments:
             qc: The quantum circuit to be compiled or the path to a qasm file containing the quantum circuit.
             tracer_output_path: Optional temporary path to export the compilation trace for this specific run.
+            seed: The seed for greedy policy inference and randomized Qiskit layout and routing passes.
 
         Returns:
             A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -81,6 +83,7 @@ class Predictor:
             RuntimeError: If an error occurs during compilation.
         """
         original_tracer_output_path = self.env.tracer_output_path
+        original_rng = self.env.seeded_rng
 
         # Temporarily override singleton if a new path is explicitly provided
         if tracer_output_path is not None:
@@ -89,14 +92,15 @@ class Predictor:
         try:
             trained_rl_model = load_model("model_" + self.figure_of_merit + "_" + self.device_name)
 
-            obs, _ = self.env.reset(qc, seed=0)
+            self.env.seeded_rng = None
+            obs, _ = self.env.reset(qc, seed=seed)
 
             used_compilation_passes = []
             terminated = False
             truncated = False
             while not (terminated or truncated):
                 action_masks = get_action_masks(self.env)
-                action, _ = trained_rl_model.predict(obs, action_masks=action_masks)
+                action, _ = trained_rl_model.predict(obs, action_masks=action_masks, deterministic=seed is not None)
                 action = int(action)
                 action_item = self.env.action_set[action]
                 used_compilation_passes.append(action_item.name)
@@ -111,6 +115,7 @@ class Predictor:
         finally:
             # Restore original singleton path
             self.env.tracer_output_path = original_tracer_output_path
+            self.env.seeded_rng = original_rng
 
     def train_model(
         self,
@@ -128,6 +133,7 @@ class Predictor:
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
         """
+        self.env.seeded_rng = None
         if seed is not None:
             set_random_seed(seed)
         if test:
@@ -188,6 +194,7 @@ def rl_compile(
     figure_of_merit: figure_of_merit | None = "expected_fidelity",
     predictor_singleton: Predictor | None = None,
     tracer_output_path: str | Path | None = None,
+    seed: int | None = None,
 ) -> tuple[QuantumCircuit, list[str]]:
     """Compiles a given quantum circuit to a device optimizing for the given figure of merit.
 
@@ -197,6 +204,7 @@ def rl_compile(
         figure_of_merit: The figure of merit to be used for compilation. Defaults to "expected_fidelity".
         predictor_singleton: A predictor object that is used for compilation to reduce compilation time when compiling multiple quantum circuits. If None, a new predictor object is created. Defaults to None.
         tracer_output_path: If provided, enables compiler tracing and exports the JSON log to the specified path.
+        seed: The seed for greedy policy inference and randomized Qiskit layout and routing passes.
 
     Returns:
         A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
@@ -212,6 +220,6 @@ def rl_compile(
             msg = "device must not be None if predictor_singleton is None."
             raise ValueError(msg)
         predictor = Predictor(figure_of_merit=figure_of_merit, device=device, tracer_output_path=tracer_output_path)
-        return predictor.compile_as_predicted(qc)
+        return predictor.compile_as_predicted(qc, seed=seed)
 
-    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path)
+    return predictor_singleton.compile_as_predicted(qc, tracer_output_path=tracer_output_path, seed=seed)

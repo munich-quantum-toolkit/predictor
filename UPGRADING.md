@@ -6,6 +6,17 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Seeded RL compilation
+
+Pass `seed=...` to `rl_compile` or `Predictor.compile_as_predicted` to select
+the most likely valid action at each step and seed Qiskit's SABRE and VF2
+passes. SABRE uses one layout trial and one swap trial in this mode. For
+policies that can repeat an action, set `max_steps` on the `Predictor` to bound
+the episode. Omit the seed to keep sampling actions from the policy.
+
+Passing a seed to `Predictor.train_model` or `PredictorEnv.reset` also seeds
+training-circuit selection. Existing models can use the new inference option.
+
 ### MQT Bench 2.4
 
 MQT Predictor now requires MQT Bench 2.4 or newer.
