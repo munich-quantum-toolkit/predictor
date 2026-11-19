@@ -25,7 +25,8 @@ releases may include breaking changes.
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731]),
-  including one-level quantum Shannon decomposition ([#795]) ([**@flowerthrower**])
+  including one-level quantum Shannon decomposition ([#795])
+  ([**@flowerthrower**])
 
 ## [2.4.0] - 2026-07-13
 
