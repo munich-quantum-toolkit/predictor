@@ -49,6 +49,10 @@ within each type.
 Retrain existing RL policies for the expanded action space. Update any code that
 stores numeric action indices.
 
+The RL environment requires an explicit coupling map. When called directly on
+a target with unrestricted connectivity, the Qiskit `SabreSwap` action leaves
+the layout unchanged.
+
 ### Atomic BQSKit compilation actions
 
 The composite actions `BQSKitO2`, `BQSKitSynthesis`, and `BQSKitMapping` are no

@@ -413,8 +413,8 @@ def test_qiskit_sabre_routes_and_tracks_measurements(line_env: predictorenv_modu
     assert measured == dict(enumerate(final))
 
 
-def test_qiskit_sabre_preserves_layout_on_fully_connected_target() -> None:
-    """A target with global two-qubit gates needs no SWAP insertion."""
+def test_run_qiskit_action_skips_sabre_on_unrestricted_target() -> None:
+    """The standalone Qiskit action preserves layout when the target has no coupling map."""
     target = Target.from_configuration(basis_gates=["rz", "sx", "x", "cx"], num_qubits=3)
     circuit = QuantumCircuit(3)
     circuit.cx(0, 2)
