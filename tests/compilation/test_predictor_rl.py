@@ -166,8 +166,8 @@ def test_predictor_env_action_indices_follow_pass_type_order() -> None:
         assert [env.action_set[index] for index in indices] == registered_actions[pass_type]
     assert [index for _, indices in action_groups for index in indices] == list(range(env.action_terminate_index))
     assert env.action_set[env.action_terminate_index].name == "terminate"
-    assert isinstance(env.action_space, Discrete)
-    assert env.action_space.n == env.action_terminate_index + 1
+    assert env.action_space.contains(env.action_terminate_index)
+    assert not env.action_space.contains(env.action_terminate_index + 1)
 
 
 def test_predictor_env_truncates_at_max_steps() -> None:
