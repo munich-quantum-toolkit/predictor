@@ -13,8 +13,8 @@ the most likely valid action at each step and seed Qiskit's SABRE and VF2
 passes. SABRE uses one layout trial and one swap trial in this mode. For
 policies that can repeat an action, set `max_steps` on the `Predictor` to bound
 the episode. If the circuit is not ready for the target at that limit,
-compilation raises `RuntimeError` instead of returning a partial circuit.
-This applies to both seeded and unseeded calls. Omit the seed to keep sampling
+compilation raises `RuntimeError` instead of returning a partial circuit. This
+applies to both seeded and unseeded calls. Omit the seed to keep sampling
 actions from the policy.
 
 Passing a seed to `Predictor.train_model` or `PredictorEnv.reset` also seeds
@@ -52,9 +52,9 @@ within each type.
 Retrain existing RL policies for the expanded action space. Update any code that
 stores numeric action indices.
 
-The RL environment requires an explicit coupling map. When called directly on
-a target with unrestricted connectivity, the Qiskit `SabreSwap` action leaves
-the layout unchanged.
+The RL environment requires an explicit coupling map. When called directly on a
+target with unrestricted connectivity, the Qiskit `SabreSwap` action leaves the
+layout unchanged.
 
 ### Atomic BQSKit compilation actions
 
