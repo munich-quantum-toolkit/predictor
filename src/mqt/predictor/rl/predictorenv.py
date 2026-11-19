@@ -81,12 +81,12 @@ class PredictorEnv(Env):
         self.max_steps = max_steps
 
         self.action_set = {}
-        self.actions_synthesis_indices = []
-        self.actions_layout_indices = []
-        self.actions_routing_indices = []
-        self.actions_mapping_indices = []
-        self.actions_opt_indices = []
-        self.actions_final_optimization_indices = []  # TODO: currently not used; will be improved by addressing issue https://github.com/munich-quantum-toolkit/predictor/issues/666
+        self.actions_synthesis_indices: list[int] = []
+        self.actions_layout_indices: list[int] = []
+        self.actions_routing_indices: list[int] = []
+        self.actions_mapping_indices: list[int] = []
+        self.actions_opt_indices: list[int] = []
+        self.actions_final_optimization_indices: list[int] = []
         self.used_actions: list[str] = []
         self.device = device
 
@@ -100,36 +100,24 @@ class PredictorEnv(Env):
             msg = f"The connectivity of the device '{self.device.description}' is uni-directional and MQT Predictor might return a compiled circuit that assumes bi-directionality."
             warnings.warn(msg, UserWarning, stacklevel=2)
 
-        index = 0
         action_dict = get_actions_by_pass_type()
+        # This order defines the policy's action indices. Keep registry order within each group.
+        action_groups = (
+            (PassType.SYNTHESIS, self.actions_synthesis_indices),
+            (PassType.OPT, self.actions_opt_indices),
+            (PassType.LAYOUT, self.actions_layout_indices),
+            (PassType.ROUTING, self.actions_routing_indices),
+            (PassType.MAPPING, self.actions_mapping_indices),
+            (PassType.FINAL_OPT, self.actions_final_optimization_indices),
+        )
+        for pass_type, indices in action_groups:
+            for action in action_dict[pass_type]:
+                index = len(self.action_set)
+                self.action_set[index] = action
+                indices.append(index)
 
-        for elem in action_dict[PassType.SYNTHESIS]:
-            self.action_set[index] = elem
-            self.actions_synthesis_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.LAYOUT]:
-            self.action_set[index] = elem
-            self.actions_layout_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.ROUTING]:
-            self.action_set[index] = elem
-            self.actions_routing_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.OPT]:
-            self.action_set[index] = elem
-            self.actions_opt_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.MAPPING]:
-            self.action_set[index] = elem
-            self.actions_mapping_indices.append(index)
-            index += 1
-        for elem in action_dict[PassType.FINAL_OPT]:
-            self.action_set[index] = elem
-            self.actions_final_optimization_indices.append(index)
-            index += 1
-
-        self.action_set[index] = action_dict[PassType.TERMINATE][0]
-        self.action_terminate_index = index
+        self.action_terminate_index = len(self.action_set)
+        self.action_set[self.action_terminate_index] = action_dict[PassType.TERMINATE][0]
 
         self.hellinger_model = None
         if reward_function == "estimated_success_probability" and not esp_data_available(self.device):

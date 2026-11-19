@@ -18,7 +18,7 @@ applies to both seeded and unseeded calls. Omit the seed to keep sampling
 actions from the policy.
 
 Passing a seed to `Predictor.train_model` or `PredictorEnv.reset` also seeds
-training-circuit selection. Existing models can use the new inference option.
+training-circuit selection.
 
 ### MQT Bench 2.4
 
@@ -33,6 +33,28 @@ supported for older hardware.
 Retrain RL models for devices with 128 or more qubits. Their qubit-count
 observation space now includes the full device width. The encoding for smaller
 devices is unchanged.
+
+### Qiskit compilation actions
+
+The RL compiler can select `TrivialLayout`, `SabreSwap`,
+`RemoveIdentityEquivalent`, and `Optimize1qGatesSimpleCommutation`. Action
+indices now follow this order of pass types, with registration order preserved
+within each type.
+
+1. Synthesis
+2. Optimization
+3. Layout
+4. Routing
+5. Mapping
+6. Final optimization
+7. Termination
+
+Retrain existing RL policies for the expanded action space. Update any code that
+stores numeric action indices.
+
+The RL environment requires an explicit coupling map. When called directly on a
+target with unrestricted connectivity, the Qiskit `SabreSwap` action leaves the
+layout unchanged.
 
 ### Atomic BQSKit compilation actions
 

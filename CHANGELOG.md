@@ -15,9 +15,13 @@ releases may include breaking changes.
 - ✨ Seed RL circuit sampling and Qiskit layout passes, and select greedy RL
   inference with an explicit seed ([#885]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
+- ✨ Add Qiskit layout, SABRE routing, and gate optimization actions to the RL
+  compiler ([#794]) ([**@flowerthrower**])
 
 ### Changed
 
+- 🎨 Group RL optimization actions immediately after synthesis in the policy
+  action space ([#794]) ([**@flowerthrower**], [**@Shaobo-Zhou**])
 - 🐛 Report incomplete RL compilation at the step limit instead of returning a
   partial circuit ([#885]) ([**@flowerthrower**])
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
@@ -109,6 +113,7 @@ for previous changelogs._
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
+[#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
