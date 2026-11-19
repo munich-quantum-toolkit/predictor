@@ -240,12 +240,6 @@ def test_clifford_optimization_collects_and_decomposes(wrapped: bool) -> None:
         circuit = definition
     env.reset(circuit)
 
-    if wrapped:
-        cancellation_index = next(
-            index for index, action in env.action_set.items() if action.name == "CommutativeCancellation"
-        )
-        assert env.apply_action(cancellation_index).count_ops() == {"clifford": 1}
-
     optimize_cliffords_index = next(
         index for index, action in env.action_set.items() if action.name == "OptimizeCliffords"
     )

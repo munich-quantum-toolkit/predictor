@@ -133,7 +133,8 @@ def run_tket_action(
     for pass_ in passes:
         assert isinstance(pass_, TketBasePass | PreProcessTKETRoutingAfterQiskitLayout)
         if action.pass_type == PassType.ROUTING and isinstance(pass_, TketBasePass):
-            compilation_unit = CompilationUnit(tket_qc)
+            if compilation_unit is None:
+                compilation_unit = CompilationUnit(tket_qc)
             pass_.apply(compilation_unit)
             tket_qc = compilation_unit.circuit
         else:
