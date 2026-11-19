@@ -46,7 +46,7 @@ for details about the individual passes.
 
 ### Qiskit 2.6 minimum
 
-Upgrade to Qiskit 2.6.0 or newer. MQT Predictor uses its native layout
+Upgrade to Qiskit 2.6.1 or newer. MQT Predictor uses its native layout
 continuation to preserve qubit mappings between compilation actions.
 
 For direct users of `rl.actions.qiskit_actions`, `run_qiskit_action` no longer

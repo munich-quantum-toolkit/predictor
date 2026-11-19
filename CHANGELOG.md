@@ -17,7 +17,7 @@ releases may include breaking changes.
 ### Changed
 
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
-  require Qiskit 2.6.0 or newer ([#841]) ([**@flowerthrower**])
+  require Qiskit 2.6.1 or newer ([#887]) ([**@flowerthrower**])
 - 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,
   independently of measurements ([#831]) ([**@flowerthrower**])
 - 🐛 Unroll custom gate definitions before RL basis translation and collect and
@@ -97,7 +97,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#841]: https://github.com/munich-quantum-toolkit/predictor/pull/841
+[#887]: https://github.com/munich-quantum-toolkit/predictor/pull/887
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
