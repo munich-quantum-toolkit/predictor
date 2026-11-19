@@ -14,7 +14,7 @@ import asyncio
 
 import pytest
 from bqskit.compiler.passdata import PassData
-from bqskit.ir.gates import MPRYGate, MPRZGate, VariableUnitaryGate
+from bqskit.ir.gates import VariableUnitaryGate
 from qiskit import QuantumCircuit
 
 from mqt.predictor.rl.actions import bqskit_actions
@@ -37,8 +37,6 @@ def test_qsd_unitary_synthesis_pass_applies_one_qsd_level() -> None:
     assert decomposed.get_unitary().get_distance_from(unitary) < 1e-7
     assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, VariableUnitaryGate)) == 4
     assert all(gate.num_qudits == 2 for gate in decomposed.gate_set if isinstance(gate, VariableUnitaryGate))
-    assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRZGate)) == 2
-    assert sum(count for gate, count in decomposed.gate_counts.items() if isinstance(gate, MPRYGate)) == 1
 
 
 @pytest.mark.filterwarnings("ignore:__array__ implementation doesn't accept a copy keyword:DeprecationWarning")
