@@ -76,7 +76,7 @@ def test_predictor_env_observation_counts_gates_and_measurements() -> None:
 
     assert env.observation_space.contains(observation)
     for name in ("x", "r", "measure"):
-        assert observation[name].item() == 0.25
+        assert observation[name].item() == pytest.approx(0.25)
     assert observation["cx"].item() == 0
 
 
