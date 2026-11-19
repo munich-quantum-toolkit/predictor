@@ -28,6 +28,8 @@ releases may include breaking changes.
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
+- ✨ Extend the RL action space with TKET graph placement, noise-aware
+  placement, and KAK decomposition ([#796]) ([**@flowerthrower**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
@@ -99,6 +101,7 @@ for previous changelogs._
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
+[#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697

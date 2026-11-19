@@ -49,6 +49,13 @@ for details about the individual passes.
 The minimum Qiskit version increases from **1.3.3 to 2.5.2** to match MQT Bench
 2.4's requirement. Upgrade Qiskit to 2.5.2 or newer.
 
+### TKET placement and optimization actions
+
+The RL action space now includes `GraphPlacement`, `NoiseAwarePlacement`, and
+`KAKDecomposition`. Retrain existing policies and update code that stores
+numeric action indices. Decompose gates acting on more than two qubits before
+TKET layout or routing. Multi-qubit barriers are supported.
+
 ### End of support for Python 3.10
 
 Starting with this release, MQT Predictor no longer supports Python 3.10. As a
