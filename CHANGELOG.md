@@ -18,6 +18,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🐛 Report incomplete RL compilation at the step limit instead of returning a
+  partial circuit ([#885]) ([**@flowerthrower**])
 - ♻️ Use Qiskit's native layout continuation between compilation actions and
   require Qiskit 2.6.1 or newer ([#887]) ([**@flowerthrower**])
 - 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,

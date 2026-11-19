@@ -77,10 +77,10 @@ class Predictor:
             seed: The seed for greedy policy inference and randomized Qiskit layout and routing passes.
 
         Returns:
-            A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
+            The compiled circuit and the names of the actions used.
 
         Raises:
-            RuntimeError: If an error occurs during compilation.
+            RuntimeError: If a pass fails or the step limit leaves the circuit incomplete.
         """
         original_tracer_output_path = self.env.tracer_output_path
         original_rng = self.env.seeded_rng
@@ -106,11 +106,13 @@ class Predictor:
                 used_compilation_passes.append(action_item.name)
                 obs, _reward_val, terminated, truncated, _info = self.env.step(action)
 
-            if not self.env.error_occurred:
-                return self.env.state, used_compilation_passes
-
-            msg = "Error occurred during compilation."
-            raise RuntimeError(msg)
+            if self.env.error_occurred:
+                msg = "Error occurred during compilation."
+                raise RuntimeError(msg)
+            if truncated and self.env.action_terminate_index not in self.env.valid_actions:
+                msg = "Compilation reached max_steps before the circuit was ready for the target."
+                raise RuntimeError(msg)
+            return self.env.state, used_compilation_passes
 
         finally:
             # Restore original singleton path
@@ -207,10 +209,11 @@ def rl_compile(
         seed: The seed for greedy policy inference and randomized Qiskit layout and routing passes.
 
     Returns:
-        A tuple containing the compiled quantum circuit and the compilation information. If compilation fails, False is returned.
+        The compiled circuit and the names of the actions used.
 
     Raises:
         ValueError: If figure_of_merit or device is None and predictor_singleton is also None.
+        RuntimeError: If a pass fails or the step limit leaves the circuit incomplete.
     """
     if predictor_singleton is None:
         if figure_of_merit is None:

@@ -316,6 +316,10 @@ def test_rl_compile_seeds_policy_and_layout_per_call(monkeypatch: pytest.MonkeyP
     assert settings[1][0] is None
     assert layouts[0] == layouts[2]
 
+    predictor.env.max_steps = 1
+    with pytest.raises(RuntimeError, match="reached max_steps"):
+        rl_compile(qc, device, predictor_singleton=predictor, seed=123)
+
 
 def test_seeded_sabre_swap_preserves_registered_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Seeding a registered routing action affects only that invocation."""

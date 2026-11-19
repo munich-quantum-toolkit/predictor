@@ -12,7 +12,10 @@ Pass `seed=...` to `rl_compile` or `Predictor.compile_as_predicted` to select
 the most likely valid action at each step and seed Qiskit's SABRE and VF2
 passes. SABRE uses one layout trial and one swap trial in this mode. For
 policies that can repeat an action, set `max_steps` on the `Predictor` to bound
-the episode. Omit the seed to keep sampling actions from the policy.
+the episode. If the circuit is not ready for the target at that limit,
+compilation raises `RuntimeError` instead of returning a partial circuit.
+This applies to both seeded and unseeded calls. Omit the seed to keep sampling
+actions from the policy.
 
 Passing a seed to `Predictor.train_model` or `PredictorEnv.reset` also seeds
 training-circuit selection. Existing models can use the new inference option.
