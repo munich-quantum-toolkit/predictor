@@ -62,6 +62,41 @@ def test_predictor_env_observation_space_covers_device(device_name: str) -> None
     assert observation["num_qubits"].item() == 1
 
 
+def test_predictor_env_observation_counts_gates_and_measurements() -> None:
+    """Normalize frequencies by the total number of non-barrier operations."""
+    env = predictorenv_module.PredictorEnv(device=get_device("quantinuum_h2_56"))
+    qc = QuantumCircuit(3, 1)
+    qc.x(0)
+    qc.r(0.1, 0.2, 0)
+    qc.barrier()
+    qc.reset(0)
+    qc.measure(0, 0)
+
+    observation, _ = env.reset(qc=qc)
+
+    assert env.observation_space.contains(observation)
+    for name in ("x", "r", "measure"):
+        assert observation[name].item() == 0.25
+    assert observation["cx"].item() == 0
+
+
+def test_create_feature_dict_without_operations() -> None:
+    """A barrier alone contributes neither operation frequencies nor depth."""
+    qc = QuantumCircuit(2)
+    qc.barrier()
+
+    features = create_feature_dict(qc, 1)
+
+    assert features.pop("num_qubits").item() == 1
+    assert all(value.item() == 0 for value in features.values())
+
+
+def test_create_feature_dict_requires_target_qubits() -> None:
+    """An empty target has no width against which to normalize the circuit."""
+    with pytest.raises(ValueError, match="at least one qubit"):
+        create_feature_dict(QuantumCircuit(1), 0)
+
+
 def test_predictor_env_esp_error() -> None:
     """Test the predictor environment with ESP as figure of merit and missing calibration data."""
     device = get_device("quantinuum_h2_56")

@@ -14,12 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
-import pytest
 from bqskit.ir import gates
 from bqskit.ir.circuit import Circuit
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
-from qiskit import QuantumCircuit, transpile
+from qiskit import transpile
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes.layout.vf2_post_layout import VF2PostLayoutStopReason
 
@@ -39,39 +38,13 @@ if TYPE_CHECKING:
 
 
 def test_create_feature_dict() -> None:
-    """Count gates and measurements relative to all non-barrier operations."""
-    qc = QuantumCircuit(3, 1)
-    qc.x(0)
-    qc.r(0.1, 0.2, 0)
-    qc.barrier()
-    qc.reset(0)
-    qc.measure(0, 0)
-
-    features = create_feature_dict(qc, 6)
+    """Encode circuit width and depth as one-element normalized arrays."""
+    qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
+    features = create_feature_dict(qc, 10)
 
     assert all(value.shape == (1,) and value.dtype == np.float32 for value in features.values())
-    for name in ("x", "r", "measure"):
-        np.testing.assert_allclose(features[name], [0.25])
-    np.testing.assert_array_equal(features["cx"], [0])
     np.testing.assert_allclose(features["num_qubits"], [0.5])
     np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
-
-
-def test_create_feature_dict_without_operations() -> None:
-    """A barrier alone contributes neither operation frequencies nor depth."""
-    qc = QuantumCircuit(2)
-    qc.barrier()
-
-    features = create_feature_dict(qc, 1)
-
-    assert features.pop("num_qubits").item() == 1
-    assert all(value.item() == 0 for value in features.values())
-
-
-def test_create_feature_dict_requires_target_qubits() -> None:
-    """An empty target has no width against which to normalize the circuit."""
-    with pytest.raises(ValueError, match="at least one qubit"):
-        create_feature_dict(QuantumCircuit(1), 0)
 
 
 def test_get_path_trained_model() -> None:
