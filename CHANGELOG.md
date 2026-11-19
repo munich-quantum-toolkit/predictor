@@ -28,8 +28,8 @@ releases may include breaking changes.
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
-- ✨ Extend the RL action space with TKET graph placement, noise-aware placement,
-  and KAK decomposition ([#796]) ([**@flowerthrower**])
+- ✨ Extend the RL action space with TKET graph placement, noise-aware
+  placement, and KAK decomposition ([#796]) ([**@flowerthrower**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
 - ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
