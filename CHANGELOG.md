@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add one-level quantum Shannon decomposition to the BQSKit RL synthesis
-  actions ([#795]) ([**@flowerthrower**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 
 ### Changed
@@ -26,8 +24,8 @@ releases may include breaking changes.
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
-- ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
-  ([**@flowerthrower**])
+- ✨ Replace composite BQSKit compilation actions with atomic passes ([#731]),
+  including one-level quantum Shannon decomposition ([#795]) ([**@flowerthrower**])
 
 ## [2.4.0] - 2026-07-13
 
@@ -94,11 +92,11 @@ for previous changelogs._
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
-[#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
+[#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
 [#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677
