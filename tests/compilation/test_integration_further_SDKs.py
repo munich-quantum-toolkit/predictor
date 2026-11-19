@@ -101,14 +101,14 @@ def _synthesize(
 @pytest.fixture
 def target() -> Target:
     """Fixture to provide the target device for testing."""
-    return get_device("ibm_falcon_27")
+    return get_device("ibm_heron_156")
 
 
 @pytest.fixture
 def simple_circuit() -> QuantumCircuit:
     """Return a small circuit used to probe action invariants.
 
-    RZZ(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_falcon_27
+    RZZ(0, 2) is intentional: qubits 0 and 2 are not adjacent on ibm_heron_156
     (qubit 0 only connects to 1), so SabreSwap inserts at least one SWAP.
     This ensures the routed fixture carries a real SWAP so routing-preservation
     checks are non-trivial. The circuit is diagonal to exercise diagonal synthesis

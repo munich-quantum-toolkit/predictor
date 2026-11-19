@@ -49,7 +49,7 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
         with path.open("w", encoding="utf-8") as f:
             dump(qc, f)
 
-    device = get_device("ibm_falcon_127")
+    device = get_device("ibm_heron_156")
 
     success = setup_device_predictor(
         devices=[device],
@@ -67,7 +67,7 @@ def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, 
     test_qc = get_benchmark("ghz", BenchmarkLevel.ALG, 3)
     predicted = predict_device_for_figure_of_merit(test_qc, figure_of_merit="expected_fidelity")
 
-    assert predicted.description == "ibm_falcon_127"
+    assert predicted.description == "ibm_heron_156"
 
 
 def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
@@ -94,7 +94,7 @@ def test_remove_files(path_uncompiled_circuits: Path, path_compiled_circuits: Pa
 @pytest.mark.model_training
 def test_predict_device_for_figure_of_merit_no_suitable_device() -> None:
     """Test the prediction of the device for a given figure of merit with a wrong device name."""
-    num_qubits = 130
+    num_qubits = get_device("ibm_heron_156").num_qubits + 1
     qc = get_benchmark("ghz", BenchmarkLevel.ALG, num_qubits)
     with pytest.raises(
         ValueError, match=re.escape(f"No suitable device found for the given quantum circuit with {num_qubits} qubits.")

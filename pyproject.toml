@@ -21,7 +21,7 @@ readme = "README.md"
 keywords = [ "compilation", "machine learning", "MQT", "prediction", "quantum computing" ]
 license = "MIT"
 license-files = [ "LICENSE" ]
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -46,7 +46,7 @@ classifiers = [
 dynamic = [ "version" ]
 dependencies = [
   "bqskit>=1.2.1",
-  "mqt-bench>=2",
+  "mqt-bench>=2.4",
   "numpy>=1.24",
   "numpy>=1.26; python_version>='3.12'",
   "numpy>=2.1; python_version>='3.13'",
@@ -55,12 +55,12 @@ dependencies = [
   "pytket>=2.4; python_version>='3.14'",
   "pytket-qiskit>=0.71.1",
   "pytket-qiskit>=0.78; python_version>='3.14'",
-  "qiskit>=2.1.1",
+  "qiskit>=2.5.2,<3",
   "rich>=12.6",
   "sb3-contrib>=2",
-  "scikit-learn>=1.5.1",
+  "scikit-learn>=1.5.2",
   "scikit-learn>=1.7.2; python_version>='3.14'",
-  "tensorboard>=2.17",
+  "tensorboard>=2.17.1",
   "tensorboard>=2.18; python_version>='3.14'",
   "tqdm>=4.66",
 ]
@@ -115,6 +115,9 @@ version-file = "src/mqt/predictor/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = [ "src/mqt" ]
 
+
+[tool.uv]
+required-version = ">=0.13.4"
 
 [tool.uv.sources]
 mqt-predictor = { workspace = true }

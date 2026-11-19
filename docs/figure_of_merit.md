@@ -124,7 +124,7 @@ training_data = TrainingData(X_train=feature_vector_list, y_train=labels_list)
 from mqt.predictor.ml import Predictor
 
 pred = Predictor(
-    figure_of_merit="hellinger_distance", devices=[get_device("ibm_falcon_27")]
+    figure_of_merit="hellinger_distance", devices=[get_device("ibm_heron_156")]
 )
 pred.train_random_forest_model(training_data)
 ```
