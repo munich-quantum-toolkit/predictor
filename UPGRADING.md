@@ -44,10 +44,14 @@ how RL actions are used and the
 [BQSKit pass documentation](https://bqskit.readthedocs.io/en/latest/source/passes.html)
 for details about the individual passes.
 
-### Qiskit 2.5 minimum
+### Qiskit 2.6 minimum
 
-The minimum Qiskit version increases from **1.3.3 to 2.5.2** to match MQT Bench
-2.4's requirement. Upgrade Qiskit to 2.5.2 or newer.
+Upgrade to Qiskit 2.6.1 or newer. MQT Predictor uses its native layout
+continuation to preserve qubit mappings between compilation actions.
+
+For direct users of `rl.actions.qiskit_actions`, `run_qiskit_action` no longer
+accepts `input_qubit_count`. The `VF2PostLayout` action applies its layout
+itself, replacing the `postprocess_vf2postlayout` helper.
 
 ### End of support for Python 3.10
 
