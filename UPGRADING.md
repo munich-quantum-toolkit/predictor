@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### TKET placement and optimization actions
+
+The RL action space now includes `GraphPlacement`, `NoiseAwarePlacement`, and
+`KAKDecomposition`. Retrain existing policies and update code that stores
+numeric action indices. Decompose gates acting on more than two qubits before
+TKET layout or routing. Multi-qubit barriers are supported.
+
 ### MQT Bench 2.4
 
 MQT Predictor now requires MQT Bench 2.4 or newer.
