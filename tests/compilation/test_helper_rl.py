@@ -33,11 +33,13 @@ if TYPE_CHECKING:
 
 
 def test_create_feature_dict() -> None:
-    """Test the creation of a feature dictionary."""
+    """Encode circuit width and depth as one-element normalized arrays."""
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 5)
-    features = create_feature_dict(qc)
-    for feature in features.values():
-        assert isinstance(feature, np.ndarray | int)
+    features = create_feature_dict(qc, 10)
+
+    assert all(value.shape == (1,) and value.dtype == np.float32 for value in features.values())
+    np.testing.assert_allclose(features["num_qubits"], [0.5])
+    np.testing.assert_allclose(features["depth"], [np.log1p(qc.depth()) / np.log1p(999_999)])
 
 
 def test_get_path_trained_model() -> None:

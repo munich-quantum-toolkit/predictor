@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from mqt.bench import BenchmarkLevel, get_benchmark
+from qiskit import QuantumCircuit
 
 from mqt.predictor.ml.helper import (
     create_feature_vector,
@@ -22,15 +22,23 @@ from mqt.predictor.ml.helper import (
 
 
 def test_create_feature_vector() -> None:
-    """Test the creation of a feature dictionary."""
-    qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
+    """Keep the input width and gate positions used by trained device-selection models."""
+    qc = QuantumCircuit(2, 1)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.h(1)
+    qc.r(0.1, 0.2, 1)
+    qc.measure(1, 0)
+
     feature_vector = create_feature_vector(qc)
-    assert feature_vector is not None
 
-
-def test_get_openqasm_gates() -> None:
-    """Test the retrieval of the OpenQASM gates."""
-    assert get_openqasm_gates() is not None
+    gate_counts = [0.0] * 42
+    gates = get_openqasm_gates()
+    assert (gates[3], gates[11]) == ("cx", "h")
+    gate_counts[3], gate_counts[11] = 1.0, 2.0
+    assert len(feature_vector) == 49
+    assert feature_vector[:42] == gate_counts
+    assert feature_vector[42:44] == [qc.num_qubits, qc.depth()]
 
 
 def test_get_path_training_circuits() -> None:

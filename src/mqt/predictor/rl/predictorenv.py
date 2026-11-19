@@ -46,7 +46,12 @@ from mqt.predictor.rl.actions import (
 from mqt.predictor.rl.actions.bqskit_actions import is_bqskit_action_available, run_bqskit_action
 from mqt.predictor.rl.actions.qiskit_actions import is_qiskit_action_available, run_qiskit_action
 from mqt.predictor.rl.actions.tket_actions import is_tket_action_available, run_tket_action
-from mqt.predictor.rl.helper import create_feature_dict, get_path_training_circuits, get_state_sample
+from mqt.predictor.rl.helper import (
+    OBSERVATION_OPERATIONS,
+    create_feature_dict,
+    get_path_training_circuits,
+    get_state_sample,
+)
 from mqt.predictor.rl.tracer import CompilationTracer, FigureOfMeritMetric, FigureOfMeritMetrics
 
 logger = logging.getLogger("mqt-predictor")
@@ -144,16 +149,17 @@ class PredictorEnv(Env):
         self.rng = np.random.default_rng(10)
         self.seeded_rng: np.random.Generator | None = None
 
-        spaces: dict[str, Space] = {
-            # Preserve the encoding used by existing models for smaller devices.
-            "num_qubits": Discrete(max(128, self.device.num_qubits + 1)),
-            "depth": Discrete(1000000),
-            "program_communication": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "critical_depth": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "entanglement_ratio": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "parallelism": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            "liveness": Box(low=0, high=1, shape=(1,), dtype=np.float32),
-        }
+        feature_names = (
+            *OBSERVATION_OPERATIONS,
+            "num_qubits",
+            "depth",
+            "program_communication",
+            "critical_depth",
+            "entanglement_ratio",
+            "parallelism",
+            "liveness",
+        )
+        spaces: dict[str, Space] = {name: Box(low=0, high=1, shape=(1,), dtype=np.float32) for name in feature_names}
 
         # Step-level cache to prevent double-computation
         self._current_synthesized = False
@@ -259,7 +265,7 @@ class PredictorEnv(Env):
             action_duration = time.perf_counter() - start_time
             # Different passes may fail for various reasons (e.g., found no routing solution).
             self.error_occurred = True
-            obs = create_feature_dict(self.state)
+            obs = create_feature_dict(self.state, self.device.num_qubits)
 
             # Trace the error before aborting
             self._collect_tracer_data(
@@ -299,7 +305,7 @@ class PredictorEnv(Env):
             reward_val = 0
             done = False
 
-        obs = create_feature_dict(self.state)
+        obs = create_feature_dict(self.state, self.device.num_qubits)
 
         # Trace+truncate if step limit is reached
         if not done and self.max_steps is not None and self.num_steps >= self.max_steps:
@@ -415,7 +421,7 @@ class PredictorEnv(Env):
         self.num_qubits_uncompiled_circuit = self.state.num_qubits
         self.has_parameterized_gates = len(self.state.parameters) > 0
 
-        obs = create_feature_dict(self.state)
+        obs = create_feature_dict(self.state, self.device.num_qubits)
 
         # Setup tracer for the new episode
         if self.tracer_output_path is not None:
@@ -461,6 +467,7 @@ class PredictorEnv(Env):
             A dense boolean mask ordered like ``self.action_set``.
         """
         has_layout = self.layout is not None
+        has_wide_operations = any(len(inst.qubits) > 2 and inst.operation.name != "barrier" for inst in self.state.data)
         valid_action_indices = set(self.valid_actions)
         action_mask: list[bool] = []
 
@@ -476,7 +483,11 @@ class PredictorEnv(Env):
             if action.origin == CompilationOrigin.QISKIT:
                 action_mask.append(is_qiskit_action_available(action, self.device))
             elif action.origin == CompilationOrigin.TKET:
-                action_mask.append(is_tket_action_available(action=action, has_layout=has_layout))
+                action_mask.append(
+                    is_tket_action_available(
+                        action=action, has_layout=has_layout, has_wide_operations=has_wide_operations
+                    )
+                )
             elif action.origin == CompilationOrigin.BQSKIT:
                 action_mask.append(
                     is_bqskit_action_available(

@@ -35,12 +35,17 @@ releases may include breaking changes.
 - ⬆️ Require Python 3.11.5 or newer ([#883]) ([**@simon1hofmann**])
 - ⬆️ Update MQT Bench to 2.4, adopt supported device models, and extend RL
   observations to devices with more than 127 qubits ([#880]) ([**@denialhaag**])
+- 💥 Normalize the RL observation and add operation frequencies. Retrain RL
+  models for the new observation space ([#886]) ([**@flowerthrower**])
 - 💥 Raise the minimum Qiskit version from 1.3.3 to 2.1.1 ([#825])
   ([**@denialhaag**])
 - 🔥 Drop support for Python 3.10 ([#773]) ([**@denialhaag**])
+- ✨ Extend the RL action space with TKET graph placement, noise-aware
+  placement, and KAK decomposition ([#796]) ([**@flowerthrower**])
 - ♻️ Split RL actions package into `base` and `registry` modules ([#769])
   ([**@denialhaag**])
-- ✨ Replace composite BQSKit compilation actions with atomic passes ([#731])
+- ✨ Replace composite BQSKit compilation actions with atomic passes ([#731]),
+  including one-level quantum Shannon decomposition ([#795])
   ([**@flowerthrower**])
 
 ## [2.4.0] - 2026-07-13
@@ -110,12 +115,15 @@ for previous changelogs._
 [#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
+[#886]: https://github.com/munich-quantum-toolkit/predictor/pull/886
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
+[#796]: https://github.com/munich-quantum-toolkit/predictor/pull/796
 [#773]: https://github.com/munich-quantum-toolkit/predictor/pull/771
 [#769]: https://github.com/munich-quantum-toolkit/predictor/pull/769
 [#794]: https://github.com/munich-quantum-toolkit/predictor/pull/794
 [#697]: https://github.com/munich-quantum-toolkit/predictor/pull/697
 [#731]: https://github.com/munich-quantum-toolkit/predictor/pull/731
+[#795]: https://github.com/munich-quantum-toolkit/predictor/pull/795
 [#714]: https://github.com/munich-quantum-toolkit/predictor/pull/714
 [#680]: https://github.com/munich-quantum-toolkit/predictor/pull/680
 [#677]: https://github.com/munich-quantum-toolkit/predictor/pull/677

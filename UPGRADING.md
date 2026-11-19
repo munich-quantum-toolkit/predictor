@@ -30,9 +30,17 @@ the RL and ML models for the replacement target. Existing models for retired
 devices cannot be reused for a different device. Custom Qiskit targets remain
 supported for older hardware.
 
-Retrain RL models for devices with 128 or more qubits. Their qubit-count
-observation space now includes the full device width. The encoding for smaller
-devices is unchanged.
+### RL observation features
+
+Retrain RL models for all target devices. Each entry in the RL observation is
+now a one-element `float32` array in `[0, 1]`. The `num_qubits` entry gives the
+fraction of the target width used by the circuit, capped at one. The `depth`
+entry uses `log1p` scaling up to a depth of 999,999. Gate and measurement
+frequencies use the number of non-barrier operations as their denominator.
+
+Code that reads `PredictorEnv` observations directly can use
+`observation["depth"].item()` to read the normalized value. The device-selection
+ML models retain their existing input format.
 
 ### Qiskit compilation actions
 
@@ -72,7 +80,8 @@ The new actions include:
 - the `GeneralizedSabreRoutingPass` routing action;
 - the `BQSKitSABREMapping` mapping action; and
 - the `QSearchSynthesisPass`, `LEAPSynthesisPass`, `WalshDiagonalSynthesisPass`,
-  `FullQSDPass`, `BlockZXZPass`, and `FullBlockZXZPass` synthesis actions.
+  `FullQSDPass`, `BlockZXZPass`, `FullBlockZXZPass`, and `QSDPass` synthesis
+  actions.
 
 See the
 [framework setup](docs/setup.md#step-2-train-reinforcement-learning-models) for
@@ -88,6 +97,13 @@ continuation to preserve qubit mappings between compilation actions.
 For direct users of `rl.actions.qiskit_actions`, `run_qiskit_action` no longer
 accepts `input_qubit_count`. The `VF2PostLayout` action applies its layout
 itself, replacing the `postprocess_vf2postlayout` helper.
+
+### TKET placement and optimization actions
+
+The RL action space now includes `GraphPlacement`, `NoiseAwarePlacement`, and
+`KAKDecomposition`. Retrain existing policies and update code that stores
+numeric action indices. Decompose gates acting on more than two qubits before
+TKET layout or routing. Multi-qubit barriers are supported.
 
 ### End of support for Python 3.10
 
