@@ -16,9 +16,17 @@ the RL and ML models for the replacement target. Existing models for retired
 devices cannot be reused for a different device. Custom Qiskit targets remain
 supported for older hardware.
 
-Retrain RL models for devices with 128 or more qubits. Their qubit-count
-observation space now includes the full device width. The encoding for smaller
-devices is unchanged.
+### RL observation features
+
+Retrain RL models for all target devices. Each entry in the RL observation is
+now a one-element `float32` array in `[0, 1]`. The `num_qubits` entry gives the
+fraction of the target width used by the circuit, capped at one. The `depth`
+entry uses `log1p` scaling up to a depth of 999,999. Gate and measurement
+frequencies use the number of non-barrier operations as their denominator.
+
+Code that reads `PredictorEnv` observations directly can use
+`observation["depth"].item()` to read the normalized value. The device-selection
+ML models retain their existing input format.
 
 ### Atomic BQSKit compilation actions
 
