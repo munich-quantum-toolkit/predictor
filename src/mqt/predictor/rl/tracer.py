@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 from qiskit import qasm3
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import numpy as np
     from numpy.typing import NDArray
     from qiskit import QuantumCircuit
@@ -209,7 +211,7 @@ class CompilationTracer:
         reward: float,
         current_qc: QuantumCircuit,
         figures_of_merit: FigureOfMeritMetrics,
-        features: dict[str, int | NDArray[np.float32]],
+        features: Mapping[str, int | NDArray[np.float32]],
         synthesized: bool,
         laid_out: bool,
         routed: bool,

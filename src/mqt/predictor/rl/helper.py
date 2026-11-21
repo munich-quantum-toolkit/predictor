@@ -11,13 +11,14 @@
 from __future__ import annotations
 
 import logging
+from math import log1p
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit import QuantumCircuit
 
-from mqt.predictor.utils import calc_supermarq_features
+from mqt.predictor.utils import calc_supermarq_features, get_openqasm_gates
 
 if TYPE_CHECKING:
     from numpy.random import Generator
@@ -27,6 +28,9 @@ import zipfile
 from importlib import resources
 
 logger = logging.getLogger("mqt-predictor")
+
+MAX_CIRCUIT_DEPTH = 999_999
+OBSERVATION_OPERATIONS = (*get_openqasm_gates(), "measure", "r")
 
 
 def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generator) -> tuple[QuantumCircuit, str]:
@@ -70,22 +74,23 @@ def get_state_sample(max_qubits: int, path_training_circuits: Path, rng: Generat
     return qc, str(file_list[random_index])
 
 
-def create_feature_dict(qc: QuantumCircuit) -> dict[str, int | NDArray[np.float32]]:
-    """Creates a feature dictionary for a given quantum circuit.
+def create_feature_dict(qc: QuantumCircuit, max_num_qubits: int) -> dict[str, NDArray[np.float32]]:
+    """Normalize operation counts, circuit width, and depth for the RL observation."""
+    if max_num_qubits <= 0:
+        msg = "The target must have at least one qubit."
+        raise ValueError(msg)
 
-    Arguments:
-        qc: The quantum circuit for which the feature dictionary is created.
-
-    Returns:
-        The feature dictionary for the given quantum circuit.
-    """
-    feature_dict: dict[str, int | NDArray[np.float32]] = {
-        "num_qubits": qc.num_qubits,
-        "depth": qc.depth(),
+    counts = qc.count_ops()
+    total = sum(count for name, count in counts.items() if name != "barrier")
+    feature_dict = {
+        name: np.array([counts.get(name, 0) / total if total else 0.0], dtype=np.float32)
+        for name in OBSERVATION_OPERATIONS
     }
+    feature_dict["num_qubits"] = np.array([min(qc.num_qubits / max_num_qubits, 1.0)], dtype=np.float32)
+    depth = log1p(min(qc.depth(), MAX_CIRCUIT_DEPTH)) / log1p(MAX_CIRCUIT_DEPTH)
+    feature_dict["depth"] = np.array([depth], dtype=np.float32)
 
     supermarq_features = calc_supermarq_features(qc)
-    # for all dict values, put them in a list each
     feature_dict["program_communication"] = np.array([supermarq_features.program_communication], dtype=np.float32)
     feature_dict["critical_depth"] = np.array([supermarq_features.critical_depth], dtype=np.float32)
     feature_dict["entanglement_ratio"] = np.array([supermarq_features.entanglement_ratio], dtype=np.float32)
