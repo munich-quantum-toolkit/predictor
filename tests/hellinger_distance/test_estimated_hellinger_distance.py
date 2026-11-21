@@ -153,6 +153,7 @@ def test_hellinger_distance_error() -> None:
 
 
 @pytest.mark.model_training
+@pytest.mark.usefixtures("small_forest_grid")
 def test_train_random_forest_regressor_and_predict(device: Target) -> None:
     """Test the training of the random forest regressor. The trained model is saved and used in the following tests."""
     # Setup the training environment
@@ -184,6 +185,7 @@ def test_train_random_forest_regressor_and_predict(device: Target) -> None:
 
 
 @pytest.mark.model_training
+@pytest.mark.usefixtures("small_forest_grid")
 def test_train_and_qcompile_with_hellinger_model(source_path: Path, target_path: Path, device: Target) -> None:
     """Test the entire predictor toolchain with the Hellinger distance model that was trained in the previous test."""
     figure_of_merit = "estimated_hellinger_distance"

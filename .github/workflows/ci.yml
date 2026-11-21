@@ -4,7 +4,7 @@ on:
     branches:
       - main
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   merge_group:
   workflow_dispatch:
 
@@ -28,26 +28,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runs-on: ubuntu-26.04
-            sessions: '["minimums", "tests", "model-training"]'
-          - runs-on: macos-26
-            sessions: '["minimums", "tests"]'
-          - runs-on: windows-2025
-            sessions: '["minimums", "tests"]'
+        runs-on: [ubuntu-26.04, macos-26, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       runs-on: ${{ matrix.runs-on }}
       use-sccache-gha: false
-      sessions: ${{ matrix.sessions }}
-      draft-sessions: '["tests-3.14"]'
     permissions:
       contents: read
 
+  model-training:
+    name: 🐍 Model training
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !github.event.pull_request.draft
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          save-cache: false
+      - name: Run model-training tests
+        run: uvx nox -s model-training --verbose -- --durations=6 --cov --cov-report=xml:coverage-model-training.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: coverage-model-training.xml
+          archive: false
+          if-no-files-found: error
+
   python-coverage:
     name: 🐍 Coverage
-    needs: [change-detection, python-tests]
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    needs: [python-tests, model-training]
+    if: >-
+      !cancelled() && needs.python-tests.result == 'success' &&
+      (needs.model-training.result == 'success' ||
+       (github.event.pull_request.draft && needs.model-training.result == 'skipped'))
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     permissions:
       contents: read
@@ -87,6 +105,7 @@ jobs:
     needs:
       - change-detection
       - python-tests
+      - model-training
       - python-coverage
       - python-linter
       - build-sdist
@@ -100,6 +119,10 @@ jobs:
             ${{
               !fromJSON(needs.change-detection.outputs.run-python-tests)
               && 'python-tests,python-coverage,' || ''
+            }}
+            ${{
+              (github.event.pull_request.draft || !fromJSON(needs.change-detection.outputs.run-python-tests))
+              && 'model-training,' || ''
             }}
             ${{
               !fromJSON(needs.change-detection.outputs.run-python-linter)

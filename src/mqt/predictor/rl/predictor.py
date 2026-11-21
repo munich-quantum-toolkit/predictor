@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from mqt.predictor.reward import figure_of_merit
 
 
+PPO_ROLLOUT_STEPS = 2048
+
+
 class Predictor:
     """The Predictor class is used to train a reinforcement learning model for a given figure of merit and device such that it acts as a compiler."""
 
@@ -123,7 +126,7 @@ class Predictor:
 
         Arguments:
             timesteps: The number of timesteps to train the model. Defaults to 1000.
-            verbose: The verbosity level. Defaults to 2.
+            verbose: The verbosity level. Set to 0 for silent training. Defaults to 2.
             test: Whether to train the model for testing purposes. Defaults to False.
             seed: The random seed to use for reproducible training. Set to None to use true randomness.
                 Defaults to None.
@@ -138,10 +141,10 @@ class Predictor:
             progress_bar = False
         else:
             # default PPO values
-            n_steps = 2048
+            n_steps = PPO_ROLLOUT_STEPS
             n_epochs = 10
             batch_size = 64
-            progress_bar = True
+            progress_bar = verbose > 0
 
         logger.debug("Start training for: " + self.figure_of_merit + " on " + self.device_name)
         model = MaskablePPO(
