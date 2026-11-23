@@ -16,6 +16,12 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🐛 Preserve TKET and Qiskit routing permutations across repeated routing,
+  independently of measurements ([#831]) ([**@flowerthrower**])
+- 🐛 Unroll custom gate definitions before RL basis translation and collect and
+  decompose Clifford blocks for optimization ([#831]) ([**@flowerthrower**])
+- 🐛 Bound the VF2 layout search to prevent training stalls on symmetric devices
+  ([#831]) ([**@flowerthrower**])
 - ⬆️ Require Python 3.11.5 or newer ([#883]) ([**@simon1hofmann**])
 - ⬆️ Update MQT Bench to 2.4, adopt supported device models, and extend RL
   observations to devices with more than 127 qubits ([#880]) ([**@denialhaag**])
@@ -89,6 +95,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#831]: https://github.com/munich-quantum-toolkit/predictor/pull/831
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
