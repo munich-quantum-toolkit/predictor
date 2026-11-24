@@ -12,6 +12,7 @@ releases may include breaking changes.
 
 ### Added
 
+- 👷 Enable testing on Python 3.15 ([#893]) ([**@denialhaag**])
 - 👷 Enable testing on Python 3.14 ([#488]) ([**@denialhaag**])
 
 ### Changed
@@ -89,6 +90,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#893]: https://github.com/munich-quantum-toolkit/predictor/pull/893
 [#883]: https://github.com/munich-quantum-toolkit/predictor/pull/883
 [#880]: https://github.com/munich-quantum-toolkit/predictor/pull/880
 [#825]: https://github.com/munich-quantum-toolkit/predictor/pull/825
