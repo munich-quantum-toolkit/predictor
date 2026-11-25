@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 
 import pytest
-from gymnasium.spaces import Dict, Discrete
 from mqt.bench import BenchmarkLevel, get_benchmark
 from mqt.bench.targets import get_device
 from qiskit import QuantumCircuit
@@ -45,12 +44,12 @@ def test_predictor_env_reset_from_string() -> None:
     qc = get_benchmark("dj", BenchmarkLevel.ALG, 3)
     with qasm_path.open("w", encoding="utf-8") as f:
         dump(qc, f)
-    assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc)
+    assert predictor.env.reset(qc=qasm_path)[0] == create_feature_dict(qc, device.num_qubits)
 
 
-@pytest.mark.parametrize(("device_name", "num_qubit_values"), [("quantinuum_h2_56", 128), ("ibm_heron_156", 157)])
-def test_predictor_env_observation_space_covers_device(device_name: str, num_qubit_values: int) -> None:
-    """Test device-width observations while preserving the encoding for smaller devices."""
+@pytest.mark.parametrize("device_name", ["quantinuum_h2_56", "ibm_heron_156"])
+def test_predictor_env_observation_space_covers_device(device_name: str) -> None:
+    """The normalized observation covers the full width of each supported target."""
     device = get_device(device_name)
     env = predictorenv_module.PredictorEnv(device=device)
     qc = QuantumCircuit(device.num_qubits)
@@ -60,10 +59,42 @@ def test_predictor_env_observation_space_covers_device(device_name: str, num_qub
     observation, _ = env.reset(qc=qc)
 
     assert env.observation_space.contains(observation)
-    assert isinstance(env.observation_space, Dict)
-    num_qubits_space = env.observation_space["num_qubits"]
-    assert isinstance(num_qubits_space, Discrete)
-    assert num_qubits_space.n == num_qubit_values
+    assert observation["num_qubits"].item() == 1
+
+
+def test_predictor_env_observation_counts_gates_and_measurements() -> None:
+    """Normalize frequencies by the total number of non-barrier operations."""
+    env = predictorenv_module.PredictorEnv(device=get_device("quantinuum_h2_56"))
+    qc = QuantumCircuit(3, 1)
+    qc.x(0)
+    qc.r(0.1, 0.2, 0)
+    qc.barrier()
+    qc.reset(0)
+    qc.measure(0, 0)
+
+    observation, _ = env.reset(qc=qc)
+
+    assert env.observation_space.contains(observation)
+    for name in ("x", "r", "measure"):
+        assert observation[name].item() == pytest.approx(0.25)
+    assert observation["cx"].item() == 0
+
+
+def test_create_feature_dict_without_operations() -> None:
+    """A barrier alone contributes neither operation frequencies nor depth."""
+    qc = QuantumCircuit(2)
+    qc.barrier()
+
+    features = create_feature_dict(qc, 1)
+
+    assert features.pop("num_qubits").item() == 1
+    assert all(value.item() == 0 for value in features.values())
+
+
+def test_create_feature_dict_requires_target_qubits() -> None:
+    """An empty target has no width against which to normalize the circuit."""
+    with pytest.raises(ValueError, match="at least one qubit"):
+        create_feature_dict(QuantumCircuit(1), 0)
 
 
 def test_predictor_env_esp_error() -> None:
