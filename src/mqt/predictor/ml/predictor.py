@@ -53,6 +53,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mqt-predictor")
 
+RANDOM_FOREST_PARAM_GRID = {
+    "n_estimators": [100, 200, 500],
+    "max_depth": list(range(8, 30, 6)),
+    "min_samples_split": list(range(2, 20, 6)),
+    "min_samples_leaf": list(range(2, 20, 6)),
+    "bootstrap": [True, False],
+}
+
 
 def setup_device_predictor(
     devices: list[Target],
@@ -373,15 +381,6 @@ class Predictor:
         Raises:
             ValueError: If the figure of merit is 'hellinger_distance' and more than one device is provided.
         """
-        tree_param = [
-            {
-                "n_estimators": [100, 200, 500],
-                "max_depth": list(range(8, 30, 6)),
-                "min_samples_split": list(range(2, 20, 6)),
-                "min_samples_leaf": list(range(2, 20, 6)),
-                "bootstrap": [True, False],
-            },
-        ]
         # Device-specific regression model for Hellinger distance
         if self.figure_of_merit == "hellinger_distance":
             if len(self.devices) != 1:
@@ -398,7 +397,9 @@ class Predictor:
         if not training_data:
             training_data = self._get_prepared_training_data()
         num_cv = min(len(training_data.y_train), 5)
-        mdl = GridSearchCV(mdl, tree_param, cv=num_cv, n_jobs=8).fit(training_data.X_train, training_data.y_train)
+        mdl = GridSearchCV(mdl, RANDOM_FOREST_PARAM_GRID, cv=num_cv, n_jobs=8).fit(
+            training_data.X_train, training_data.y_train
+        )
 
         joblib_dump(mdl, save_mdl_path)
         logger.info("Random Forest model is trained and saved.")

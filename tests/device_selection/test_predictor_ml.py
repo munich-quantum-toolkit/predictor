@@ -36,6 +36,7 @@ def path_compiled_circuits() -> Path:
 
 
 @pytest.mark.model_training
+@pytest.mark.usefixtures("small_forest_grid")
 def test_setup_device_predictor_with_prediction(path_uncompiled_circuits: Path, path_compiled_circuits: Path) -> None:
     """Test the full training pipeline and prediction using a mock device."""
     if not path_uncompiled_circuits.exists():
